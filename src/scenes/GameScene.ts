@@ -157,6 +157,7 @@ export class GameScene extends Phaser.Scene {
       if (this.kidoPanel) { this.closeKidoPanel(); return; }
       if (this.enhancePanel) { this.closeEnhancePanel(); return; }
       if (this.bestiaryPanel) { this.closeBestiaryPanel(); return; }
+      if (this.questLogPanel) { this.questLogPanel.destroy(true); this.questLogPanel = null; this.resumeFromMenu(); return; }
       if (this.isInDialogue) return;
       SaveManager.save();
       const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '已存档', {
@@ -600,38 +601,39 @@ export class GameScene extends Phaser.Scene {
 
   private showNamingInput(): void {
     this.namingPanelActive = true;
-    const presets = ['隐世', '黑崎一护', '朽木露琪亚', '石田雨龙', '茶渡泰虎'];
-    let selectedIdx = 0;
+    let inputName = '';
     const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60).setDepth(400);
     const bg = this.add.graphics();
-    bg.fillStyle(0x121222, 0.98); bg.fillRoundedRect(-300, -160, 600, 320, 12);
-    bg.lineStyle(2, 0x4a5a8a, 0.6); bg.strokeRoundedRect(-300, -160, 600, 320, 12);
+    bg.fillStyle(0x121222, 0.98); bg.fillRoundedRect(-300, -100, 600, 200, 12);
+    bg.lineStyle(2, 0x4a5a8a, 0.6); bg.strokeRoundedRect(-300, -100, 600, 200, 12);
     panel.add(bg);
-    panel.add(this.add.text(0, -130, '选择你的名字', { fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
-    presets.forEach((name, i) => {
-      const ny = -90 + i * 36;
-      const btn = this.add.text(0, ny, name, {
-        fontSize: '16px', color: i === selectedIdx ? '#ffcc44' : '#aaaacc', fontStyle: i === selectedIdx ? 'bold' : 'normal', padding: { x: 20, y: 4 },
-        backgroundColor: i === selectedIdx ? '#33220088' : '#11112288',
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-      btn.on('pointerover', () => { if (i !== selectedIdx) btn.setColor('#ccccdd'); });
-      btn.on('pointerout', () => { if (i !== selectedIdx) btn.setColor('#aaaacc'); });
-      btn.on('pointerdown', () => {
-        selectedIdx = i;
-        panel.removeAll(true);
-        this.showNamingInput(); // refresh
-        // Actually just rebuild inline
-      });
-      panel.add(btn);
-    });
-    const confirm = this.add.text(0, 110, '[ 确认 ]', {
-      fontSize: '16px', color: '#88cc88', fontStyle: 'bold', padding: { x: 24, y: 8 },
-      backgroundColor: '#11221188',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    confirm.on('pointerover', () => { confirm.setColor('#aaffaa'); confirm.setBackgroundColor('#224422aa'); });
-    confirm.on('pointerout', () => { confirm.setColor('#88cc88'); confirm.setBackgroundColor('#11221188'); });
-    confirm.on('pointerdown', () => {
-      GameState.playerName = presets[selectedIdx];
+    panel.add(this.add.text(0, -70, '输入你的名字', { fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    const inputBg = this.add.rectangle(0, -20, 360, 36, 0x0a0a1e, 1).setStrokeStyle(1, 0x446688);
+    panel.add(inputBg);
+    const inputText = this.add.text(0, -28, '_', { fontSize: '18px', color: '#ffffff', padding: { y: 2 } }).setOrigin(0.5);
+    panel.add(inputText);
+    panel.add(this.add.text(0, 12, '（键盘输入，退格删除，回车确认）', { fontSize: '11px', color: '#667788', padding: { y: 1 } }).setOrigin(0.5));
+
+    // 键盘输入捕获
+    const keyHandler = (event: any) => {
+      if (!this.namingPanelActive) return;
+      const key = event.key;
+      if (key === 'Backspace') { inputName = inputName.slice(0, -1); }
+      else if (key === 'Enter') { confirmInput(); }
+      else if (key && key.length === 1 && inputName.length < 12) {
+        // 允许中英文、数字
+        if (key.charCodeAt(0) >= 32 && key.charCodeAt(0) !== 127) {
+          inputName += key;
+        }
+      }
+      inputText.setText(inputName + '_');
+    };
+    this.input.keyboard!.on('keydown', keyHandler);
+
+    const confirmInput = () => {
+      if (inputName.trim().length === 0) inputName = '隐世';
+      this.input.keyboard!.off('keydown', keyHandler);
+      GameState.playerName = inputName.trim();
       GameState.hasCreated = true;
       panel.destroy(true); this.namingPanelActive = false;
       this.time.delayedCall(300, () => {
@@ -641,7 +643,15 @@ export class GameScene extends Phaser.Scene {
           text: `${GameState.playerName}……好名字。你的灵魂中寄宿着一种元素之力——火、风、水、土。选择你的元素共鸣吧。`
         }, () => { this.isInDialogue = false; this.showElementSelection(); });
       });
-    });
+    };
+
+    const confirm = this.add.text(0, 50, '[ 确认 ]', {
+      fontSize: '16px', color: '#88cc88', fontStyle: 'bold', padding: { x: 24, y: 8 },
+      backgroundColor: '#11221188',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    confirm.on('pointerover', () => { confirm.setColor('#aaffaa'); confirm.setBackgroundColor('#224422aa'); });
+    confirm.on('pointerout', () => { confirm.setColor('#88cc88'); confirm.setBackgroundColor('#11221188'); });
+    confirm.on('pointerdown', () => confirmInput());
     panel.add(confirm);
   }
 
@@ -884,7 +894,7 @@ export class GameScene extends Phaser.Scene {
       panel.add(this.add.text(sx + 260, sy + 18, `${item.price} 金币`, { fontSize: '12px', color: '#ffcc44', padding: { y: 2 } }));
       const canBuy = GameState.gold >= item.price;
       const buyBtn = this.add.text(sx + 300, sy + 8, '[购买]', { fontSize: '12px', color: canBuy ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true });
-      if (canBuy) { buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88')); buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44')); buyBtn.on('pointerdown', () => { GameState.gold -= item.price; const boughtItem = { id: item.id, name: item.name, type: 'equipment' as any, desc: item.desc || '', quantity: 1, slot: item.slot, stats: item.stats, quality: item.quality || 'white' }; Inventory.addItem(boughtItem); Inventory.equip(boughtItem); GameState.recalcStats(); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); }); }
+      if (canBuy) { buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88')); buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44')); buyBtn.on('pointerdown', () => { GameState.gold -= item.price; const boughtItem = { id: item.id, name: item.name, type: 'equipment' as any, desc: item.desc || '', quantity: 1, slot: item.slot, stats: item.stats, quality: item.quality || 'white' }; Inventory.addItem(boughtItem); Inventory.equip(boughtItem); GameState.recalcStats(); this.closeInventory(); this.isInDialogue = false; this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); const bn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '购买了 ' + item.name + '  剩余金币: ' + GameState.gold, { fontSize: '16px', color: '#ffcc44', fontStyle: 'bold', backgroundColor: '#332200cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); this.tweens.add({ targets: bn, alpha: 0, y: GAME_HEIGHT / 2 - 110, duration: 2500, onComplete: () => bn.destroy() }); }); }
       panel.add(buyBtn);
     });
     const cb3 = this.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cb3.on('pointerover', () => cb3.setColor('#ffaaaa')); cb3.on('pointerout', () => cb3.setColor('#ff6666')); cb3.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cb3);
@@ -1025,15 +1035,16 @@ export class GameScene extends Phaser.Scene {
     p.add(this.add.text(lx, oy + th + 72, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 } }));
 
     const attrs = [
-      { l: 'HP', k: 'hp', a: 'allocatedHP' }, { l: 'MP', k: 'mp', a: 'allocatedMP' },
-      { l: 'ATK', k: 'atk', a: 'allocatedATK' }, { l: 'DEF', k: 'def', a: 'allocatedDEF' },
-      { l: 'MATK', k: 'matk', a: 'allocatedMATK' }, { l: 'MDEF', k: 'mdef', a: 'allocatedMDEF' },
-      { l: 'SPD', k: 'spd', a: 'allocatedSPD' },
+      { l: 'HP', k: 'maxHp', a: 'allocatedHP', per: 15 }, { l: 'MP', k: 'maxMp', a: 'allocatedMP', per: 5 },
+      { l: 'ATK', k: 'atk', a: 'allocatedATK', per: 1 }, { l: 'DEF', k: 'def', a: 'allocatedDEF', per: 1 },
+      { l: 'MATK', k: 'matk', a: 'allocatedMATK', per: 1 }, { l: 'MDEF', k: 'mdef', a: 'allocatedMDEF', per: 1 },
+      { l: 'SPD', k: 'spd', a: 'allocatedSPD', per: 1 },
     ];
     const atY = oy + th + 100;
-    // 用于动态更新的引用
     const valTexts: Phaser.GameObjects.Text[] = [];
     const allocTexts: Phaser.GameObjects.Text[] = [];
+    const addBtns: Phaser.GameObjects.Text[] = [];
+    const subBtns: Phaser.GameObjects.Text[] = [];
     let spText: Phaser.GameObjects.Text;
     const refreshDisplay = () => {
       spText.setText(`剩余属性点: ${GameState.statPoints}`);
@@ -1042,7 +1053,10 @@ export class GameScene extends Phaser.Scene {
         const av = (GameState as any)[at.k] as number;
         const al = (GameState as any)[at.a] as number;
         valTexts[i].setText(`${av}`);
-        allocTexts[i].setText(`(加点: ${al})`);
+        allocTexts[i].setText(`(加点${al} × ${at.per} = +${al * at.per})`);
+        // +/- 按钮颜色随状态变化
+        addBtns[i].setColor(GameState.statPoints > 0 ? '#44cc44' : '#335533');
+        subBtns[i].setColor(al > 0 ? '#cc4444' : '#553333');
       });
     };
     spText = this.add.text(lx, oy + th + 72, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 } });
@@ -1055,7 +1069,7 @@ export class GameScene extends Phaser.Scene {
       p.add(this.add.text(lx + 16, ay + 10, at.l, { fontSize: '15px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
       const vt = this.add.text(lx + 80, ay + 10, `${av}`, { fontSize: '18px', color: '#88ccff', fontStyle: 'bold', padding: { y: 2 } });
       p.add(vt); valTexts.push(vt);
-      const at2 = this.add.text(lx + 140, ay + 12, `(加点: ${al})`, { fontSize: '11px', color: '#6677aa', padding: { y: 1 } });
+      const at2 = this.add.text(lx + 140, ay + 12, `(加点${al} × ${at.per} = +${al * at.per})`, { fontSize: '11px', color: '#6677aa', padding: { y: 1 } });
       p.add(at2); allocTexts.push(at2);
 
       const ap = this.add.text(lx + colW - 120, ay + 6, '+', { fontSize: '22px', color: GameState.statPoints > 0 ? '#44cc44' : '#335533', fontStyle: 'bold', padding: { x: 10, y: 4 } }).setInteractive({ useHandCursor: true });
@@ -1064,14 +1078,14 @@ export class GameScene extends Phaser.Scene {
       ap.on('pointerdown', () => {
         if (GameState.statPoints > 0) { (GameState as any)[at.a]++; GameState.statPoints--; GameState.recalcStats(); refreshDisplay(); this.scene.get('UIScene').events.emit('updateStats'); }
       });
-      p.add(ap);
+      p.add(ap); addBtns.push(ap);
       const sp2 = this.add.text(lx + colW - 80, ay + 6, '-', { fontSize: '22px', color: al > 0 ? '#cc4444' : '#553333', fontStyle: 'bold', padding: { x: 10, y: 4 } }).setInteractive({ useHandCursor: true });
       sp2.on('pointerover', () => { if ((GameState as any)[at.a] > 0) sp2.setColor('#ff8888'); });
       sp2.on('pointerout', () => { sp2.setColor((GameState as any)[at.a] > 0 ? '#cc4444' : '#553333'); });
       sp2.on('pointerdown', () => {
         if ((GameState as any)[at.a] > 0) { (GameState as any)[at.a]--; GameState.statPoints++; GameState.recalcStats(); refreshDisplay(); this.scene.get('UIScene').events.emit('updateStats'); }
       });
-      p.add(sp2);
+      p.add(sp2); subBtns.push(sp2);
     });
 
     // ═══ Right: Equipment ═══
