@@ -1101,12 +1101,11 @@ export class GameScene extends Phaser.Scene {
         const al = (GameState as any)[at.a] as number;
         valTexts[i].setText(`${av}`);
         allocTexts[i].setText(`(加点${al} × ${at.per} = +${al * at.per})`);
-        // +/- 按钮颜色随状态变化
         addBtns[i].setColor(GameState.statPoints > 0 ? '#44cc44' : '#335533');
         subBtns[i].setColor(al > 0 ? '#cc4444' : '#553333');
       });
     };
-    spText = this.add.text(lx, oy + th + 72, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 } });
+    spText = this.add.text(lx, oy + th + 72, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 }, backgroundColor: '#121222' });
     p.add(spText);
 
     attrs.forEach((at, i) => {

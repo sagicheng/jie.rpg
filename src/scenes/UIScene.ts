@@ -53,14 +53,10 @@ export class UIScene extends Phaser.Scene {
       padding: { x: 8, y: 6 },
     }).setDepth(102);
 
-    // L键：打开/关闭任务面板
-    this.input.keyboard!.addKey('L').on('down', () => {
-      if (this.questPanelOpen) {
-        this.closeQuestPanel();
-      } else {
-        this.openQuestPanel();
-      }
-    });
+    // L键：由GameScene处理任务面板，UIScene不重复
+    // this.input.keyboard!.addKey('L').on('down', () => {
+    //   if (this.questPanelOpen) { this.closeQuestPanel(); } else { this.openQuestPanel(); }
+    // });
 
     this.events.on('updateStats', () => {
       const trackText = GameState.getQuestTrackText();
