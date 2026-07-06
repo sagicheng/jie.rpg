@@ -172,7 +172,7 @@ export class GameScene extends Phaser.Scene {
 
     // 鼠标点击移动
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel) return;
+      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive) return;
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.moveTarget = { x: wp.x, y: wp.y };
     });
@@ -219,7 +219,7 @@ export class GameScene extends Phaser.Scene {
       if (ctrl.isDown) { GameState.recordKill('大虚·亚丘卡斯'); showDevNotif('Boss击杀+1', '#ff4444'); }
     });
 
-    this.zoneText = this.add.text(16, 12, `\${GameState.playerName} · \${ZONE_NAMES[GameState.zone]}`, {
+    this.zoneText = this.add.text(16, 12, `${GameState.playerName} · ${ZONE_NAMES[GameState.zone]}`, {
       fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
       backgroundColor: '#000000aa', padding: { x: 8, y: 2 },
     }).setScrollFactor(0).setDepth(100);
@@ -458,6 +458,48 @@ export class GameScene extends Phaser.Scene {
         return line;
       });
 
+      // 动态添加任务选项
+      const questChoices: Array<{ text: string; callback: () => void }> = [];
+      // 检查是否有可接取的主线任务
+      for (const questId of MAIN_QUEST_ORDER) {
+        const quest = MAIN_QUESTS[questId];
+        if (!quest || quest.acceptFrom !== c.name) continue;
+        if (GameState.questCompleted.includes(questId)) continue;
+        if (GameState.activeQuest === questId) continue;
+        if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) continue;
+        questChoices.push({ text: `接受任务：${quest.name}`, callback: () => this.acceptQuestFromNPC(c.name) });
+        break;
+      }
+      // 检查是否有可完成的任务
+      if (GameState.activeQuest) {
+        const activeDef = GameState.getActiveQuestDef();
+        if (activeDef && activeDef.completeAt === c.name) {
+          if (GameState.questReadyToComplete) {
+            questChoices.push({ text: `完成任务：${activeDef.name}`, callback: () => this.completeQuestFromNPC(c.name) });
+          } else {
+            // 任务进行中，在对话文本中显示进度
+            if (dialogueLines.length > 0) {
+              dialogueLines[0].text += `\n\n任务进度：${GameState.getQuestTrackText()}`;
+            }
+          }
+        }
+      }
+      // 检查支线任务
+      for (const sq of Object.values(SIDE_QUESTS)) {
+        if (sq.acceptFrom !== c.name) continue;
+        if (GameState.questCompleted.includes(sq.id)) continue;
+        if (GameState.activeQuest === sq.id) continue;
+        if (sq.prerequisite && !GameState.questCompleted.includes(sq.prerequisite)) continue;
+        questChoices.push({ text: `接受支线：${sq.name}`, callback: () => this.acceptQuestFromNPC(c.name) });
+        break;
+      }
+      // 如果有任务选项，添加到第一行对话
+      if (questChoices.length > 0 && dialogueLines.length > 0) {
+        if (!dialogueLines[0].choices) dialogueLines[0].choices = [];
+        dialogueLines[0].choices!.push(...questChoices);
+        dialogueLines[0].choices!.push({ text: '离开', callback: () => { this.isInDialogue = false; } });
+      }
+
       this.npcList.push({ sprite: npc, name: c.name, role: c.role, dialogue: dialogueLines, nameTag: tag, x: nx, y: ny, shop: c.shop });
     }
   }
@@ -601,46 +643,51 @@ export class GameScene extends Phaser.Scene {
 
   private showNamingInput(): void {
     this.namingPanelActive = true;
-    let inputName = '';
     const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60).setDepth(400);
     const bg = this.add.graphics();
     bg.fillStyle(0x121222, 0.98); bg.fillRoundedRect(-300, -100, 600, 200, 12);
     bg.lineStyle(2, 0x4a5a8a, 0.6); bg.strokeRoundedRect(-300, -100, 600, 200, 12);
     panel.add(bg);
     panel.add(this.add.text(0, -70, '输入你的名字', { fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
-    const inputBg = this.add.rectangle(0, -20, 360, 36, 0x0a0a1e, 1).setStrokeStyle(1, 0x446688);
-    panel.add(inputBg);
-    const inputText = this.add.text(0, -28, '_', { fontSize: '18px', color: '#ffffff', padding: { y: 2 } }).setOrigin(0.5);
-    panel.add(inputText);
-    panel.add(this.add.text(0, 12, '（键盘输入，退格删除，回车确认）', { fontSize: '11px', color: '#667788', padding: { y: 1 } }).setOrigin(0.5));
 
-    // 键盘输入捕获
-    const keyHandler = (event: any) => {
-      if (!this.namingPanelActive) return;
-      const key = event.key;
-      if (key === 'Backspace') { inputName = inputName.slice(0, -1); }
-      else if (key === 'Enter') { confirmInput(); }
-      else if (key && key.length === 1 && inputName.length < 12) {
-        // 允许中英文、数字
-        if (key.charCodeAt(0) >= 32 && key.charCodeAt(0) !== 127) {
-          inputName += key;
-        }
-      }
-      inputText.setText(inputName + '_');
+    // 使用原生HTML input支持中文输入
+    const inputEl = document.createElement('input');
+    inputEl.type = 'text';
+    inputEl.maxLength = 12;
+    inputEl.style.cssText = 'position:absolute;width:360px;height:36px;font-size:18px;color:#ffffff;background:#0a0a1e;border:1px solid #446688;border-radius:4px;text-align:center;outline:none;z-index:9999;';
+    const canvas = this.game.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / GAME_WIDTH;
+    const scaleY = rect.height / GAME_HEIGHT;
+    inputEl.style.left = (rect.left + rect.width / 2 - 180 * scaleX) + 'px';
+    inputEl.style.top = (rect.top + (GAME_HEIGHT / 2 - 80) * scaleY) + 'px';
+    inputEl.style.width = (360 * scaleX) + 'px';
+    inputEl.style.height = (36 * scaleY) + 'px';
+    document.body.appendChild(inputEl);
+    inputEl.focus();
+
+    panel.add(this.add.text(0, 12, '（输入名字后点击确认）', { fontSize: '11px', color: '#667788', padding: { y: 1 } }).setOrigin(0.5));
+
+    const cleanup = () => {
+      if (inputEl.parentNode) inputEl.parentNode.removeChild(inputEl);
+      this.namingPanelActive = false;
     };
-    this.input.keyboard!.on('keydown', keyHandler);
 
-    const confirmInput = () => {
-      if (inputName.trim().length === 0) inputName = '隐世';
-      this.input.keyboard!.off('keydown', keyHandler);
-      GameState.playerName = inputName.trim();
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doConfirm(); }
+    });
+
+    const doConfirm = () => {
+      const name = inputEl.value.trim() || '隐世';
+      cleanup();
+      GameState.playerName = name;
       GameState.hasCreated = true;
-      panel.destroy(true); this.namingPanelActive = false;
+      panel.destroy(true);
       this.time.delayedCall(300, () => {
         this.isInDialogue = true;
         this.dialogueBox.show({
           speaker: '浦原喜助',
-          text: `${GameState.playerName}……好名字。你的灵魂中寄宿着一种元素之力——火、风、水、土。选择你的元素共鸣吧。`
+          text: `${name}……好名字。你的灵魂中寄宿着一种元素之力——火、风、水、土。选择你的元素共鸣吧。`
         }, () => { this.isInDialogue = false; this.showElementSelection(); });
       });
     };
@@ -651,7 +698,7 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     confirm.on('pointerover', () => { confirm.setColor('#aaffaa'); confirm.setBackgroundColor('#224422aa'); });
     confirm.on('pointerout', () => { confirm.setColor('#88cc88'); confirm.setBackgroundColor('#11221188'); });
-    confirm.on('pointerdown', () => confirmInput());
+    confirm.on('pointerdown', () => doConfirm());
     panel.add(confirm);
   }
 
