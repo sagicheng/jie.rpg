@@ -1329,6 +1329,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private closeKidoPanel(): void { this.kidoPanel?.destroy(true); this.kidoPanel = null; if (this.kidoTooltip) { this.kidoTooltip.destroy(); this.kidoTooltip = null; } this.resumeFromMenu(); }
+  private enhanceTab: number = 0;
   private toggleEnhancePanel(): void {
     if (this.enhancePanel) { this.closeEnhancePanel(); return; }
     this.pauseForMenu(); const cam = this.cameras.main;
@@ -1352,7 +1353,7 @@ export class GameScene extends Phaser.Scene {
     // Tabs
     const tabs = ['强化', '精炼', '分解'];
     const tabColors = ['#ff8844', '#4488ff', '#88cc44'];
-    let activeTab = 0;
+    let activeTab = this.enhanceTab;
     const tabY = oy + th + 10;
     const renderTabs = () => {
       tabs.forEach((t, i) => {
@@ -1365,7 +1366,7 @@ export class GameScene extends Phaser.Scene {
         const tt = this.add.text(tx + 60, tabY + 16, t, {
           fontSize: '14px', color: isA ? tabColors[i] : '#555566', fontStyle: 'bold', padding: { y: 2 }
         }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-        tt.on('pointerdown', () => { if (i !== activeTab) { activeTab = i; this.closeEnhancePanel(); this.toggleEnhancePanel(); } });
+        tt.on('pointerdown', () => { if (i !== activeTab) { this.enhanceTab = i; this.closeEnhancePanel(); this.toggleEnhancePanel(); } });
         p.add(tt);
       });
     };
@@ -1395,7 +1396,7 @@ export class GameScene extends Phaser.Scene {
           if (elv < 10) {
             const cost = getEnhanceCost(elv + 1, (item as any).quality || 'white'); const rate = getEnhanceRate(elv + 1);
             p.add(this.add.text(sx + 300, sy + 8, `${cost.gold}金币 | ${Math.round(rate * 100)}%`, { fontSize: '10px', color: '#888899', padding: { y: 1 } }));
-            const btn = this.add.text(sx + 420, sy + 8, '[强化]', { fontSize: '13px', color: '#ff8844', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
+            const btn = this.add.text(sx + 420, sy + 4, '[ 强化 ]', { fontSize: '16px', color: '#ff8844', fontStyle: 'bold', padding: { x: 16, y: 8 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
             btn.on('pointerover', () => btn.setColor('#ffaa66'));
             btn.on('pointerout', () => btn.setColor('#ff8844'));
             btn.on('pointerdown', () => {
@@ -1414,7 +1415,7 @@ export class GameScene extends Phaser.Scene {
           const refineCost = getRefineCost(item);
           if (curSlots < maxSlots) {
             p.add(this.add.text(sx + 300, sy + 8, `${refineCost.gold}金币 | ${curSlots}/${maxSlots}槽`, { fontSize: '10px', color: '#888899', padding: { y: 1 } }));
-            const btn = this.add.text(sx + 420, sy + 8, '[精炼]', { fontSize: '13px', color: '#4488ff', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true });
+            const btn = this.add.text(sx + 420, sy + 4, '[ 精炼 ]', { fontSize: '16px', color: '#4488ff', fontStyle: 'bold', padding: { x: 16, y: 8 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true });
             btn.on('pointerover', () => btn.setColor('#66aaff'));
             btn.on('pointerout', () => btn.setColor('#4488ff'));
             btn.on('pointerdown', () => {
@@ -1427,7 +1428,7 @@ export class GameScene extends Phaser.Scene {
             p.add(btn);
           } else {
             p.add(this.add.text(sx + 300, sy + 8, `${curSlots}/${maxSlots}槽已满`, { fontSize: '10px', color: '#888899', padding: { y: 1 } }));
-            const btn = this.add.text(sx + 420, sy + 8, '[重置]', { fontSize: '13px', color: '#cc8844', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
+            const btn = this.add.text(sx + 420, sy + 4, '[ 重置 ]', { fontSize: '16px', color: '#cc8844', fontStyle: 'bold', padding: { x: 16, y: 8 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
             btn.on('pointerdown', () => { doRefineReset(item); GameState.recalcStats(); this.closeEnhancePanel(); this.toggleEnhancePanel(); this.scene.get('UIScene').events.emit('updateStats'); });
             p.add(btn);
           }
@@ -1436,7 +1437,7 @@ export class GameScene extends Phaser.Scene {
           const decompReturn = getDecompReturn(item);
           const matStr = decompReturn.materials.map(m => `${m.name}×${m.qty}`).join(', ');
           p.add(this.add.text(sx + 300, sy + 8, `${decompReturn.gold}金币 | ${matStr}`, { fontSize: '9px', color: '#888899', padding: { y: 1 } }));
-          const btn = this.add.text(sx + 420, sy + 8, '[分解]', { fontSize: '13px', color: '#88cc44', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#11221188' }).setInteractive({ useHandCursor: true });
+          const btn = this.add.text(sx + 420, sy + 4, '[ 分解 ]', { fontSize: '16px', color: '#88cc44', fontStyle: 'bold', padding: { x: 16, y: 8 }, backgroundColor: '#11221188' }).setInteractive({ useHandCursor: true });
           btn.on('pointerover', () => btn.setColor('#aaffaa'));
           btn.on('pointerout', () => btn.setColor('#88cc44'));
           btn.on('pointerdown', () => {
