@@ -1,5 +1,5 @@
 /**
- * GameState 解锁系统模块 — 始解/卍解/完现术/圣文字 + 鬼道桥接
+ * GameState 解锁系统模块 — 六大力量体系：始解/卍解/虚化/完现术/圣文字/狱解
  */
 import { Kido, KidoSchool } from './Kido';
 
@@ -23,21 +23,13 @@ export function GameStateUnlockMixin<TBase extends Constructor>(Base: TBase) {
       return this.unlocks.includes(key);
     }
 
-    get hasShikai(): boolean {
-      return this.unlocks.includes('shikai');
-    }
-
-    get hasBankai(): boolean {
-      return this.unlocks.includes('bankai');
-    }
-
-    get hasFullbring(): boolean {
-      return this.unlocks.includes('fullbring');
-    }
-
-    get hasSchrift(): boolean {
-      return this.unlocks.includes('schrift');
-    }
+    // ═══ 六大力量体系 ═══
+    get hasShikai(): boolean { return this.unlocks.includes('shikai'); }
+    get hasBankai(): boolean { return this.unlocks.includes('bankai'); }
+    get hasHollow(): boolean { return this.unlocks.includes('hollow'); }
+    get hasFullbring(): boolean { return this.unlocks.includes('fullbring'); }
+    get hasSchrift(): boolean { return this.unlocks.includes('schrift'); }
+    get hasHell(): boolean { return this.unlocks.includes('hell'); }
 
     // 鬼道桥接（保持向后兼容）
     get kidoSchool(): KidoSchool | null { return Kido.school; }

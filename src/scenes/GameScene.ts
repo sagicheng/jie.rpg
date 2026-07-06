@@ -1078,8 +1078,10 @@ export class GameScene extends Phaser.Scene {
 
     // ═══ Left: Info + Stats ═══
     p.add(this.add.text(lx, oy + th + 20, `玩家: ${GameState.playerName}   Lv.${GameState.level}   金币: ${GameState.gold}`, { fontSize: '14px', color: '#aabbdd', padding: { y: 2 } }));
-    p.add(this.add.text(lx, oy + th + 46, `元素: ${GameState.element || '无'}   斩魄刀: ${GameState.zanpakuto || '无'}   始解: ${GameState.hasShikai ? '✓' : '✗'}`, { fontSize: '12px', color: '#8899aa', padding: { y: 2 } }));
-    p.add(this.add.text(lx, oy + th + 72, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 } }));
+    p.add(this.add.text(lx, oy + th + 42, `元素: ${GameState.element || '无'}   斩魄刀: ${GameState.zanpakuto || '无'}`, { fontSize: '12px', color: '#8899aa', padding: { y: 2 } }));
+    const unlockStr = `始解${GameState.hasShikai ? '✓' : '✗'}  卍解${GameState.hasBankai ? '✓' : '✗'}  虚化${GameState.hasHollow ? '✓' : '✗'}  完现${GameState.hasFullbring ? '✓' : '✗'}  圣文${GameState.hasSchrift ? '✓' : '✗'}  狱解${GameState.hasHell ? '✓' : '✗'}`;
+    p.add(this.add.text(lx, oy + th + 62, unlockStr, { fontSize: '11px', color: '#667788', padding: { y: 2 } }));
+    p.add(this.add.text(lx, oy + th + 82, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 }, backgroundColor: '#121222' }));
 
     const attrs = [
       { l: 'HP', k: 'maxHp', a: 'allocatedHP', per: 15 }, { l: 'MP', k: 'maxMp', a: 'allocatedMP', per: 5 },
