@@ -540,46 +540,53 @@ export class GameScene extends Phaser.Scene {
 
   private startIntroDialogue(): void {
     this.isInDialogue = true;
-    const stages = [
-      () => {
-        this.dialogueBox.show({ speaker: '???', text: '你能看见我吗？那就说明你拥有死神的力量。告诉我，你的名字。' }, () => {
-          this.isInDialogue = false; this.showNamingInput();
-        });
-      },
-      () => {
-        const name = GameState.playerName || '无名';
-        this.dialogueBox.show({ speaker: '\u6d66\u539f\u559c\u52a9', text: `${name}\u2026\u2026\u597d\u540d\u5b57\u3002\u4f60\u7684\u7075\u9b42\u4e2d\u5bc4\u5bbf\u7740\u4e00\u79cd\u5143\u7d20\u4e4b\u529b\u2014\u2014\u706b\u3001\u98ce\u3001\u6c34\u3001\u571f\u3002\u9009\u62e9\u4f60\u7684\u5143\u7d20\u5171\u9e23\u5427\u3002` }, () => { this.isInDialogue = false; this.showElementSelection(); });
-      },
-      () => {
-        this.showShikaiSelection();
-      },
-    ];
-    let stage = 0;
-    const next = () => { if (stage < stages.length) { stages[stage](); stage++; } else { this.isInDialogue = false; } };
-    next();
+    this.dialogueBox.show({ speaker: '???', text: '你能看见我吗？那就说明你拥有死神的力量。告诉我，你的名字。' }, () => {
+      this.isInDialogue = false; this.showNamingInput();
+    });
   }
 
   private showNamingInput(): void {
     this.namingPanelActive = true;
+    const presets = ['隐世', '黑崎一护', '朽木露琪亚', '石田雨龙', '茶渡泰虎'];
+    let selectedIdx = 0;
     const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60).setDepth(400);
     const bg = this.add.graphics();
-    bg.fillStyle(0x1a1a2e, 0.95); bg.fillRoundedRect(-200, -40, 400, 80, 8);
-    bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-200, -40, 400, 80, 8);
+    bg.fillStyle(0x121222, 0.98); bg.fillRoundedRect(-300, -160, 600, 320, 12);
+    bg.lineStyle(2, 0x4a5a8a, 0.6); bg.strokeRoundedRect(-300, -160, 600, 320, 12);
     panel.add(bg);
-    panel.add(this.add.text(0, -15, '\u8f93\u5165\u4f60\u7684\u540d\u5b57\uff1a', { fontSize: '18px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5));
-    const inputBg = this.add.rectangle(0, 14, 180, 24, 0x0a0a1e, 1).setStrokeStyle(1, 0x446688);
-    panel.add(inputBg);
-    const inputText = this.add.text(0, 14, '隐世', { fontSize: '16px', color: '#ffffff', padding: { y: 2 } }).setOrigin(0.5);
-    panel.add(inputText);
-    const confirm = this.add.text(0, 50, '[ 确认 ]', { fontSize: '14px', color: '#88cc88', fontStyle: 'bold', padding: { x: 16, y: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    confirm.on('pointerover', () => confirm.setColor('#aaffaa'));
-    confirm.on('pointerout', () => confirm.setColor('#88cc88'));
+    panel.add(this.add.text(0, -130, '选择你的名字', { fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    presets.forEach((name, i) => {
+      const ny = -90 + i * 36;
+      const btn = this.add.text(0, ny, name, {
+        fontSize: '16px', color: i === selectedIdx ? '#ffcc44' : '#aaaacc', fontStyle: i === selectedIdx ? 'bold' : 'normal', padding: { x: 20, y: 4 },
+        backgroundColor: i === selectedIdx ? '#33220088' : '#11112288',
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      btn.on('pointerover', () => { if (i !== selectedIdx) btn.setColor('#ccccdd'); });
+      btn.on('pointerout', () => { if (i !== selectedIdx) btn.setColor('#aaaacc'); });
+      btn.on('pointerdown', () => {
+        selectedIdx = i;
+        panel.removeAll(true);
+        this.showNamingInput(); // refresh
+        // Actually just rebuild inline
+      });
+      panel.add(btn);
+    });
+    const confirm = this.add.text(0, 110, '[ 确认 ]', {
+      fontSize: '16px', color: '#88cc88', fontStyle: 'bold', padding: { x: 24, y: 8 },
+      backgroundColor: '#11221188',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    confirm.on('pointerover', () => { confirm.setColor('#aaffaa'); confirm.setBackgroundColor('#224422aa'); });
+    confirm.on('pointerout', () => { confirm.setColor('#88cc88'); confirm.setBackgroundColor('#11221188'); });
     confirm.on('pointerdown', () => {
-      const name = inputText.text || '隐世';
-      GameState.playerName = name; GameState.hasCreated = true;
+      GameState.playerName = presets[selectedIdx];
+      GameState.hasCreated = true;
       panel.destroy(true); this.namingPanelActive = false;
-      this.time.delayedCall(300, () => { this.isInDialogue = true;
-        this.dialogueBox.show({ speaker: '\u6d66\u539f\u559c\u52a9', text: `${name}\u2026\u2026\u597d\u540d\u5b57\u3002` }, () => { this.isInDialogue = false; this.showElementSelection(); });
+      this.time.delayedCall(300, () => {
+        this.isInDialogue = true;
+        this.dialogueBox.show({
+          speaker: '浦原喜助',
+          text: `${GameState.playerName}……好名字。你的灵魂中寄宿着一种元素之力——火、风、水、土。选择你的元素共鸣吧。`
+        }, () => { this.isInDialogue = false; this.showElementSelection(); });
       });
     });
     panel.add(confirm);
@@ -609,10 +616,19 @@ export class GameScene extends Phaser.Scene {
       card.on('pointerout', () => { card.clear(); card.fillStyle(parseInt(colors[el].replace('#', ''), 16), 0.2); card.fillRoundedRect(ex - 45, -25, 90, 80, 6); card.lineStyle(2, parseInt(colors[el].replace('#', ''), 16), 0.6); card.strokeRoundedRect(ex - 45, -25, 90, 80, 6); });
       card.on('pointerdown', () => {
         GameState.element = el;
+        GameState.recalcStats();
         panel.destroy(true);
         this.time.delayedCall(300, () => {
           this.isInDialogue = true;
-          this.dialogueBox.show({ speaker: '\u6d66\u539f\u559c\u52a9', text: `${el}\u5143\u7d20\u2026\u2026\u4f60\u7684\u7075\u9b42\u4e2d\u5bc4\u5bbf\u7740\u714e\u70e7\u4e07\u7269\u7684\u70ed\u60c5\u554a\u3002\u63a5\u4e0b\u6765\uff0c\u8ba9\u6211\u4eec\u770b\u770b\u4f60\u7684\u65a9\u9b44\u5200\u5427\u3002` }, () => { this.isInDialogue = false; this.showShikaiSelection(); });
+          this.dialogueBox.show({
+            speaker: '浦原喜助',
+            text: `${el}元素……你的灵魂中寄宿着这种力量。现在去探索空座町吧，和镇上的人聊聊，可能会有需要你帮助的人。`
+          }, () => {
+            this.isInDialogue = false;
+            this.scene.get('UIScene').events.emit('updateStats');
+            SaveManager.save();
+            this.tryAutoStartNextQuest();
+          });
         });
       });
     });
@@ -731,25 +747,72 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleQuestNPC(npc: NPCData): boolean {
-    if (npc.role !== 'quest' || !npc.dialogue[0]?.choices) return false;
-    const questChoice = npc.dialogue[0].choices.find(c => c.text === '\u63a5\u53d7\u4efb\u52a1');
-    if (!questChoice) return false;
-    let lineIndex = 0;
-    const showNext = () => {
-      if (lineIndex < npc.dialogue.length) {
-        const line = npc.dialogue[lineIndex]; lineIndex++;
-        this.dialogueBox.show(line, lineIndex < npc.dialogue.length ? showNext : () => { this.isInDialogue = false; });
+    // 检查是否可以完成当前任务
+    if (GameState.activeQuest) {
+      const activeDef = GameState.getActiveQuestDef();
+      if (activeDef && activeDef.completeAt === npc.name) {
+        if (GameState.questReadyToComplete) {
+          // 完成任务
+          GameState.completeQuest(activeDef.id);
+          // 发奖励
+          let rewardMsg = `任务完成：${activeDef.name}`;
+          if (activeDef.rewards.gold) { GameState.gold += activeDef.rewards.gold; rewardMsg += `\n金币+${activeDef.rewards.gold}`; }
+          if (activeDef.rewards.exp) { const lv = GameState.gainExp(activeDef.rewards.exp); rewardMsg += `\n经验+${activeDef.rewards.exp}`; if (lv) rewardMsg += `\n★升级！Lv.${GameState.level}`; }
+          if (activeDef.rewards.items) { for (const it of activeDef.rewards.items) { Inventory.addItem({ id: it.id, name: it.name, type: 'consumable' as any, desc: '', quantity: it.count }); rewardMsg += `\n${it.name}×${it.count}`; } }
+          if (activeDef.rewards.unlock) { GameState.addUnlock(activeDef.rewards.unlock); rewardMsg += `\n解锁：${activeDef.rewards.unlock}`; }
+          this.scene.get('UIScene').events.emit('updateStats');
+          // 始解试炼完成 → 触发始解选择
+          if (activeDef.id === 'shikai_trial' && !GameState.hasShikai) {
+            this.dialogueBox.show({ speaker: npc.name, text: rewardMsg + '\n\n你的斩魄刀已经觉醒了！选择它的真名吧。' }, () => {
+              this.isInDialogue = false;
+              this.showShikaiSelection();
+            });
+          } else {
+            this.dialogueBox.show({ speaker: npc.name, text: rewardMsg }, () => {
+              this.isInDialogue = false;
+              this.tryAutoStartNextQuest();
+            });
+          }
+          return true;
+        } else {
+          // 任务未完成
+          const track = GameState.getQuestTrackText();
+          this.dialogueBox.show({ speaker: npc.name, text: `任务还未完成。\n${track}` }, () => { this.isInDialogue = false; });
+          return true;
+        }
       }
-    };
-    showNext();
-    return true;
+    }
+
+    // 检查是否可以接取新任务
+    for (const questId of MAIN_QUEST_ORDER) {
+      const quest = MAIN_QUESTS[questId];
+      if (!quest) continue;
+      if (quest.acceptFrom !== npc.name) continue;
+      if (GameState.questCompleted.includes(questId)) continue;
+      if (GameState.activeQuest === questId) continue;
+      // 检查前置任务
+      if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) continue;
+      // 接取任务
+      GameState.acceptQuest(quest);
+      this.dialogueBox.show({ speaker: npc.name, text: `${quest.name}\n${quest.desc}\n\n已接取任务。` }, () => { this.isInDialogue = false; });
+      return true;
+    }
+
+    return false;
   }
 
   private tryAutoStartNextQuest(): void {
-    const completed = GameState.questCompleted;
-    if (!completed.includes('intro') && !GameState.activeQuest) {
-      const introQ = MAIN_QUESTS['intro'];
-      if (introQ) { GameState.acceptQuest(introQ); }
+    if (GameState.activeQuest) return; // 已有活跃任务
+    for (const questId of MAIN_QUEST_ORDER) {
+      if (GameState.questCompleted.includes(questId)) continue;
+      const quest = MAIN_QUESTS[questId];
+      if (!quest) continue;
+      if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) continue;
+      // 自动接取（不需要NPC对话的任务）
+      if (!quest.acceptFrom) {
+        GameState.acceptQuest(quest);
+      }
+      break;
     }
   }
   private openShop(_s: any[]): void {
@@ -768,12 +831,12 @@ export class GameScene extends Phaser.Scene {
       panel.add(this.add.text(sx + 260, sy + 18, `${item.price} 金币`, { fontSize: '12px', color: '#ffcc44', padding: { y: 2 } }));
       const canBuy = GameState.gold >= item.price;
       const buyBtn = this.add.text(sx + 300, sy + 8, '[购买]', { fontSize: '12px', color: canBuy ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true });
-      if (canBuy) { buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88')); buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44')); buyBtn.on('pointerdown', () => { GameState.gold -= item.price; Inventory.addItem({ id: item.id, name: item.name, type: 'equipment', desc: item.desc || '', quantity: 1, slot: item.slot, stats: item.stats, quality: item.quality || 'white' }); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); }); }
+      if (canBuy) { buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88')); buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44')); buyBtn.on('pointerdown', () => { GameState.gold -= item.price; const boughtItem = { id: item.id, name: item.name, type: 'equipment' as any, desc: item.desc || '', quantity: 1, slot: item.slot, stats: item.stats, quality: item.quality || 'white' }; Inventory.addItem(boughtItem); Inventory.equip(boughtItem); GameState.recalcStats(); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); }); }
       panel.add(buyBtn);
     });
     const cb3 = this.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cb3.on('pointerover', () => cb3.setColor('#ffaaaa')); cb3.on('pointerout', () => cb3.setColor('#ff6666')); cb3.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cb3);
   }
-  private openReturn(): void { this.isInDialogue = false; this.pauseForMenu(); const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-300, -150, 600, 300, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-300, -150, 600, 300, 12); panel.add(bg); panel.add(this.add.text(0, -110, '传送', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); GameState.discoveredZones.forEach((z, i2) => { const rz = ZONE_NAMES[z] || '???'; const btn = this.add.text(-200 + (i2 % 3) * 200, -60 + Math.floor(i2 / 3) * 50, rz, { fontSize: '14px', color: '#88ccff', padding: { x: 12, y: 6 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true }); btn.on('pointerover', () => btn.setColor('#aaddff')); btn.on('pointerout', () => btn.setColor('#88ccff')); btn.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); this.isInDialogue = false; this.scene.restart({ newGame: false }); GameState.zone = z; }); panel.add(btn); }); const cl4 = this.add.text(280, -130, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl4.on('pointerover', () => cl4.setColor('#ffaaaa')); cl4.on('pointerout', () => cl4.setColor('#ff6666')); cl4.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl4); }
+  private openReturn(): void { this.isInDialogue = false; this.pauseForMenu(); const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-300, -150, 600, 300, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-300, -150, 600, 300, 12); panel.add(bg); panel.add(this.add.text(0, -110, '传送', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); GameState.discoveredZones.forEach((z, i2) => { const rz = ZONE_NAMES[z] || '???'; const btn = this.add.text(-200 + (i2 % 3) * 200, -60 + Math.floor(i2 / 3) * 50, rz, { fontSize: '14px', color: '#88ccff', padding: { x: 12, y: 6 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true }); btn.on('pointerover', () => btn.setColor('#aaddff')); btn.on('pointerout', () => btn.setColor('#88ccff')); btn.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); GameState.zone = z; this.isInDialogue = false; this.scene.restart({ newGame: false }); }); panel.add(btn); }); const cl4 = this.add.text(280, -130, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl4.on('pointerover', () => cl4.setColor('#ffaaaa')); cl4.on('pointerout', () => cl4.setColor('#ff6666')); cl4.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl4); }
   private openCraft(): void { this.isInDialogue = false; this.pauseForMenu(); const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-350, -200, 700, 400, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-350, -200, 700, 400, 12); panel.add(bg); panel.add(this.add.text(0, -160, '制造', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); panel.add(this.add.text(0, -120, '收集材料来制造装备', { fontSize: '14px', color: '#888899', padding: { y: 2 } }).setOrigin(0.5)); const recipes = [{ name: '铁剑', cost: { '\u77ff\u8109': 3, '\u7075\u6728\u679d': 1 } }, { name: '铁甲', cost: { '\u77ff\u8109': 5, '\u9ebb\u5e03\u7247': 2 } }, { name: '铁手甲', cost: { '\u77ff\u8109': 2, '\u7075\u6728\u679d': 1 } }]; recipes.forEach((r, i2) => { const ry = -70 + i2 * 60; panel.add(this.add.text(-300, ry, r.name, { fontSize: '16px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } })); const costs = Object.entries(r.cost).map(([k, v]) => { const owned = Inventory.items.find(i2 => i2.id === k)?.quantity || 0; return `${k}: ${owned}/${v}`; }).join('  '); panel.add(this.add.text(-100, ry + 4, costs, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } })); const canCraft = Object.entries(r.cost).every(([k, v]) => (Inventory.items.find(i2 => i2.id === k)?.quantity || 0) >= v); const btn2 = this.add.text(200, ry - 2, '[制造]', { fontSize: '14px', color: canCraft ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 10, y: 6 }, backgroundColor: canCraft ? '#11221188' : '#11111188' }).setInteractive({ useHandCursor: true }); if (canCraft) { btn2.on('pointerover', () => btn2.setColor('#88ff88')); btn2.on('pointerout', () => btn2.setColor('#44cc44')); btn2.on('pointerdown', () => { Object.entries(r.cost).forEach(([k, v]) => { const it = Inventory.items.find(i2 => i2.id === k); if (it) it.quantity = Math.max(0, (it.quantity || 0) - v); }); Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green' }); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); }); } panel.add(btn2); }); const cl5 = this.add.text(330, -180, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl5.on('pointerover', () => cl5.setColor('#ffaaaa')); cl5.on('pointerout', () => cl5.setColor('#ff6666')); cl5.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl5); }
   private showBlacksmithLore(): void { this.isInDialogue = false; }
   private toggleInventory(): void { if (this.inventoryPanel) { this.closeInventory(); return; } this.renderInventoryPanel(); }
