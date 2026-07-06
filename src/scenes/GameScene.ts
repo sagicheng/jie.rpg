@@ -1,0 +1,1083 @@
+﻿import Phaser from 'phaser';
+import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES, ZANPAKUTO_GROWTH } from '../config';
+import { DialogueBox, DialogueLine } from '../ui/DialogueBox';
+import { GameState } from '../systems/GameState';
+import { createEnemyData, EnemyData, expForLevel } from '../systems/BattleData';
+import { getEnemyData, NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress } from '../systems/BestiaryData';
+import { Inventory, EQUIP_TEMPLATES, Item } from '../systems/Inventory';
+import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
+import { createPlayerStatus } from '../systems/StatusSystem';
+import { SaveManager } from '../systems/SaveManager';
+import { ZONE_CONFIGS, ZoneConfig } from '../systems/Zones';
+import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS, QuestDef } from '../systems/QuestData';
+import { SHIKAI_SKILLS, SkillData, ZANPAKUTO_ELEMENT } from '../systems/Skills';
+import { Kido, KIDO_NODES, KidoSchool, TIER_LOCK, getKidoColor, getKidoFullName, calcKidoPoints } from '../systems/Kido';
+import {
+  getEnhanceRate, getEnhanceCost, doEnhance,
+  getRefineMaxSlots, getRefineCost, doRefine, doRefineReset,
+  getDecompReturn, doDecompose,
+  getEnhanceLabel, getRefineDisplay,
+} from '../systems/EnhanceSystem';
+
+interface NPCData {
+  sprite: Phaser.Physics.Arcade.Sprite;
+  name: string;
+  role: string;
+  dialogue: DialogueLine[];
+  nameTag: Phaser.GameObjects.Text;
+  x: number;
+  y: number;
+  shop?: Array<{ name: string; price: number; id: string; slot: string; stats: Record<string, number>; desc: string }>;
+}
+
+export class GameScene extends Phaser.Scene {
+  private static STAT_NAMES: Record<string, string> = {
+    hp: 'HP', mp: 'MP', atk: 'ATK', def: 'DEF', matk: 'MATK', mdef: 'MDEF', spd: 'SPD',
+  };
+
+  // Core
+  private player!: Phaser.Physics.Arcade.Sprite;
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private keys!: Record<string, Phaser.Input.Keyboard.Key>;
+  private interactKey!: Phaser.Input.Keyboard.Key;
+  private ctrlKey!: Phaser.Input.Keyboard.Key;
+  private dialogueBox!: DialogueBox;
+  private isInDialogue = false;
+  private canInteract = false;
+  private currentNPC: NPCData | null = null;
+  private moveTarget: { x: number; y: number } | null = null;
+  private battleCooldown = 0;
+  private menuPauseDepth = 0;
+
+  // HUD
+  private zoneText!: Phaser.GameObjects.Text;
+  private coordText!: Phaser.GameObjects.Text;
+  private promptText!: Phaser.GameObjects.Text;
+  private miniMap!: Phaser.GameObjects.Graphics;
+
+  // Worlds
+  private npcList: NPCData[] = [];
+  private enemies: Array<{ sprite: Phaser.Physics.Arcade.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; respawnTimer?: Phaser.Time.TimerEvent }> = [];
+  private enemySprites: Phaser.Physics.Arcade.Sprite[] = [];
+  private gatherPoints: Array<{ sprite: Phaser.Physics.Arcade.Sprite; type: string; label: Phaser.GameObjects.Text }> = [];
+
+  // Panels
+  private statPanel: Phaser.GameObjects.Container | null = null;
+  private inventoryPanel: Phaser.GameObjects.Container | null = null;
+  private kidoPanel: Phaser.GameObjects.Container | null = null;
+  private kidoTooltip: Phaser.GameObjects.Container | null = null;
+  private enhancePanel: Phaser.GameObjects.Container | null = null;
+  private bestiaryPanel: Phaser.GameObjects.Container | null = null;
+  private bestiaryDetailContainer: Phaser.GameObjects.Container | null = null;
+  private namingPanelActive = false;
+
+  constructor() {
+    super({ key: 'GameScene' });
+  }
+
+  init(data?: { newGame?: boolean }): void {
+    if (data?.newGame) {
+      GameState.reset();
+      GameState.x = 400;
+      GameState.y = 500;
+      GameState.zone = 1;
+      GameState.newGame = true;
+      Inventory.addItem({ id: 'stop_blood_grass', name: '止血草', type: 'consumable', desc: '回复50HP', quantity: 5 });
+      Inventory.addItem({ id: 'medicine_pill_s', name: '伤药(小)', type: 'consumable', desc: '回复150HP', quantity: 3 });
+      Inventory.addItem({ id: 'spirit_water_s', name: '灵力水(小)', type: 'consumable', desc: '回复30MP', quantity: 3 });
+      Inventory.addItem({ id: 'antidote', name: '解毒药', type: 'consumable', desc: '解除中毒·寄生·灼烧', quantity: 2 });
+    } else if (data?.newGame === false) {
+      const loaded = SaveManager.load();
+      if (!loaded.success) {
+        GameState.reset();
+        GameState.x = 400;
+        GameState.y = 500;
+        GameState.zone = 1;
+        return;
+      }
+      GameState.newGame = false;
+      Kido.reset();
+      if (loaded.kidoSchool) Kido.school = loaded.kidoSchool as KidoSchool;
+      if (loaded.kidoNodes) Kido.nodes = { ...loaded.kidoNodes };
+      if (loaded.kidoEquipped && Array.isArray(loaded.kidoEquipped))
+        Kido.equipped = loaded.kidoEquipped.filter(id => KIDO_NODES[id]);
+    }
+  }
+
+  create(): void {
+    this.npcList = [];
+    this.enemies = [];
+    this.enemySprites = [];
+    this.gatherPoints = [];
+    this.moveTarget = null;
+    this.isInDialogue = false;
+    this.canInteract = false;
+    this.currentNPC = null;
+
+    this.createMap();
+    this.dialogueBox = new DialogueBox(this);
+    this.physics.world.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT * 2);
+
+    this.player = this.physics.add.sprite(GameState.x, GameState.y, 'player')
+      .setDepth(10).setCollideWorldBounds(true);
+    this.player.body!.setSize(24, 32);
+    this.player.body!.setOffset(4, 0);
+
+    this.createNPCs();
+    this.createEnemies();
+    this.createGatheringPoints();
+
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    this.keys = {
+      W: this.input.keyboard!.addKey('W'), A: this.input.keyboard!.addKey('A'),
+      S: this.input.keyboard!.addKey('S'), D: this.input.keyboard!.addKey('D'),
+      SHIFT: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+    };
+    this.interactKey = this.input.keyboard!.addKey('F');
+    this.input.keyboard!.addKey('B').on('down', () => { if (!this.isInDialogue && !this.statPanel) this.toggleInventory(); });
+    this.input.keyboard!.addKey('C').on('down', () => { if (!this.isInDialogue && !this.inventoryPanel) this.toggleStatPanel(); });
+    this.input.keyboard!.addKey('K').on('down', () => {
+      if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel) this.showKidoPanel();
+    });
+    this.input.keyboard!.addKey('N').on('down', () => {
+      if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel)
+        this.toggleBestiaryPanel();
+    });
+    this.input.keyboard!.addKey('ESC').on('down', () => {
+      if (this.inventoryPanel) { this.closeInventory(); return; }
+      if (this.statPanel) { this.closeStatPanel(); return; }
+      if (this.kidoPanel) { this.closeKidoPanel(); return; }
+      if (this.enhancePanel) { this.closeEnhancePanel(); return; }
+      if (this.bestiaryPanel) { this.closeBestiaryPanel(); return; }
+      if (this.isInDialogue) return;
+      SaveManager.save();
+      const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '已存档', {
+        fontSize: '24px', color: '#88ff88', fontStyle: 'bold',
+        backgroundColor: '#112211cc', padding: { x: 20, y: 12 },
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+      this.tweens.add({
+        targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 30,
+        duration: 1200, delay: 400, onComplete: () => notif.destroy(),
+      });
+    });
+
+    // 鼠标点击移动
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel) return;
+      const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      this.moveTarget = { x: wp.x, y: wp.y };
+    });
+
+    // Dev cheats
+    const ctrl = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
+    this.ctrlKey = ctrl;
+    const showDevNotif = (msg: string, color = '#88ff88') => {
+      const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, msg, {
+        fontSize: '18px', color, fontStyle: 'bold',
+        backgroundColor: '#112211cc', padding: { x: 16, y: 8 },
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+      this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 80, duration: 1500, onComplete: () => n.destroy() });
+    };
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A).on('down', () => {
+      if (ctrl.isDown) {
+        GameState.allocatedATK += 50; GameState.allocatedMATK += 50;
+        GameState.recalcStats(); GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
+        showDevNotif(`ATK+50 MATK+50 (ATK:${GameState.atk} MATK:${GameState.matk})`, '#ff6644');
+        this.scene.get('UIScene').events.emit('updateStats');
+      }
+    });
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S).on('down', () => {
+      if (ctrl.isDown) { GameState.statPoints += 10; this.scene.get('UIScene').events.emit('updateStats'); showDevNotif('属性点+10', '#44ccff'); }
+    });
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D).on('down', () => {
+      if (ctrl.isDown) { GameState.gold += 10000; showDevNotif('金币+10000', '#ffcc44'); }
+    });
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F).on('down', () => {
+      if (ctrl.isDown) { GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp; showDevNotif('HP/MP全满', '#88ff88'); }
+    });
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G).on('down', () => {
+      if (ctrl.isDown) { GameState.exp += expForLevel(GameState.level + 1); GameState.checkLevelUp(); showDevNotif('经验+1级', '#ccaaff'); this.scene.get('UIScene').events.emit('updateStats'); }
+    });
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.H).on('down', () => {
+      if (ctrl.isDown) {
+        for (const name of Object.keys(NAMED_ENEMIES)) { 
+          for (let i = 0; i < 100; i++) GameState.recordKill(name); 
+        }
+        showDevNotif('全图鉴解锁(击杀x100)', '#ffcc44');
+      }
+    });
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.J).on('down', () => {
+      if (ctrl.isDown) { GameState.recordKill('大虚·亚丘卡斯'); showDevNotif('Boss击杀+1', '#ff4444'); }
+    });
+
+    this.zoneText = this.add.text(16, 12, `\${GameState.playerName} · \${ZONE_NAMES[GameState.zone]}`, {
+      fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
+      backgroundColor: '#000000aa', padding: { x: 8, y: 2 },
+    }).setScrollFactor(0).setDepth(100);
+    this.coordText = this.add.text(16, 34, 'X:0 Y:0', {
+      fontSize: '11px', color: '#88aacc',
+      backgroundColor: '#1a1a2ecc', padding: { x: 8, y: 2 },
+    }).setScrollFactor(0).setDepth(100);
+    this.promptText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 60, '', {
+      fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
+      backgroundColor: '#1a1a2ecc', padding: { x: 8, y: 2 },
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
+    this.miniMap = this.add.graphics().setScrollFactor(0).setDepth(100);
+    this.scene.launch('UIScene');
+
+    this.time.delayedCall(100, () => {
+      this.scene.get('UIScene').events.emit('updateStats');
+    });
+
+    if (!GameState.hasCreated && GameState.newGame) {
+      this.time.delayedCall(500, () => this.startIntroDialogue());
+    }
+
+    this.cameras.main.fadeIn(500, 0, 0, 0);
+
+    // Zone entry banner
+    const zoneName = ZONE_NAMES[GameState.zone] || '???';
+    const zoneBanner = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40, zoneName, {
+      fontSize: '28px', color: '#ffe8b0', fontStyle: 'bold',
+      backgroundColor: '#000000aa', padding: { x: 24, y: 12 },
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(250).setAlpha(0);
+    this.tweens.add({
+      targets: zoneBanner, alpha: 1, duration: 500,
+      onComplete: () => {
+        this.tweens.add({
+          targets: zoneBanner, alpha: 0, duration: 1500, delay: 1000,
+          onComplete: () => zoneBanner.destroy(),
+        });
+      },
+    });
+  }
+
+  // ════════════════ Update Loop ════════════════
+
+  update(): void {
+    this.enemies.forEach(e => { e.label.setPosition(e.sprite.x, e.sprite.y - e.sprite.height / 2 - 10); });
+    if (this.isInDialogue) { this.player.setVelocity(0, 0); return; }
+    const speed = this.ctrlKey.isDown ? 500 : 160;
+    let vx = 0, vy = 0;
+    if (this.moveTarget) {
+      const dx = this.moveTarget.x - this.player.x, dy = this.moveTarget.y - this.player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 8) { this.moveTarget = null; }
+      else { vx = (dx / dist) * speed; vy = (dy / dist) * speed; }
+    } else {
+      if (this.cursors.left.isDown || this.keys.A.isDown) vx = -1;
+      else if (this.cursors.right.isDown || this.keys.D.isDown) vx = 1;
+      if (this.cursors.up.isDown || this.keys.W.isDown) vy = -1;
+      else if (this.cursors.down.isDown || this.keys.S.isDown) vy = 1;
+      if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
+      vx *= speed; vy *= speed;
+    }
+    this.player.setVelocity(vx, vy);
+    if (vx < 0) this.player.setFlipX(true); else if (vx > 0) this.player.setFlipX(false);
+    this.checkNPCProximity(); this.checkGatherProximity(); this.checkZoneExit();
+    this.checkInteract(); this.updateMiniMap(); this.checkEnemyCollision();
+    GameState.x = this.player.x; GameState.y = this.player.y;
+    if (this.battleCooldown > 0) this.battleCooldown--;
+    this.coordText.setText(`X:${Math.round(this.player.x)}  Y:${Math.round(this.player.y)}`);
+  }
+
+  private pauseForMenu(): void { this.menuPauseDepth++; if (this.menuPauseDepth === 1) this.physics.pause(); }
+  private resumeFromMenu(): void { this.menuPauseDepth = Math.max(0, this.menuPauseDepth - 1); if (this.menuPauseDepth === 0) this.physics.resume(); }
+
+  // ═══ NPC ═══
+  private checkNPCProximity(): void {
+    this.canInteract = false; this.currentNPC = null; let closestDist = Infinity;
+    for (const npc of this.npcList) { const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.sprite.x, npc.sprite.y); if (dist < 50 && dist < closestDist) { closestDist = dist; this.currentNPC = npc; this.canInteract = true; } }
+    if (this.canInteract && this.currentNPC) { this.promptText.setText(`按 F 与 ${this.currentNPC.name} 对话`); this.promptText.setPosition(this.currentNPC.sprite.x, this.currentNPC.sprite.y - 50); this.promptText.setVisible(true); }
+    else { this.promptText.setVisible(false); }
+  }
+  private checkInteract(): void { if (Phaser.Input.Keyboard.JustDown(this.interactKey) && this.canInteract && this.currentNPC) this.startDialogue(this.currentNPC); }
+  private startDialogue(npc: NPCData): void {
+    this.isInDialogue = true; this.player.setVelocity(0, 0); this.promptText.setVisible(false);
+    GameState.updateQuestProgress('talk', npc.name, 1);
+    const questResult = this.handleQuestNPC(npc); if (questResult) return;
+    let lineIndex = 0;
+    const showNext = () => { if (lineIndex < npc.dialogue.length) { const line = npc.dialogue[lineIndex]; lineIndex++; this.dialogueBox.show(line, lineIndex < npc.dialogue.length ? showNext : () => { this.isInDialogue = false; }); } };
+    showNext();
+  }
+
+  // ═══ Zone ═══
+  private checkZoneExit(): void {
+    const cfg = ZONE_CONFIGS[GameState.zone]; if (!cfg) return;
+    for (const exit of cfg.exits) { const ex = exit.x * GAME_WIDTH * 3, ey = exit.y * GAME_HEIGHT * 2; const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, ex, ey); if (dist < 60) { this.promptText.setText(`按 F 前往 ${ZONE_NAMES[exit.targetZone]}`); this.promptText.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60); this.promptText.setVisible(true); if (Phaser.Input.Keyboard.JustDown(this.interactKey)) this.transitionToZone(exit.targetZone, exit.targetX * GAME_WIDTH * 3, exit.targetY * GAME_HEIGHT * 2); return; } }
+    if (!this.canInteract) this.promptText.setVisible(false);
+  }
+  private transitionToZone(tz: number, tx: number, ty: number): void {
+    this.isInDialogue = true; GameState.zone = tz; GameState.x = tx; GameState.y = ty; this.battleCooldown = 60;
+    if (!GameState.discoveredZones.includes(tz)) GameState.discoveredZones.push(tz);
+    GameState.updateQuestProgress('reach', ZONE_NAMES[tz] || '', 1);
+    this.cameras.main.fadeOut(400, 0, 0, 0);
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      this.enemies.forEach(e => { e.sprite.destroy(); e.label.destroy(); }); this.enemies = []; this.enemySprites = [];
+      this.npcList.forEach(n => { n.sprite.destroy(); n.nameTag.destroy(); }); this.npcList = [];
+      this.children.each((c2: any) => { if (c2.type === 'Graphics' && [0,3,4].includes(c2.depth||-1)) c2.destroy(); if (c2.type === 'Text' && [4,6].includes(c2.depth||-1)) c2.destroy(); });
+      this.createMap(); this.createNPCs(); this.createEnemies(); this.createGatheringPoints();
+      this.zoneText.setText(`${GameState.playerName} · ${ZONE_NAMES[GameState.zone]}`);
+      this.player.setPosition(tx, ty); this.isInDialogue = false; this.cameras.main.fadeIn(400,0,0,0); SaveManager.save();
+      const b = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2-40, ZONE_NAMES[tz], {fontSize:'28px',color:'#ffe8b0',fontStyle:'bold',backgroundColor:'#000000aa',padding:{x:24,y:12}}).setOrigin(0.5).setScrollFactor(0).setDepth(250).setAlpha(0);
+      this.tweens.add({targets:b,alpha:1,duration:500,onComplete:()=>{this.tweens.add({targets:b,alpha:0,duration:1200,delay:1000,onComplete:()=>b.destroy()});}});
+    });
+  }
+
+  // ═══ Enemies ═══
+  private checkEnemyCollision(): void { if (this.battleCooldown > 0 || this.isInDialogue) return; for (const en of this.enemies) { if (en.data.hp<=0) continue; if (Phaser.Math.Distance.Between(this.player.x,this.player.y,en.sprite.x,en.sprite.y)<50){this.battleCooldown=180;this.scene.pause();this.scene.launch('BattleScene',{template:en.data,enemyRef:en,zone:GameState.zone});return;} } }
+  onBattleEnd(result: string, er: any): void {
+    this.input.keyboard!.resetKeys(); this.physics.resume(); this.menuPauseDepth = 0;
+    if (result === 'defeat') { this.player.x=400;this.player.y=500;GameState.hp=GameState.maxHp;GameState.mp=GameState.maxMp;return; }
+    const a=Phaser.Math.Angle.Between(er.sprite.x,er.sprite.y,this.player.x,this.player.y);this.player.x+=Math.cos(a)*80;this.player.y+=Math.sin(a)*80;
+    if (result === 'victory') {
+      const ib=er.data.type==='妖将'||er.data.type==='妖王';
+      er.data.hp=0;er.sprite.setVisible(false);er.sprite.setActive(false).setPosition(-9999,-9999);er.label.setVisible(false);
+      if (er.respawnTimer) er.respawnTimer.destroy();
+      const d=ib?7200000:er.data.type==='恶妖'?300000:30000;
+      er.respawnTimer=this.time.delayedCall(d,()=>{er.data.hp=er.data.maxHp;er.sprite.setVisible(true);er.sprite.setActive(true).setPosition(er.sprite.x,er.sprite.y);er.label.setVisible(true);if(ib){this.tweens.add({targets:er.sprite,scaleX:1.65,scaleY:1.55,duration:1500,yoyo:true,repeat:-1,ease:'Sine.easeInOut'});}});
+    }
+  }
+
+  // ════════════════ Map / World ════════════════
+
+  private createMap(): void {
+    const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
+    const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2;
+    const g = this.add.graphics().setDepth(0);
+    g.fillStyle(cfg.groundColor, 1);
+    g.fillRect(0, 0, mapW, mapH);
+
+    // Roads
+    g.fillStyle(cfg.roadColor, 1);
+    g.fillRect(0, mapH * 0.45, mapW, 60);
+    g.fillRect(mapW * 0.48, 0, 60, mapH);
+
+    // Decorations
+    for (const dec of cfg.decorations) {
+      const dx = dec.x * mapW, dy = dec.y * mapH;
+      if (dec.type === 'house') {
+        g.fillStyle(0x665544, 1);
+        g.fillRect(dx - (dec.w || 100) / 2, dy - 40, dec.w || 100, dec.h || 80);
+        g.fillStyle(0x554433, 1);
+        g.fillRect(dx - (dec.w || 100) / 4, dy - 40, (dec.w || 100) / 2, 50);
+      } else if (dec.type === 'pond') {
+        g.fillStyle(0x335577, 0.7);
+        g.fillEllipse(dx, dy, dec.w || 100, dec.h || 70);
+      }
+    }
+
+    // Trees
+    g.fillStyle(cfg.treeColor, 1);
+    for (let i = 0; i < 40; i++) {
+      const tx = Phaser.Math.Between(50, mapW - 50), ty = Phaser.Math.Between(50, mapH - 50);
+      g.fillCircle(tx, ty, 16);
+      g.fillStyle(0x553311, 1);
+      g.fillRect(tx - 2, ty + 12, 4, 16);
+      g.fillStyle(cfg.treeColor, 1);
+    }
+
+    // Zone exit portals
+    for (const exit of cfg.exits) {
+      const ex = exit.x * mapW, ey = exit.y * mapH;
+      const arrowMap: Record<string, string> = { east: '\u2192', west: '\u2190', north: '\u2191', south: '\u2193', northwest: '\u2196', northeast: '\u2197', southwest: '\u2199', southeast: '\u2198' };
+      const portal = this.add.graphics();
+      portal.fillStyle(0x44aaff, 0.15); portal.fillCircle(ex, ey, 35);
+      portal.fillStyle(0x44aaff, 0.30); portal.fillCircle(ex, ey, 22);
+      portal.lineStyle(2, 0x88ddff, 0.8); portal.strokeCircle(ex, ey, 30);
+      portal.setDepth(3);
+      this.tweens.add({ targets: portal, alpha: 0.35, duration: 1200, yoyo: true, repeat: -1 });
+      const arrow = this.add.text(ex, ey, arrowMap[exit.edge] || '\u2192', { fontSize: '22px', color: '#88ddff', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(4);
+      this.tweens.add({ targets: arrow, alpha: 0.4, duration: 1000, yoyo: true, repeat: -1 });
+    }
+  }
+
+  private createNPCs(): void {
+    const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
+    for (const c of cfg.npcs) {
+      const nx = c.x * GAME_WIDTH * 3, ny = c.y * GAME_HEIGHT * 2;
+      const npc = this.physics.add.sprite(nx, ny, 'npc').setImmovable(true).setDepth(5);
+      const tag = this.add.text(nx, ny - 30, c.name, {
+        fontSize: '11px',
+        color: c.role === 'merchant' ? '#ffdd88' : c.role === 'return_point' ? '#88ccff' : c.role === 'craft' ? '#aa88ff' : c.role === 'enhance' ? '#ff8844' : '#ffe8b0',
+        backgroundColor: '#00000088', padding: { x: 4, y: 2 },
+      }).setOrigin(0.5).setDepth(6);
+      this.tweens.add({ targets: npc, scaleY: 1.03, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+      const dialogueLines: DialogueLine[] = c.dialogue.map((d, i) => {
+        const line: DialogueLine = { speaker: d.speaker, text: d.text };
+        if (d.choices && i === 0) {
+          line.choices = d.choices.map(ch => ({
+            text: ch.text,
+            callback: () => {
+              if (ch.callback === 'openShop') this.openShop(c.shop || []);
+              else if (ch.callback === 'showBlacksmithLore') this.showBlacksmithLore();
+              else if (ch.callback === 'acceptQuest') this.acceptQuest();
+              else if (ch.callback === 'closeDialogue') this.isInDialogue = false;
+              else if (ch.callback === 'openReturn') this.openReturn();
+              else if (ch.callback === 'openCraft') this.openCraft();
+              else if (ch.callback === 'openEnhance') { this.isInDialogue = false; this.toggleEnhancePanel(); }
+              else { this.isInDialogue = false; }
+            },
+          }));
+        }
+        return line;
+      });
+
+      this.npcList.push({ sprite: npc, name: c.name, role: c.role, dialogue: dialogueLines, nameTag: tag, x: nx, y: ny, shop: c.shop });
+    }
+  }
+
+  private createEnemies(): void {
+    const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
+    const occupied: { x: number; y: number }[] = this.npcList.map(n => ({ x: n.x, y: n.y }));
+    for (const e of cfg.enemies) {
+      const normX = Math.min(0.95, Math.max(0.05, e.x > 1.0 ? e.x / 3.0 : e.x));
+      const normY = Math.min(0.95, Math.max(0.05, e.y > 1.0 ? e.y / 2.0 : e.y));
+      let ex = normX * GAME_WIDTH * 3, ey = normY * GAME_HEIGHT * 2;
+      for (const o of occupied) { const dx = ex - o.x, dy = ey - o.y; if (Math.sqrt(dx * dx + dy * dy) < 80) { ex += Phaser.Math.Between(60, 120) * (Math.random() > 0.5 ? 1 : -1); ey += Phaser.Math.Between(60, 100) * (Math.random() > 0.5 ? 1 : -1); break; } }
+      occupied.push({ x: ex, y: ey });
+      const data = getEnemyData(e.name, e.type, e.element, GameState.zone);
+      const isBoss = e.isBoss === true || e.type === '\u5996\u5c06' || e.type === '\u5996\u738b';
+      const sprite = this.physics.add.sprite(ex, ey, isBoss ? 'enemy_boss' : 'enemy').setDepth(5);
+      if (isBoss) { sprite.setScale(1.6).setTint(0xffcc44); this.tweens.add({ targets: sprite, scaleX: 1.65, scaleY: 1.55, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
+      else { const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30); this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
+      const label = this.add.text(ex, ey - sprite.height / 2 - 10, isBoss ? '\u3010BOSS\u3011' + e.name : e.name, { fontSize: '11px', color: isBoss ? '#ffcc44' : e.type === '\u6076\u5996' ? '#ff8866' : '#aaaabb', fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(6);
+      this.enemies.push({ sprite, data, label });
+      this.enemySprites.push(sprite);
+    }
+  }
+
+  private createGatheringPoints(): void {
+    this.gatherPoints = [];
+    const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
+    for (const pt of cfg.gathering) {
+      const gx = pt.x * GAME_WIDTH * 3, gy = pt.y * GAME_HEIGHT * 2;
+      const colors: Record<string, number> = { '\u77ff\u8109': 0x886644, '\u836f\u8349': 0x44aa44, '\u7075\u6728': 0x668844, '\u7075\u8109': 0x8844cc };
+      const sprite = this.physics.add.sprite(gx, gy, 'gather').setDepth(2);
+      sprite.setTint(colors[pt.type] || 0x88aa88);
+      const label = this.add.text(gx, gy - 20, pt.type, { fontSize: '10px', color: '#aaddaa', backgroundColor: '#00000066', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(3);
+      this.tweens.add({ targets: sprite, alpha: 0.6, duration: 1500, yoyo: true, repeat: -1 });
+      this.gatherPoints.push({ sprite, type: pt.type, label });
+    }
+  }
+
+  private checkGatherProximity(): void {
+    if (this.isInDialogue) return;
+    for (const pt of this.gatherPoints) {
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, pt.sprite.x, pt.sprite.y);
+      if (dist < 55 && Phaser.Input.Keyboard.JustDown(this.interactKey)) {
+        this.isInDialogue = true;
+        const matNames: Record<string, string> = { '\u77ff\u8109': '\u94c1\u77ff\u77f3', '\u836f\u8349': '\u6b62\u8840\u8349', '\u7075\u6728': '\u7075\u6728\u679d', '\u7075\u8109': '\u7075\u529b\u6c34' };
+        const matName = matNames[pt.type] || pt.type;
+        GameState.updateQuestProgress('collect', pt.type, 1);
+        Inventory.addItem({ id: `mat_${pt.type}`, name: matName, type: 'material', desc: '\u91ce\u5916\u91c7\u96c6\u83b7\u5f97', quantity: 1 });
+        pt.sprite.setVisible(false); pt.label.setVisible(false);
+        this.time.delayedCall(30000, () => { pt.sprite.setVisible(true); pt.label.setVisible(true); });
+        const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, `\u83b7\u5f97\uff1a${matName}`, { fontSize: '18px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 16, y: 8 } }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+        this.tweens.add({ targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 100, duration: 1500, onComplete: () => notif.destroy() });
+        this.time.delayedCall(300, () => { this.isInDialogue = false; });
+        return;
+      }
+    }
+  }
+
+  private updateMiniMap(): void {
+    this.miniMap.clear();
+    const mmX = GAME_WIDTH - 180, mmY = 8, mmW = 170, mmH = 110;
+    this.miniMap.fillStyle(0x111122, 0.7);
+    this.miniMap.fillRoundedRect(mmX, mmY, mmW, mmH, 4);
+    this.miniMap.lineStyle(1, 0x444466, 1);
+    this.miniMap.strokeRoundedRect(mmX, mmY, mmW, mmH, 4);
+    const sx = mmW / (GAME_WIDTH * 3), sy = mmH / (GAME_HEIGHT * 2);
+    const cfg = ZONE_CONFIGS[GameState.zone];
+    if (cfg) {
+      for (const exit of cfg.exits) {
+        const dotX = mmX + exit.x * mmW, dotY = mmY + exit.y * mmH;
+        const flash = Math.sin(this.time.now / 300) * 0.3 + 0.7;
+        this.miniMap.fillStyle(0x44aaff, flash * 0.3); this.miniMap.fillCircle(dotX, dotY, 6);
+        this.miniMap.fillStyle(0x88ddff, flash); this.miniMap.fillCircle(dotX, dotY, 3);
+        this.miniMap.lineStyle(1, 0xffffff, 0.8); this.miniMap.strokeCircle(dotX, dotY, 4);
+      }
+    }
+    this.miniMap.fillStyle(0x44aaff, 1);
+    this.miniMap.fillCircle(mmX + this.player.x * sx, mmY + this.player.y * sy, 3);
+    this.npcList.forEach(npc => {
+      const ndx = mmX + npc.x * sx, ndy = mmY + npc.y * sy;
+      const color = npc.role === 'merchant' ? 0xffdd44 : npc.role === 'return_point' ? 0x88ccff : npc.role === 'craft' ? 0xaa88ff : npc.role === 'enhance' ? 0xff8844 : 0x44cc44;
+      this.miniMap.fillStyle(color, 0.8); this.miniMap.fillCircle(ndx, ndy, 2);
+    });
+  }
+  private acceptQuest(): void { this.isInDialogue = false; this.tryAutoStartNextQuest(); }
+
+  private startIntroDialogue(): void {
+    this.isInDialogue = true;
+    const stages = [
+      () => {
+        this.dialogueBox.show({ speaker: '???', text: '你能看见我吗？那就说明你拥有死神的力量。告诉我，你的名字。' }, () => {
+          this.isInDialogue = false; this.showNamingInput();
+        });
+      },
+      () => {
+        const name = GameState.playerName || '无名';
+        this.dialogueBox.show({ speaker: '\u6d66\u539f\u559c\u52a9', text: `${name}\u2026\u2026\u597d\u540d\u5b57\u3002\u4f60\u7684\u7075\u9b42\u4e2d\u5bc4\u5bbf\u7740\u4e00\u79cd\u5143\u7d20\u4e4b\u529b\u2014\u2014\u706b\u3001\u98ce\u3001\u6c34\u3001\u571f\u3002\u9009\u62e9\u4f60\u7684\u5143\u7d20\u5171\u9e23\u5427\u3002` }, () => { this.isInDialogue = false; this.showElementSelection(); });
+      },
+      () => {
+        this.showShikaiSelection();
+      },
+    ];
+    let stage = 0;
+    const next = () => { if (stage < stages.length) { stages[stage](); stage++; } else { this.isInDialogue = false; } };
+    next();
+  }
+
+  private showNamingInput(): void {
+    this.namingPanelActive = true;
+    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60).setDepth(400);
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1a1a2e, 0.95); bg.fillRoundedRect(-200, -40, 400, 80, 8);
+    bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-200, -40, 400, 80, 8);
+    panel.add(bg);
+    panel.add(this.add.text(0, -15, '\u8f93\u5165\u4f60\u7684\u540d\u5b57\uff1a', { fontSize: '18px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5));
+    const inputBg = this.add.rectangle(0, 14, 180, 24, 0x0a0a1e, 1).setStrokeStyle(1, 0x446688);
+    panel.add(inputBg);
+    const inputText = this.add.text(0, 14, '隐世', { fontSize: '16px', color: '#ffffff', padding: { y: 2 } }).setOrigin(0.5);
+    panel.add(inputText);
+    const confirm = this.add.text(0, 50, '[ 确认 ]', { fontSize: '14px', color: '#88cc88', fontStyle: 'bold', padding: { x: 16, y: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    confirm.on('pointerover', () => confirm.setColor('#aaffaa'));
+    confirm.on('pointerout', () => confirm.setColor('#88cc88'));
+    confirm.on('pointerdown', () => {
+      const name = inputText.text || '隐世';
+      GameState.playerName = name; GameState.hasCreated = true;
+      panel.destroy(true); this.namingPanelActive = false;
+      this.time.delayedCall(300, () => { this.isInDialogue = true;
+        this.dialogueBox.show({ speaker: '\u6d66\u539f\u559c\u52a9', text: `${name}\u2026\u2026\u597d\u540d\u5b57\u3002` }, () => { this.isInDialogue = false; this.showElementSelection(); });
+      });
+    });
+    panel.add(confirm);
+  }
+
+  private showElementSelection(): void {
+    this.isInDialogue = true;
+    const elements = ['\u706b', '\u98ce', '\u6c34', '\u571f'];
+    const colors: Record<string, string> = { '\u706b': '#ff6644', '\u98ce': '#44cc88', '\u6c34': '#4488ff', '\u571f': '#cc9944' };
+    const desc: Record<string, string> = { '\u706b': '\u5f3a\u653b\u578b\uff0cATK+10%', '\u98ce': '\u654f\u6377\u578b\uff0cSPD+10%', '\u6c34': '\u5747\u8861\u578b\uff0cHP+5% MP+5%', '\u571f': '\u9632\u5fa1\u578b\uff0cDEF+10%' };
+    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30).setDepth(400);
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1a1a2e, 0.95); bg.fillRoundedRect(-250, -100, 500, 200, 10);
+    bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-250, -100, 500, 200, 10);
+    panel.add(bg);
+    panel.add(this.add.text(0, -70, '选择你的元素共鸣', { fontSize: '20px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    elements.forEach((el, i) => {
+      const ex = -180 + i * 120;
+      const card = this.add.graphics();
+      card.fillStyle(parseInt(colors[el].replace('#', ''), 16), 0.2); card.fillRoundedRect(ex - 45, -25, 90, 80, 6);
+      card.lineStyle(2, parseInt(colors[el].replace('#', ''), 16), 0.6); card.strokeRoundedRect(ex - 45, -25, 90, 80, 6);
+      panel.add(card);
+      panel.add(this.add.text(ex, -15, el, { fontSize: '22px', color: colors[el], fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5));
+      panel.add(this.add.text(ex, 10, desc[el], { fontSize: '9px', color: '#aaaacc', wordWrap: { width: 80 }, padding: { y: 1 } }).setOrigin(0.5));
+      card.setInteractive(new Phaser.Geom.Rectangle(ex - 45, -25, 90, 80), Phaser.Geom.Rectangle.Contains);
+      card.on('pointerover', () => { card.clear(); card.fillStyle(parseInt(colors[el].replace('#', ''), 16), 0.4); card.fillRoundedRect(ex - 45, -25, 90, 80, 6); card.lineStyle(2, parseInt(colors[el].replace('#', ''), 16), 0.9); card.strokeRoundedRect(ex - 45, -25, 90, 80, 6); });
+      card.on('pointerout', () => { card.clear(); card.fillStyle(parseInt(colors[el].replace('#', ''), 16), 0.2); card.fillRoundedRect(ex - 45, -25, 90, 80, 6); card.lineStyle(2, parseInt(colors[el].replace('#', ''), 16), 0.6); card.strokeRoundedRect(ex - 45, -25, 90, 80, 6); });
+      card.on('pointerdown', () => {
+        GameState.element = el;
+        panel.destroy(true);
+        this.time.delayedCall(300, () => {
+          this.isInDialogue = true;
+          this.dialogueBox.show({ speaker: '\u6d66\u539f\u559c\u52a9', text: `${el}\u5143\u7d20\u2026\u2026\u4f60\u7684\u7075\u9b42\u4e2d\u5bc4\u5bbf\u7740\u714e\u70e7\u4e07\u7269\u7684\u70ed\u60c5\u554a\u3002\u63a5\u4e0b\u6765\uff0c\u8ba9\u6211\u4eec\u770b\u770b\u4f60\u7684\u65a9\u9b44\u5200\u5427\u3002` }, () => { this.isInDialogue = false; this.showShikaiSelection(); });
+        });
+      });
+    });
+  }
+
+  private showShikaiSelection(): void {
+    // \u4eceZANPAKUTO_ELEMENT\u8bfb\u53d6\u5f53\u524d\u5143\u7d20\u7684\u5168\u90e89\u628a\u65a9\u9b44\u5200
+    const el = GameState.element || '\u706b';
+    const zanList = Object.entries(ZANPAKUTO_ELEMENT)
+      .filter(([_, e]) => e === el)
+      .map(([name]) => name);
+
+    this.isInDialogue = true;
+    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(400);
+    const bg = this.add.graphics();
+    bg.fillStyle(0x121222, 0.98); bg.fillRoundedRect(-560, -340, 1120, 680, 14);
+    bg.lineStyle(2, 0x4a5a8a, 0.6); bg.strokeRoundedRect(-560, -340, 1120, 680, 14);
+    panel.add(bg);
+
+    // \u6807\u9898\u680f
+    const tb = this.add.graphics(); tb.fillStyle(0x1a1a36, 1);
+    tb.fillRoundedRect(-556, -336, 1112, 50, { tl: 10, tr: 10, bl: 0, br: 0 }); panel.add(tb);
+    const elNames: Record<string, string> = { '\u706b': '\u706b\u7cfb', '\u98ce': '\u98ce\u7cfb', '\u6c34': '\u6c34\u7cfb', '\u571f': '\u571f\u7cfb' };
+    panel.add(this.add.text(0, -311, '\u25c6  ' + (elNames[el] || el) + '\u59cb\u89e3\u65a9\u9b44\u5200\u9009\u62e9  \u25c6', {
+      fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+
+    const elColors: Record<string, number> = { '\u706b': 0xff6644, '\u98ce': 0x44cc88, '\u6c34': 0x4488ff, '\u571f': 0xcc9944 };
+    const elColor = elColors[el] || 0x888888;
+
+    // 3\u00d73\u7f51\u683c\u5c55\u793a9\u628a\u65a9\u9b44\u5200
+    const cols = 3, cardW = 340, cardH = 170, gapX = 16, gapY = 14;
+    const startX = -(cols * cardW + (cols - 1) * gapX) / 2;
+    const startY = -270;
+
+    zanList.forEach((zan, i) => {
+      const col = i % cols, row = Math.floor(i / cols);
+      const zx = startX + col * (cardW + gapX);
+      const zy = startY + row * (cardH + gapY);
+
+      // \u5361\u7247\u80cc\u666f
+      const card = this.add.graphics();
+      card.fillStyle(0x0d0d1d, 0.8); card.fillRoundedRect(zx, zy, cardW, cardH, 8);
+      card.lineStyle(1, elColor, 0.3); card.strokeRoundedRect(zx, zy, cardW, cardH, 8);
+      panel.add(card);
+
+      // \u540d\u79f0
+      panel.add(this.add.text(zx + 12, zy + 8, zan, {
+        fontSize: '16px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
+
+      // \u6210\u957f\u7387\u63cf\u8ff0
+      const growth = ZANPAKUTO_GROWTH[zan] || {};
+      const topStats = Object.entries(growth)
+        .filter(([k]) => k !== 'statusAcc')
+        .sort((a, b) => (b[1] as number) - (a[1] as number))
+        .slice(0, 3)
+        .map(([k, v]) => `${k} ${v}`);
+      panel.add(this.add.text(zx + 12, zy + 32, topStats.join('  |  '), {
+        fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
+
+      // \u6280\u80fd\u4fe1\u606f
+      const skills = SHIKAI_SKILLS[zan];
+      if (skills && skills.length > 0) {
+        const sInfo = skills.slice(0, 2).map(s => `\u2726 ${s.name} [\u5a01${s.power}]`).join('\n');
+        panel.add(this.add.text(zx + 12, zy + 52, sInfo, {
+          fontSize: '10px', color: '#ddaabb', padding: { y: 1 } }));
+        if (skills[0].desc) {
+          panel.add(this.add.text(zx + 12, zy + 92, skills[0].desc, {
+            fontSize: '9px', color: '#778899', wordWrap: { width: cardW - 24 }, padding: { y: 1 } }));
+        }
+      }
+
+      // \u72b6\u6001\u63a7\u5236\u6807\u8bb0
+      if (growth.statusAcc) {
+        panel.add(this.add.text(zx + cardW - 60, zy + 8, '\u63a7\u5236', {
+          fontSize: '9px', color: '#cc88ff', fontStyle: 'bold',
+          backgroundColor: '#22114488', padding: { x: 4, y: 1 } }));
+      }
+
+      // \u9009\u62e9\u6309\u94ae
+      const sel = this.add.text(zx + cardW / 2, zy + cardH - 22, '[ \u9009\u62e9\u6b64\u5200 ]', {
+        fontSize: '13px', color: '#ffcc44', fontStyle: 'bold',
+        backgroundColor: '#33220088', padding: { x: 16, y: 5 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      sel.on('pointerover', () => { sel.setColor('#ffff88'); sel.setBackgroundColor('#443300aa'); });
+      sel.on('pointerout', () => { sel.setColor('#ffcc44'); sel.setBackgroundColor('#33220088'); });
+      sel.on('pointerdown', () => {
+        GameState.zanpakuto = zan; GameState.addUnlock('shikai');
+        GameState.recalcStats();
+        panel.destroy(true);
+        this.time.delayedCall(300, () => {
+          this.isInDialogue = true;
+          this.dialogueBox.show({
+            speaker: '\u6d66\u539f\u559c\u52a9',
+            text: `${zan}\u2026\u2026\u5b83\u4e0a\u9762\u6709\u5148\u9063\u961f\u7684\u5370\u8bb0\u3002\u4f60\u5df2\u7ecf\u89e6\u6478\u5230\u59cb\u89e3\u7684\u95e8\u69db\u4e86\u3002\u53bb\u6d66\u539f\u5546\u5e97\u8857\u5427\uff0c\u90a3\u91cc\u6709\u4f60\u9700\u8981\u7684\u88c5\u5907\u3002`
+          }, () => {
+            this.isInDialogue = false;
+            this.scene.get('UIScene').events.emit('updateStats');
+            SaveManager.save();
+            this.tryAutoStartNextQuest();
+          });
+        });
+      });
+      panel.add(sel);
+    });
+
+    // \u5173\u95ed\u6309\u94ae
+    panel.add(this.add.text(530, -316, '\u2715', {
+      fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerover', function (this: any) { this.setColor('#ff8888'); })
+      .on('pointerout', function (this: any) { this.setColor('#cc6666'); })
+      .on('pointerdown', () => { panel.destroy(true); this.isInDialogue = false; }));
+
+    // \u5e95\u90e8\u63d0\u793a
+    panel.add(this.add.text(0, 320, '\u70b9\u51fb\u9009\u62e9\u4f60\u7684\u59cb\u89e3\u65a9\u9b44\u5200\uff0c\u9009\u5b9a\u540e\u4e0d\u53ef\u66f4\u6539', {
+      fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+  }
+
+  private handleQuestNPC(npc: NPCData): boolean {
+    if (npc.role !== 'quest' || !npc.dialogue[0]?.choices) return false;
+    const questChoice = npc.dialogue[0].choices.find(c => c.text === '\u63a5\u53d7\u4efb\u52a1');
+    if (!questChoice) return false;
+    let lineIndex = 0;
+    const showNext = () => {
+      if (lineIndex < npc.dialogue.length) {
+        const line = npc.dialogue[lineIndex]; lineIndex++;
+        this.dialogueBox.show(line, lineIndex < npc.dialogue.length ? showNext : () => { this.isInDialogue = false; });
+      }
+    };
+    showNext();
+    return true;
+  }
+
+  private tryAutoStartNextQuest(): void {
+    const completed = GameState.questCompleted;
+    if (!completed.includes('intro') && !GameState.activeQuest) {
+      const introQ = MAIN_QUESTS['intro'];
+      if (introQ) { GameState.acceptQuest(introQ); }
+    }
+  }
+  private openShop(_s: any[]): void {
+    this.isInDialogue = false; this.pauseForMenu();
+    const shopItems = _s;
+    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30).setDepth(310);
+    const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-400, -260, 800, 520, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-400, -260, 800, 520, 12); panel.add(bg);
+    panel.add(this.add.text(0, -230, '商店', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    panel.add(this.add.text(0, -200, `金币: ${GameState.gold}`, { fontSize: '14px', color: '#ffcc44', padding: { y: 2 } }).setOrigin(0.5));
+    shopItems.forEach((item, i) => {
+      const row = Math.floor(i / 2), col = i % 2, sx = -370 + col * 380, sy = -160 + row * 64;
+      const card = this.add.graphics(); card.fillStyle(0x111122, 0.6); card.fillRoundedRect(sx, sy, 360, 56, 6); card.lineStyle(1, 0x334466, 0.5); card.strokeRoundedRect(sx, sy, 360, 56, 6); panel.add(card);
+      panel.add(this.add.text(sx + 12, sy + 6, item.name, { fontSize: '13px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } }));
+      const st = typeof item.stats === 'object' ? Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ') : '';
+      panel.add(this.add.text(sx + 12, sy + 30, st || item.desc || '', { fontSize: '10px', color: '#8888aa', padding: { y: 1 } }));
+      panel.add(this.add.text(sx + 260, sy + 18, `${item.price} 金币`, { fontSize: '12px', color: '#ffcc44', padding: { y: 2 } }));
+      const canBuy = GameState.gold >= item.price;
+      const buyBtn = this.add.text(sx + 300, sy + 8, '[购买]', { fontSize: '12px', color: canBuy ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true });
+      if (canBuy) { buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88')); buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44')); buyBtn.on('pointerdown', () => { GameState.gold -= item.price; Inventory.addItem({ id: item.id, name: item.name, type: 'equipment', desc: item.desc || '', quantity: 1, slot: item.slot, stats: item.stats, quality: item.quality || 'white' }); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); }); }
+      panel.add(buyBtn);
+    });
+    const cb3 = this.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cb3.on('pointerover', () => cb3.setColor('#ffaaaa')); cb3.on('pointerout', () => cb3.setColor('#ff6666')); cb3.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cb3);
+  }
+  private openReturn(): void { this.isInDialogue = false; this.pauseForMenu(); const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-300, -150, 600, 300, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-300, -150, 600, 300, 12); panel.add(bg); panel.add(this.add.text(0, -110, '传送', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); GameState.discoveredZones.forEach((z, i2) => { const rz = ZONE_NAMES[z] || '???'; const btn = this.add.text(-200 + (i2 % 3) * 200, -60 + Math.floor(i2 / 3) * 50, rz, { fontSize: '14px', color: '#88ccff', padding: { x: 12, y: 6 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true }); btn.on('pointerover', () => btn.setColor('#aaddff')); btn.on('pointerout', () => btn.setColor('#88ccff')); btn.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); this.isInDialogue = false; this.scene.restart({ newGame: false }); GameState.zone = z; }); panel.add(btn); }); const cl4 = this.add.text(280, -130, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl4.on('pointerover', () => cl4.setColor('#ffaaaa')); cl4.on('pointerout', () => cl4.setColor('#ff6666')); cl4.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl4); }
+  private openCraft(): void { this.isInDialogue = false; this.pauseForMenu(); const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-350, -200, 700, 400, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-350, -200, 700, 400, 12); panel.add(bg); panel.add(this.add.text(0, -160, '制造', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); panel.add(this.add.text(0, -120, '收集材料来制造装备', { fontSize: '14px', color: '#888899', padding: { y: 2 } }).setOrigin(0.5)); const recipes = [{ name: '铁剑', cost: { '\u77ff\u8109': 3, '\u7075\u6728\u679d': 1 } }, { name: '铁甲', cost: { '\u77ff\u8109': 5, '\u9ebb\u5e03\u7247': 2 } }, { name: '铁手甲', cost: { '\u77ff\u8109': 2, '\u7075\u6728\u679d': 1 } }]; recipes.forEach((r, i2) => { const ry = -70 + i2 * 60; panel.add(this.add.text(-300, ry, r.name, { fontSize: '16px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } })); const costs = Object.entries(r.cost).map(([k, v]) => { const owned = Inventory.items.find(i2 => i2.id === k)?.quantity || 0; return `${k}: ${owned}/${v}`; }).join('  '); panel.add(this.add.text(-100, ry + 4, costs, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } })); const canCraft = Object.entries(r.cost).every(([k, v]) => (Inventory.items.find(i2 => i2.id === k)?.quantity || 0) >= v); const btn2 = this.add.text(200, ry - 2, '[制造]', { fontSize: '14px', color: canCraft ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 10, y: 6 }, backgroundColor: canCraft ? '#11221188' : '#11111188' }).setInteractive({ useHandCursor: true }); if (canCraft) { btn2.on('pointerover', () => btn2.setColor('#88ff88')); btn2.on('pointerout', () => btn2.setColor('#44cc44')); btn2.on('pointerdown', () => { Object.entries(r.cost).forEach(([k, v]) => { const it = Inventory.items.find(i2 => i2.id === k); if (it) it.quantity = Math.max(0, (it.quantity || 0) - v); }); Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green' }); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); }); } panel.add(btn2); }); const cl5 = this.add.text(330, -180, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl5.on('pointerover', () => cl5.setColor('#ffaaaa')); cl5.on('pointerout', () => cl5.setColor('#ff6666')); cl5.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl5); }
+  private showBlacksmithLore(): void { this.isInDialogue = false; }
+  private toggleInventory(): void { if (this.inventoryPanel) { this.closeInventory(); return; } this.renderInventoryPanel(); }
+  private closeInventory(): void { if (this.inventoryPanel) { this.inventoryPanel.destroy(true); this.inventoryPanel = null; this.resumeFromMenu(); } }
+
+  private renderInventoryPanel(): void {
+    this.pauseForMenu(); const cam = this.cameras.main;
+    const p = this.add.container(Math.round(cam.scrollX), Math.round(cam.scrollY)).setDepth(300); this.inventoryPanel = p;
+    const ov = this.add.graphics(); ov.fillStyle(0, 0.78); ov.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT); ov.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains); p.add(ov);
+    const ox = 30, oy = 20, ow = GAME_WIDTH - 60, oh = GAME_HEIGHT - 40;
+    const mb = this.add.graphics(); mb.fillStyle(0x121222, 0.98); mb.fillRoundedRect(ox, oy, ow, oh, 12); mb.lineStyle(2, 0x4a5a8a, 0.6); mb.strokeRoundedRect(ox, oy, ow, oh, 12); p.add(mb);
+    const th = 54; const tb = this.add.graphics(); tb.fillStyle(0x1a1a36, 1); tb.fillRoundedRect(ox + 4, oy + 4, ow - 8, th, { tl: 10, tr: 10, bl: 0, br: 0 }); p.add(tb);
+    p.add(this.add.text(GAME_WIDTH / 2, oy + th / 2, '◆  背 包  ◆', { fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    p.add(this.add.text(ox + ow - 40, oy + th / 2, '✕', { fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).on('pointerover', function (this: any) { this.setColor('#ff8888'); }).on('pointerout', function (this: any) { this.setColor('#cc6666'); }).on('pointerdown', () => this.closeInventory()));
+    p.add(this.add.text(ox + 20, oy + th + 16, `金币: ${GameState.gold}`, { fontSize: '16px', color: '#ffcc44', fontStyle: 'bold', padding: { y: 2 } }));
+
+    // Equipment grid (2 rows x 5 cols)
+    const eqY = oy + th + 48; const eW = 180, eH = 64, eGap = 10;
+    const eq = Inventory.equipment; const sn: Record<string, string> = { weapon: '武器', head: '头部', body: '身体', bracer: '手甲', boots: '战靴', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
+    const eqs = ['weapon', 'head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
+    const qc: Record<string, string> = { white: '#aaaaaa', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
+    eqs.forEach((s, i) => {
+      const c2 = i % 5, r2 = Math.floor(i / 5); const sx = ox + 20 + c2 * (eW + eGap), sy = eqY + r2 * (eH + eGap);
+      const er = this.add.graphics(); er.fillStyle(0x0d0d1d, 0.7); er.fillRoundedRect(sx, sy, eW, eH, 6); er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, eW, eH, 6); p.add(er);
+      p.add(this.add.text(sx + 8, sy + 4, sn[s], { fontSize: '10px', color: '#556688', padding: { y: 1 } }));
+      const it = (eq as any)[s];
+      if (it) {
+        const elv = (it as any).enhanceLevel || 0; const q = (it as any).quality || 'white'; const lvTxt = elv > 0 ? ` +${elv}` : '';
+        p.add(this.add.text(sx + 8, sy + 20, `${it.name}${lvTxt}`, { fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
+        const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ');
+        p.add(this.add.text(sx + 8, sy + 40, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
+      } else { p.add(this.add.text(sx + 8, sy + 24, '空', { fontSize: '12px', color: '#334455', padding: { y: 1 } })); }
+    });
+
+    // Consumables
+    const consY = eqY + 2 * (eH + eGap) + 16;
+    p.add(this.add.text(ox + 20, consY, '消耗品', { fontSize: '15px', color: '#88aacc', fontStyle: 'bold', padding: { y: 2 } }));
+    const cons = Inventory.items.filter(it => it.type === 'consumable' && it.quantity > 0);
+    const cc = 8, cW = (ow - 50) / cc - 8;
+    cons.forEach((item, i) => {
+      const col = i % cc, row = Math.floor(i / cc); const cx = ox + 20 + col * (cW + 8), cy = consY + 30 + row * 68;
+      const cd = this.add.graphics(); cd.fillStyle(0x0a1a0a, 0.7); cd.fillRoundedRect(cx, cy, cW, 58, 5); cd.lineStyle(1, 0x225522, 0.5); cd.strokeRoundedRect(cx, cy, cW, 58, 5); p.add(cd);
+      p.add(this.add.text(cx + 6, cy + 4, item.name, { fontSize: '11px', color: '#88cc88', fontStyle: 'bold', padding: { y: 1 } }));
+      p.add(this.add.text(cx + 6, cy + 22, item.desc || '', { fontSize: '9px', color: '#558855', padding: { y: 1 } }));
+      p.add(this.add.text(cx + cW - 25, cy + 4, `×${item.quantity}`, { fontSize: '11px', color: '#88cc88', fontStyle: 'bold', padding: { y: 1 } }));
+      const ub = this.add.text(cx + cW / 2, cy + 38, '[使用]', { fontSize: '10px', color: '#44cc44', fontStyle: 'bold', padding: { x: 4, y: 2 }, backgroundColor: '#11221188' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      ub.on('pointerover', () => { ub.setColor('#88ff88'); ub.setBackgroundColor('#224422aa'); }); ub.on('pointerout', () => { ub.setColor('#44cc44'); ub.setBackgroundColor('#11221188'); });
+      ub.on('pointerdown', () => { const ef = getConsumableEffect(item.id); if (ef) { const cx2 = { hp: GameState.hp, maxHp: GameState.maxHp, mp: GameState.mp, maxMp: GameState.maxMp, playerStatus: createPlayerStatus(), isDead: false }; applyConsumable(ef, cx2); GameState.hp = cx2.hp; GameState.mp = cx2.mp; item.quantity--; if (item.quantity <= 0) { const ri = Inventory.items.findIndex(ri2 => ri2.id === item.id); if (ri >= 0) Inventory.items.splice(ri, 1); } this.closeInventory(); this.renderInventoryPanel(); this.scene.get('UIScene').events.emit('updateStats'); } });
+      p.add(ub);
+    });
+
+    // Materials
+    const matY = consY + 30 + Math.ceil(cons.length / cc) * 68 + 14;
+    p.add(this.add.text(ox + 20, matY, '材料', { fontSize: '15px', color: '#88aacc', fontStyle: 'bold', padding: { y: 2 } }));
+    const mats = Inventory.items.filter(it => it.type === 'material' && it.quantity > 0);
+    mats.forEach((item, i) => { const col = i % 6, row = Math.floor(i / 6); const mx = ox + 20 + col * 280, my = matY + 30 + row * 24; p.add(this.add.text(mx, my, `${item.name} ×${item.quantity}`, { fontSize: '11px', color: '#aaaacc', padding: { y: 2 } })); });
+
+    const fy = oy + oh - 28; const ft = this.add.graphics(); ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
+    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'B键 开关  |  ESC 关闭', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+  }
+  private toggleStatPanel(): void { if (this.statPanel) { this.closeStatPanel(); return; } this.renderStatPanel(); }
+  private closeStatPanel(): void { if (this.statPanel) { this.statPanel.destroy(true); this.statPanel = null; this.resumeFromMenu(); } }
+
+  private renderStatPanel(): void {
+    this.pauseForMenu(); const cam = this.cameras.main;
+    const p = this.add.container(Math.round(cam.scrollX), Math.round(cam.scrollY)).setDepth(300); this.statPanel = p;
+    const ov = this.add.graphics(); ov.fillStyle(0x000000, 0.78); ov.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT); ov.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains); p.add(ov);
+    const ox = 30, oy = 20, ow = GAME_WIDTH - 60, oh = GAME_HEIGHT - 40;
+    const mb = this.add.graphics(); mb.fillStyle(0x121222, 0.98); mb.fillRoundedRect(ox, oy, ow, oh, 12); mb.lineStyle(2, 0x4a5a8a, 0.6); mb.strokeRoundedRect(ox, oy, ow, oh, 12); p.add(mb);
+
+    // Title bar
+    const th = 54; const tb = this.add.graphics(); tb.fillStyle(0x1a1a36, 1); tb.fillRoundedRect(ox + 4, oy + 4, ow - 8, th, { tl: 10, tr: 10, bl: 0, br: 0 }); p.add(tb);
+    p.add(this.add.text(GAME_WIDTH / 2, oy + th / 2, '◆  属 性 面 板  ◆', { fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    p.add(this.add.text(ox + ow - 40, oy + th / 2, '✕', { fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+      .on('pointerover', function (this: any) { this.setColor('#ff8888'); }).on('pointerout', function (this: any) { this.setColor('#cc6666'); }).on('pointerdown', () => this.closeStatPanel()));
+
+    const sp = GameState.statPoints;
+    const colW = (ow - 80) / 2, lx = ox + 24, rx = lx + colW + 30;
+
+    // ═══ Left: Info + Stats ═══
+    p.add(this.add.text(lx, oy + th + 20, `玩家: ${GameState.playerName}   Lv.${GameState.level}   金币: ${GameState.gold}`, { fontSize: '14px', color: '#aabbdd', padding: { y: 2 } }));
+    p.add(this.add.text(lx, oy + th + 46, `元素: ${GameState.element || '无'}   斩魄刀: ${GameState.zanpakuto || '无'}   始解: ${GameState.hasShikai ? '✓' : '✗'}`, { fontSize: '12px', color: '#8899aa', padding: { y: 2 } }));
+    p.add(this.add.text(lx, oy + th + 72, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 } }));
+
+    const attrs = [
+      { l: 'HP', k: 'hp', a: 'allocatedHP', c: 0x44cc66 }, { l: 'MP', k: 'mp', a: 'allocatedMP', c: 0x4488ff },
+      { l: 'ATK', k: 'atk', a: 'allocatedATK', c: 0xff6644 }, { l: 'DEF', k: 'def', a: 'allocatedDEF', c: 0xcc9944 },
+      { l: 'MATK', k: 'matk', a: 'allocatedMATK', c: 0xcc44cc }, { l: 'MDEF', k: 'mdef', a: 'allocatedMDEF', c: 0x6688cc },
+      { l: 'SPD', k: 'spd', a: 'allocatedSPD', c: 0x44ccaa },
+    ];
+    const atY = oy + th + 100;
+    attrs.forEach((at, i) => {
+      const ay = atY + i * 60; const av = (GameState as any)[at.k] as number; const al = (GameState as any)[at.a] as number;
+      const ar = this.add.graphics(); ar.fillStyle(0x0d0d1d, 0.7); ar.fillRoundedRect(lx, ay, colW - 10, 52, 6); ar.lineStyle(1, 0x334466, 0.3); ar.strokeRoundedRect(lx, ay, colW - 10, 52, 6); p.add(ar);
+      p.add(this.add.text(lx + 12, ay + 6, at.l, { fontSize: '15px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
+      p.add(this.add.text(lx + 65, ay + 7, `${av}`, { fontSize: '18px', color: '#' + at.c.toString(16).padStart(6, '0'), fontStyle: 'bold', padding: { y: 2 } }));
+      const bW = colW - 170, bX = lx + 110;
+      const bb = this.add.rectangle(bX + bW / 2, ay + 22, bW, 10, 0x181830, 0.9); p.add(bb);
+      if (al > 0) { const fW = Math.min(bW, (al / 100) * bW); p.add(this.add.rectangle(bX + fW / 2, ay + 22, Math.max(3, fW), 8, at.c, 0.85)); }
+      p.add(this.add.text(bX + bW + 8, ay + 14, `${al}`, { fontSize: '10px', color: '#6677aa', padding: { y: 1 } }));
+      if (sp > 0) {
+        const ap = this.add.text(bX + bW + 40, ay + 4, '+', { fontSize: '20px', color: '#44cc44', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true }); ap.on('pointerover', () => ap.setColor('#88ff88')); ap.on('pointerout', () => ap.setColor('#44cc44')); ap.on('pointerdown', () => { (GameState as any)[at.a]++; GameState.statPoints--; GameState.recalcStats(); this.closeStatPanel(); this.renderStatPanel(); }); p.add(ap);
+        const sp2 = this.add.text(bX + bW + 70, ay + 4, '-', { fontSize: '20px', color: '#cc4444', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true }); sp2.on('pointerover', () => sp2.setColor('#ff8888')); sp2.on('pointerout', () => sp2.setColor('#cc4444')); sp2.on('pointerdown', () => { if ((GameState as any)[at.a] > 0) { (GameState as any)[at.a]--; GameState.statPoints++; GameState.recalcStats(); this.closeStatPanel(); this.renderStatPanel(); } }); p.add(sp2);
+      }
+    });
+
+    // ═══ Right: Equipment ═══
+    p.add(this.add.text(rx, oy + th + 20, '装备栏', { fontSize: '16px', color: '#aaccdd', fontStyle: 'bold', padding: { y: 3 } }));
+    const eq = Inventory.equipment; const sn: Record<string, string> = { weapon: '武器', head: '头部', body: '身体', bracer: '手甲', boots: '战靴', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
+    const eqs = ['weapon', 'head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
+    const eqY = oy + th + 52;
+    eqs.forEach((s, i) => {
+      const c2 = i % 2, r2 = Math.floor(i / 2); const sx = rx + c2 * (colW / 2 + 4), sy = eqY + r2 * 68;
+      const er = this.add.graphics(); er.fillStyle(0x0d0d1d, 0.6); er.fillRoundedRect(sx, sy, colW / 2 - 4, 58, 5);
+      er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, colW / 2 - 4, 58, 5); p.add(er);
+      p.add(this.add.text(sx + 8, sy + 4, sn[s], { fontSize: '10px', color: '#556688', padding: { y: 1 } }));
+      const it = (eq as any)[s];
+      if (it) {
+        const elv = (it as any).enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
+        const qc: Record<string, string> = { white: '#cccccc', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
+        const q = (it as any).quality || 'white';
+        p.add(this.add.text(sx + 8, sy + 20, `${it.name}${lvTxt}`, { fontSize: '12px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
+        const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ');
+        p.add(this.add.text(sx + 8, sy + 38, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
+      } else { p.add(this.add.text(sx + 8, sy + 24, '空', { fontSize: '12px', color: '#334455', padding: { y: 1 } })); }
+    });
+
+    // Footer
+    const fy = oy + oh - 28; const ft = this.add.graphics(); ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
+    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'C键 开关  |  ESC 关闭', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+  }
+
+  private showKidoPanel(): void {
+    if (this.kidoPanel) { this.closeKidoPanel(); return; }
+    this.pauseForMenu(); const cam = this.cameras.main;
+    const p = this.add.container(Math.round(cam.scrollX), Math.round(cam.scrollY)).setDepth(300); this.kidoPanel = p;
+    const ov = this.add.graphics(); ov.fillStyle(0, 0.78); ov.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    ov.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains); p.add(ov);
+    const ox = 30, oy = 20, ow = GAME_WIDTH - 60, oh = GAME_HEIGHT - 40;
+    const mb = this.add.graphics(); mb.fillStyle(0x121222, 0.98); mb.fillRoundedRect(ox, oy, ow, oh, 12);
+    mb.lineStyle(2, 0x4a5a8a, 0.6); mb.strokeRoundedRect(ox, oy, ow, oh, 12); p.add(mb);
+    const th = 54; const tb = this.add.graphics(); tb.fillStyle(0x1a1a36, 1);
+    tb.fillRoundedRect(ox + 4, oy + 4, ow - 8, th, { tl: 10, tr: 10, bl: 0, br: 0 }); p.add(tb);
+    p.add(this.add.text(GAME_WIDTH / 2, oy + th / 2, '◆  鬼 道 天 赋  ◆', {
+      fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    p.add(this.add.text(ox + ow - 40, oy + th / 2, '✕', {
+      fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerover', function (this: any) { this.setColor('#ff8888'); })
+      .on('pointerout', function (this: any) { this.setColor('#cc6666'); })
+      .on('pointerdown', () => this.closeKidoPanel()));
+
+    const schools: { id: KidoSchool; name: string; color: string }[] = [
+      { id: 'hado', name: '破道', color: '#ff6644' },
+      { id: 'bakudo', name: '縛道', color: '#4488ff' },
+      { id: 'kaido', name: '回道', color: '#44cc66' },
+    ];
+    let pts = 0; Object.keys(KIDO_NODES).forEach(id => { pts += Kido.getPoints(id) || 0; });
+    const total = calcKidoPoints(GameState.level, GameState.completedCount);
+    let activeTab: KidoSchool = Kido.school || 'hado';
+    p.add(this.add.text(GAME_WIDTH / 2, oy + th + 16, '鬼道点: ' + pts + ' / ' + total + '  |  当前: ' + (schools.find(s => s.id === activeTab)?.name || ''), {
+      fontSize: '14px', color: '#ffcc44', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5));
+
+    const tabY = oy + th + 44;
+    schools.forEach((s, i) => {
+      const isA = s.id === activeTab; const tx = 660 + i * 200;
+      const tb2 = this.add.graphics();
+      tb2.fillStyle(isA ? 0x2a1a1a : 0x111122, 0.8); tb2.fillRoundedRect(tx - 80, tabY, 160, 34, 6);
+      tb2.lineStyle(1, isA ? parseInt(s.color.replace('#', ''), 16) : 0x334466, isA ? 0.8 : 0.4);
+      tb2.strokeRoundedRect(tx - 80, tabY, 160, 34, 6); p.add(tb2);
+      const t = this.add.text(tx, tabY + 17, s.name, {
+        fontSize: '15px', color: isA ? s.color : '#555566', fontStyle: 'bold', padding: { y: 2 }
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      t.on('pointerover', () => { if (!isA) t.setColor('#888899'); });
+      t.on('pointerout', () => { if (!isA) t.setColor('#555566'); });
+      t.on('pointerdown', () => { if (s.id !== activeTab) { activeTab = s.id; this.closeKidoPanel(); this.showKidoPanel(); } });
+      p.add(t);
+    });
+
+    const sch = Object.values(KIDO_NODES).filter(n => n.school === activeTab).sort((a, b) => a.tier - b.tier || (a.column || 0) - (b.column || 0));
+    const ny2 = tabY + 56, nGap = 85, nR = 26;
+    const colMap: Record<number, number> = {}; let colIdx = 0;
+    sch.forEach(n => { if (!(n.tier in colMap)) { colMap[n.tier] = colIdx; colIdx++; } });
+    const mc = Math.max(1, colIdx);
+    const areaW = ow - 80;
+
+    sch.forEach(n => {
+      const row = (n.tier || 1) - 1; const col = colMap[n.tier] || 0;
+      const nx = ox + 60 + (areaW / (mc + 1)) * (col + 1);
+      const ny = ny2 + row * nGap;
+      const nodePts = Kido.getPoints(n.id) || 0;
+      const inSchool = Kido.pointsInSchool(activeTab as KidoSchool);
+      const unlocked = inSchool >= (TIER_LOCK[n.tier] || 0);
+      const active = nodePts > 0; const canAdd = Kido.canAddPoint(n.id);
+      const colStr = activeTab === 'hado' ? '#ff6644' : activeTab === 'bakudo' ? '#4488ff' : '#44cc66';
+      const colNum = parseInt(colStr.replace('#', ''), 16);
+
+      if (row > 0) {
+        const parent = sch.find(p => (p.tier || 1) === n.tier - 1 && colMap[p.tier] === col);
+        if (parent) {
+          const py = ny2 + ((parent.tier || 1) - 1) * nGap;
+          const pPts = Kido.getPoints(parent.id) || 0;
+          const lg = this.add.graphics();
+          lg.lineStyle(pPts > 0 ? 3 : 1, pPts > 0 ? colNum : 0x334466, pPts > 0 ? 0.7 : 0.3);
+          lg.beginPath(); lg.moveTo(nx, ny - nR - 4); lg.lineTo(nx, py + nR + 4); lg.strokePath();
+          p.add(lg);
+        }
+      }
+
+      const og = this.add.graphics();
+      og.fillStyle(colNum, active ? 0.12 : 0.03); og.fillCircle(nx, ny, nR + 6); p.add(og);
+
+      const nc = this.add.graphics();
+      nc.fillStyle(active ? colNum : unlocked ? 0x1a1a3e : 0x080812, active ? 0.95 : 0.6);
+      nc.fillCircle(nx, ny, nR);
+      nc.lineStyle(active ? 3 : 1, active ? colNum : 0x445566, active ? 1 : 0.5);
+      nc.strokeCircle(nx, ny, nR); p.add(nc);
+
+      if (active) {
+        p.add(this.add.text(nx, ny - 8, 'T' + n.tier, {
+          fontSize: '8px', color: '#ffffff', fontStyle: 'bold',
+          backgroundColor: '#' + colNum.toString(16).padStart(6, '0') + '88', padding: { x: 3, y: 1 }
+        }).setOrigin(0.5));
+      }
+
+      const lt2 = nodePts > 0 ? nodePts + '/' + n.maxPoints : n.passive ? 'P' : '';
+      p.add(this.add.text(nx, ny + (active ? 4 : -2), lt2, {
+        fontSize: '10px', color: unlocked ? '#ffffff' : '#334455', fontStyle: 'bold', padding: { y: 1 }
+      }).setOrigin(0.5));
+
+      p.add(this.add.text(nx, ny + nR + 8, n.name, {
+        fontSize: '11px', color: unlocked ? '#ccccdd' : '#445566', padding: { y: 1 }
+      }).setOrigin(0.5));
+
+      const z = this.add.zone(nx, ny, nR * 3, nR * 3 + 30).setInteractive({ useHandCursor: true });
+      z.on('pointerover', () => {
+        if (this.kidoTooltip) this.kidoTooltip.destroy();
+        this.kidoTooltip = this.add.container(Math.min(nx + 30, GAME_WIDTH - 220), ny - 10).setDepth(320);
+        const tt = this.add.graphics(); tt.fillStyle(0x0a0a1a, 0.95); tt.fillRoundedRect(0, 0, 210, 72, 6);
+        tt.lineStyle(1, colNum, 0.6); tt.strokeRoundedRect(0, 0, 210, 72, 6); this.kidoTooltip.add(tt);
+        this.kidoTooltip.add(this.add.text(8, 6, n.name, { fontSize: '12px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 1 } }));
+        this.kidoTooltip.add(this.add.text(8, 24, (n.desc || ''), { fontSize: '9px', color: '#aaaacc', wordWrap: { width: 194 }, padding: { y: 1 } }));
+        this.kidoTooltip.add(this.add.text(8, 48, canAdd ? '[点击加点]' : nodePts >= n.maxPoints ? '已满' : unlocked ? '需先点前置' : '锁定', {
+          fontSize: '10px', color: canAdd ? '#88cc88' : '#666688', padding: { y: 1 } }));
+      });
+      z.on('pointerout', () => { if (this.kidoTooltip) { this.kidoTooltip.destroy(); this.kidoTooltip = null; } });
+      z.on('pointerdown', () => {
+        if (canAdd) { Kido.addPoint(n.id); GameState.recalcStats(); this.closeKidoPanel(); this.showKidoPanel(); this.scene.get('UIScene').events.emit('updateStats'); }
+      });
+      p.add(z);
+    });
+
+    const fy = oy + oh - 28; const ft = this.add.graphics();
+    ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
+    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'K键 开关  |  ESC 关闭  |  悬停查看  |  点击加点', {
+      fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+  }
+
+  private closeKidoPanel(): void { this.kidoPanel?.destroy(true); this.kidoPanel = null; if (this.kidoTooltip) { this.kidoTooltip.destroy(); this.kidoTooltip = null; } this.resumeFromMenu(); }
+  private toggleEnhancePanel(): void { if (this.enhancePanel) { this.closeEnhancePanel(); return; } this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX), Math.round(cam.scrollY)).setDepth(300); this.enhancePanel = panel; const overlay = this.add.graphics(); overlay.fillStyle(0x000000, 0.75); overlay.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT); overlay.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains); panel.add(overlay); const pw = 760, ph = GAME_HEIGHT - 120, px = GAME_WIDTH / 2 - pw / 2, py = 60; const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(px, py, pw, ph, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(px, py, pw, ph, 12); panel.add(bg); panel.add(this.add.text(GAME_WIDTH / 2, py + 26, '强化工坊', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    const eq = Inventory.equipment;
+    const eqSlots = ['weapon', 'head', 'body', 'bracer', 'boots', 'belt'];
+    eqSlots.forEach((s, i) => {
+      const item = (eq as any)[s];
+      const sx = px + 40, sy = py + 70 + i * 90;
+      const rowBg = this.add.graphics(); rowBg.fillStyle(0x111122, 0.5); rowBg.fillRoundedRect(sx, sy, pw - 80, 78, 6); rowBg.lineStyle(1, 0x334466, 0.4); rowBg.strokeRoundedRect(sx, sy, pw - 80, 78, 6); panel.add(rowBg);
+      const slotNames: Record<string, string> = { weapon: '武器', head: '头', body: '身体', bracer: '手甲', boots: '靴', belt: '腰带' };
+      panel.add(this.add.text(sx + 14, sy + 8, slotNames[s] || s, { fontSize: '12px', color: '#88aacc', padding: { y: 1 } }));
+      if (item) {
+        const enhLv = (item as any).enhanceLevel || 0; const enhLabel = getEnhanceLabel(enhLv);
+        panel.add(this.add.text(sx + 14, sy + 28, `${enhLabel} ${item.name}`, { fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
+        const stats = Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}:${v}`).join('  ');
+        panel.add(this.add.text(sx + 14, sy + 50, stats, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } }));
+        if (enhLv < 10) {
+          const cost = getEnhanceCost(enhLv + 1, (item as any).quality || 'white'); const rate = getEnhanceRate(enhLv + 1);
+          panel.add(this.add.text(sx + 350, sy + 16, `${cost} 金币 | 成功率${Math.round(rate * 100)}%`, { fontSize: '11px', color: '#888899', padding: { y: 1 } }));
+          const enhanceBtn = this.add.text(sx + 520, sy + 8, '[强化]', { fontSize: '14px', color: '#ff8844', fontStyle: 'bold', padding: { x: 12, y: 6 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
+          enhanceBtn.on('pointerover', () => enhanceBtn.setColor('#ffaa66'));
+          enhanceBtn.on('pointerout', () => enhanceBtn.setColor('#ff8844'));
+          enhanceBtn.on('pointerdown', () => {
+            const result = doEnhance(item);
+            if (result.success || !result.success) { this.closeEnhancePanel(); this.toggleEnhancePanel(); this.scene.get('UIScene').events.emit('updateStats'); }
+          });
+          panel.add(enhanceBtn);
+        } else { panel.add(this.add.text(sx + 400, sy + 28, '已满级', { fontSize: '14px', color: '#ffcc44', fontStyle: 'bold', padding: { y: 2 } })); }
+      } else { panel.add(this.add.text(sx + 14, sy + 28, '未装备', { fontSize: '14px', color: '#555566', padding: { y: 2 } })); }
+    });
+    const closeBtn = this.add.text(px + pw - 16, py + 14, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); closeBtn.on('pointerover', () => closeBtn.setColor('#ffaaaa')); closeBtn.on('pointerout', () => closeBtn.setColor('#ff6666')); closeBtn.on('pointerdown', () => this.closeEnhancePanel()); panel.add(closeBtn);
+  }
+  private closeEnhancePanel(): void { this.enhancePanel?.destroy(true); this.enhancePanel = null; this.resumeFromMenu(); }
+
+  // ═══ Bestiary ═══
+  private toggleBestiaryPanel(): void { if (this.bestiaryPanel) { this.closeBestiaryPanel(); return; } this.pauseForMenu(); this.renderBestiaryPanel(); }
+  private closeBestiaryPanel(): void { if (this.bestiaryPanel) { this.bestiaryPanel.destroy(true); this.bestiaryPanel = null; this.resumeFromMenu(); } }
+  private renderBestiaryPanel(): void {
+    const cam=this.cameras.main;const c=this.add.container(Math.round(cam.scrollX),Math.round(cam.scrollY)).setDepth(300);this.bestiaryPanel=c;
+    const ov=this.add.graphics();ov.fillStyle(0,0.78);ov.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);ov.setInteractive(new Phaser.Geom.Rectangle(0,0,GAME_WIDTH,GAME_HEIGHT),Phaser.Geom.Rectangle.Contains);c.add(ov);
+    const ox=30,oy=20,ow=GAME_WIDTH-60,oh=GAME_HEIGHT-40;
+    const bg=this.add.graphics();bg.fillStyle(0x121222,0.98);bg.fillRoundedRect(ox,oy,ow,oh,12);bg.lineStyle(2,0x4a5a8a,0.6);bg.strokeRoundedRect(ox,oy,ow,oh,12);c.add(bg);
+    const th=54;const tb=this.add.graphics();tb.fillStyle(0x1a1a36,1);tb.fillRoundedRect(ox+4,oy+4,ow-8,th,{tl:10,tr:10,bl:0,br:0});c.add(tb);
+    c.add(this.add.text(GAME_WIDTH/2,oy+th/2,'◆  妖 魔 图 鉴  ◆',{fontSize:'22px',color:'#e8d5a3',fontStyle:'bold',padding:{y:3}}).setOrigin(0.5));
+    c.add(this.add.text(ox+ow-40,oy+th/2,'✕',{fontSize:'22px',color:'#cc6666',padding:{x:8,y:4}}).setOrigin(0.5).setInteractive({useHandCursor:true}).on('pointerover',function(this:any){this.setColor('#ff8888');}).on('pointerout',function(this:any){this.setColor('#cc6666');}).on('pointerdown',()=>this.closeBestiaryPanel()));
+    const ty=oy+th+16;const cw=(ow-60)/4;const rd=getBestiaryTierReached(GameState.bestiaryKilled);const tn=Object.keys(NAMED_ENEMIES).length;
+    BESTIARY_TIERS.forEach((tr,ti)=>{const cx=ox+14+ti*(cw+12);const ir=rd>=tr.id;const ic=GameState.bestiaryTierClaimed.includes(tr.id);const pg=getBestiaryTierProgress(tr.id,GameState.bestiaryKilled);const pt=pg.total>0?pg.completed/pg.total:0;const cc=ir?parseInt(tr.color.replace('#',''),16):0x222244;const cb=this.add.graphics();cb.fillStyle(cc,ir?0.18:0.12);cb.fillRoundedRect(cx,ty,cw,100,8);cb.lineStyle(1,cc,ir?0.6:0.25);cb.strokeRoundedRect(cx,ty,cw,100,8);c.add(cb);const ic2=ir?parseInt(tr.color.replace('#',''),16):0x444466;const ico=this.add.graphics();ico.fillStyle(ic2,ir?1:0.5);ico.fillCircle(cx+20,ty+20,6);ico.lineStyle(2,ic2,0.7);ico.strokeCircle(cx+20,ty+20,9);c.add(ico);c.add(this.add.text(cx+34,ty+11,tr.name,{fontSize:'14px',color:ir?tr.color:'#666688',fontStyle:'bold',padding:{y:2}}));c.add(this.add.text(cx+34,ty+32,`全部×${tr.requiredKills}`,{fontSize:'10px',color:'#555577',padding:{y:1}}));const by2=ty+52,bw=cw-28;c.add(this.add.rectangle(cx+14+bw/2,by2,bw,6,0x111122,0.9));if(pt>0){const fw=Math.max(2,bw*pt);c.add(this.add.rectangle(cx+14+fw/2,by2,fw,5,ir?parseInt(tr.color.replace('#',''),16):0x334466,1));}const bty=ty+68;if(ic){c.add(this.add.text(cx+cw/2,bty,'✔ 已领取',{fontSize:'12px',color:'#558855',fontStyle:'bold',padding:{y:1}}).setOrigin(0.5));}else if(ir){const bt=this.add.text(cx+cw/2,bty,'[ 领取奖励 ]',{fontSize:'12px',color:'#ffcc44',fontStyle:'bold',backgroundColor:'#33220088',padding:{x:10,y:4}}).setOrigin(0.5).setInteractive({useHandCursor:true});bt.on('pointerover',()=>{bt.setColor('#ffff88');bt.setBackgroundColor('#443300aa');});bt.on('pointerout',()=>{bt.setColor('#ffcc44');bt.setBackgroundColor('#33220088');});bt.on('pointerdown',()=>{if(GameState.claimBestiaryTierReward(tr.id)){this.closeBestiaryPanel();this.renderBestiaryPanel();}});c.add(bt);}else{c.add(this.add.text(cx+cw/2,bty,`${Math.round(pt*100)}% · ${pg.completed}/${pg.total}`,{fontSize:'10px',color:'#556688',padding:{y:1}}).setOrigin(0.5));c.add(this.add.text(cx+cw/2,bty+16,tr.reward.desc,{fontSize:'9px',color:'#444466',padding:{y:1},wordWrap:{width:cw-10}}).setOrigin(0.5));}});
+    const sy2=ty+130;const sp=this.add.graphics();sp.lineStyle(1,0x3a4a6a,0.5);sp.lineBetween(ox+14,sy2,ox+ow-14,sy2);c.add(sp);
+    const bodyY=sy2+14,bh=oh-(sy2-oy)-36,lw=380,dw2=ow-lw-40,lx=ox+14,dx2=lx+lw+16;
+    const lb=this.add.graphics();lb.fillStyle(0x0e0e22,0.7);lb.fillRoundedRect(lx,bodyY,lw,bh,6);lb.lineStyle(1,0x334466,0.4);lb.strokeRoundedRect(lx,bodyY,lw,bh,6);c.add(lb);
+    const enc=GameState.bestiaryEncountered;c.add(this.add.text(lx+12,bodyY+10,`已遭遇 ${enc.length} / ${tn}`,{fontSize:'12px',color:'#8899cc',fontStyle:'bold',padding:{y:2}}));
+    const an=Object.entries(NAMED_ENEMIES);const ih=26,mv=Math.floor((bh-40)/ih);const lc=this.add.container(lx,bodyY+34);c.add(lc);
+    an.forEach(([nm,df],i)=>{if(i>=mv)return;const ry=i*ih;const en=GameState.bestiaryEncountered.includes(nm);const kl=GameState.bestiaryKilled[nm]||0;const ib2=df.type==='妖将'||df.type==='妖王';const rw=this.add.container(0,ry);const rb=this.add.rectangle(2,0,lw-6,ih-2,en?0x152525:0x121222,0.8);rb.setOrigin(0,0);rw.add(rb);if(ib2)rw.add(this.add.text(8,3,'👑',{fontSize:'11px',padding:{y:1}}));const nc2=en?(ib2?'#ffcc44':df.type==='恶妖'?'#ff8866':'#bbbbdd'):'#444466';rw.add(this.add.text(ib2?24:10,4,en?nm:'???',{fontSize:'12px',color:nc2,fontStyle:en&&ib2?'bold':'normal',padding:{y:1}}));if(en&&df.element&&df.element!=='无'){const ec2:Record<string,string>={火:'#ff6644',水:'#4488ff',风:'#44cc88',土:'#cc9944',暗:'#8844cc',光:'#ffdd44'};rw.add(this.add.text(lw-110,4,df.element,{fontSize:'10px',color:ec2[df.element]||'#888888',padding:{y:1}}));}if(kl>0)rw.add(this.add.text(lw-55,4,`×${kl}`,{fontSize:'11px',color:'#668866',fontStyle:'bold',padding:{y:1}}));rb.setInteractive({useHandCursor:true});rb.on('pointerover',()=>rb.setFillStyle(0x1a2a3a,1));rb.on('pointerout',()=>rb.setFillStyle(en?0x152525:0x121222,0.8));rb.on('pointerdown',()=>{this.showBestiaryDetail(dx2,bodyY,dw2,bh,nm,df,en,kl,c);});lc.add(rw);});
+    const rb2=this.add.graphics();rb2.fillStyle(0x0e0e22,0.7);rb2.fillRoundedRect(dx2,bodyY,dw2,bh,6);rb2.lineStyle(1,0x334466,0.4);rb2.strokeRoundedRect(dx2,bodyY,dw2,bh,6);c.add(rb2);
+    c.add(this.add.text(dx2+dw2/2,bodyY+bh/2-20,'← 点击左侧敌人',{fontSize:'16px',color:'#334466',padding:{y:2}}).setOrigin(0.5));
+    c.add(this.add.text(dx2+dw2/2,bodyY+bh/2+10,'查看详细信息',{fontSize:'14px',color:'#223355',padding:{y:2}}).setOrigin(0.5));
+    const fy2=bodyY+bh+6;const ft=this.add.graphics();ft.fillStyle(0x1a1a36,0.8);ft.fillRoundedRect(ox+4,fy2,ow-8,24,{tl:0,tr:0,bl:10,br:10});c.add(ft);
+    c.add(this.add.text(GAME_WIDTH/2,fy2+12,'N键 开关  |  ESC 关闭  |  点击敌人查看详情',{fontSize:'11px',color:'#556688',padding:{y:2}}).setOrigin(0.5));
+  }
+  private showBestiaryDetail(x:number,y:number,w:number,h:number,nm:string,df:any,en:boolean,kl:number,pa:Phaser.GameObjects.Container):void{
+    if(this.bestiaryDetailContainer)this.bestiaryDetailContainer.destroy(true);this.bestiaryDetailContainer=this.add.container(x,y);pa.add(this.bestiaryDetailContainer);const dc=this.bestiaryDetailContainer,pad=14;
+    if(!en){dc.add(this.add.text(w/2,h/2-30,'？',{fontSize:'48px',color:'#334466',fontStyle:'bold',padding:{y:4}}).setOrigin(0.5));dc.add(this.add.text(w/2,h/2+30,'尚未遭遇',{fontSize:'16px',color:'#445566',padding:{y:2}}).setOrigin(0.5));dc.add(this.add.text(w/2,h/2+56,'击败后解锁详细信息',{fontSize:'12px',color:'#334455',padding:{y:2}}).setOrigin(0.5));return;}
+    const ib=df.type==='妖将'||df.type==='妖王';const nc=ib?'#ffcc44':df.type==='恶妖'?'#ff8866':'#ddddff';dc.add(this.add.text(pad,pad,nm,{fontSize:'22px',color:nc,fontStyle:'bold',padding:{y:3}}));
+    const tc:Record<string,string>={杂妖:'#6688aa',恶妖:'#cc6644',妖将:'#cc8844',妖王:'#cc4444'};dc.add(this.add.text(pad,pad+32,df.type,{fontSize:'11px',color:tc[df.type]||'#666688',fontStyle:'bold',backgroundColor:'#00000066',padding:{x:8,y:3}}));
+    dc.add(this.add.text(w-pad-80,pad+4,`击杀 ×${kl}`,{fontSize:'13px',color:'#8899cc',fontStyle:'bold',padding:{y:2}}));
+    let cy=pad+68;const lh=22;const ec:Record<string,string>={火:'#ff6644',水:'#4488ff',风:'#44cc88',土:'#cc9944',暗:'#8844cc',光:'#ffdd44',无:'#888899'};
+    [{l:'元素',v:df.element,c:ec[df.element]||'#888899'},{l:'弱点',v:df.weakness||'无',c:df.weakness?'#ff8866':'#666688'},{l:'抗性',v:df.resist||'无',c:df.resist?'#6688cc':'#666688'}].forEach(p=>{dc.add(this.add.text(pad+8,cy,`${p.l}：`,{fontSize:'12px',color:'#7788aa',padding:{y:1}}));dc.add(this.add.text(pad+60,cy,p.v,{fontSize:'12px',color:p.c,fontStyle:'bold',padding:{y:1}}));cy+=lh;});
+    cy+=6;const h1=this.add.graphics();h1.lineStyle(1,0x2a3a4a,0.4);h1.lineBetween(pad,cy,w-pad,cy);dc.add(h1);cy+=12;
+    const sn:Record<string,string>={灼烧:'灼烧',冻结:'冻结',中毒:'中毒',寄生:'寄生',减速:'减速',眩晕:'眩晕',束缚:'束缚',嘲讽:'嘲讽',恐惧:'恐惧',攻降:'攻降',防降:'防降',灵消:'灵消'};
+    const es=Object.entries(df.statusResist||{});if(es.length===0){dc.add(this.add.text(pad+8,cy,'无特殊抗性',{fontSize:'11px',color:'#556688',padding:{y:2}}));cy+=lh;}
+    else{es.forEach(([k,v]:any,i:number)=>{const col=i%2;const sx=pad+8+col*(w/2-8);const pct=Math.round(v*100);const sc=pct>=80?'#ff5555':pct>=40?'#ffaa44':'#66cc66';dc.add(this.add.text(sx,cy+Math.floor(i/2)*lh,`${sn[k]||k} ${pct}%`,{fontSize:'11px',color:sc,padding:{y:2}}));});cy+=Math.ceil(es.length/2)*lh;}
+    cy+=6;const h2=this.add.graphics();h2.lineStyle(1,0x2a3a4a,0.4);h2.lineBetween(pad,cy,w-pad,cy);dc.add(h2);cy+=12;
+    if(df.skills?.length){df.skills.forEach((s:any)=>{const dt=s.damageType==='magical'?'魔':'物';dc.add(this.add.text(pad+8,cy,`✦ ${s.name} [${dt}×${s.power}]`,{fontSize:'12px',color:'#ddbbee',fontStyle:'bold',padding:{y:1}}));cy+=lh;if(s.desc){dc.add(this.add.text(pad+16,cy,s.desc,{fontSize:'10px',color:'#7788aa',wordWrap:{width:w-pad*2-16},padding:{y:1}}));cy+=18;}});cy+=4;const h3=this.add.graphics();h3.lineStyle(1,0x2a3a4a,0.4);h3.lineBetween(pad,cy,w-pad,cy);dc.add(h3);cy+=12;}
+    if(df.drops?.length){df.drops.forEach((d:any)=>{dc.add(this.add.text(pad+8,cy,`◆ ${d.item}`,{fontSize:'12px',color:'#88cc88',padding:{y:1}}));dc.add(this.add.text(w-pad-50,cy,`${Math.round(d.rate*100)}%`,{fontSize:'11px',color:'#669966',padding:{y:1}}));cy+=lh;});cy+=4;const h4=this.add.graphics();h4.lineStyle(1,0x2a3a4a,0.4);h4.lineBetween(pad,cy,w-pad,cy);dc.add(h4);cy+=12;}
+    if(kl>=3&&df.lore){dc.add(this.add.text(pad,cy,'背景笔记',{fontSize:'13px',color:'#8899cc',fontStyle:'bold',padding:{y:2}}));cy+=lh+4;dc.add(this.add.text(pad+8,cy,df.lore,{fontSize:'11px',color:'#ccbb88',wordWrap:{width:w-pad*2-8},padding:{y:2}}));}
+    else if(kl>0&&kl<3){dc.add(this.add.text(pad,cy,`再击败 ${3-kl} 次解锁背景笔记`,{fontSize:'11px',color:'#556688',padding:{y:2}}));}
+  }
+}
