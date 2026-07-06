@@ -147,7 +147,7 @@ export class GameScene extends Phaser.Scene {
       if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel)
         this.toggleBestiaryPanel();
     });
-    this.input.keyboard!.addKey('Q').on('down', () => {
+    this.input.keyboard!.addKey('L').on('down', () => {
       if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel && !this.bestiaryPanel)
         this.toggleQuestLog();
     });
@@ -303,7 +303,7 @@ export class GameScene extends Phaser.Scene {
   private startDialogue(npc: NPCData): void {
     this.isInDialogue = true; this.player.setVelocity(0, 0); this.promptText.setVisible(false);
     GameState.updateQuestProgress('talk', npc.name, 1);
-    const questResult = this.handleQuestNPC(npc); if (questResult) return;
+    // 不再拦截quest NPC，让对话自然流动，选项触发接取/完成
     let lineIndex = 0;
     const showNext = () => { if (lineIndex < npc.dialogue.length) { const line = npc.dialogue[lineIndex]; lineIndex++; this.dialogueBox.show(line, lineIndex < npc.dialogue.length ? showNext : () => { this.isInDialogue = false; }); } };
     showNext();
@@ -444,7 +444,8 @@ export class GameScene extends Phaser.Scene {
             callback: () => {
               if (ch.callback === 'openShop') this.openShop(c.shop || []);
               else if (ch.callback === 'showBlacksmithLore') this.showBlacksmithLore();
-              else if (ch.callback === 'acceptQuest') this.acceptQuest();
+              else if (ch.callback === 'acceptQuest') this.acceptQuestFromNPC(c.name);
+              else if (ch.callback === 'completeQuest') this.completeQuestFromNPC(c.name);
               else if (ch.callback === 'closeDialogue') this.isInDialogue = false;
               else if (ch.callback === 'openReturn') this.openReturn();
               else if (ch.callback === 'openCraft') this.openCraft();
@@ -541,6 +542,54 @@ export class GameScene extends Phaser.Scene {
     });
   }
   private acceptQuest(): void { this.isInDialogue = false; this.tryAutoStartNextQuest(); }
+
+  /** 通过NPC对话选项接取任务 */
+  private acceptQuestFromNPC(npcName: string): void {
+    for (const questId of MAIN_QUEST_ORDER) {
+      const quest = MAIN_QUESTS[questId];
+      if (!quest || quest.acceptFrom !== npcName) continue;
+      if (GameState.questCompleted.includes(questId)) { this.isInDialogue = false; return; }
+      if (GameState.activeQuest === questId) { this.isInDialogue = false; return; }
+      if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) { this.isInDialogue = false; return; }
+      GameState.acceptQuest(quest);
+      this.dialogueBox.show({ speaker: npcName, text: `已接取任务：${quest.name}\n${quest.desc}` }, () => { this.isInDialogue = false; });
+      return;
+    }
+    // 检查支线
+    for (const quest of Object.values(SIDE_QUESTS)) {
+      if (quest.acceptFrom !== npcName) continue;
+      if (GameState.questCompleted.includes(quest.id)) { this.isInDialogue = false; return; }
+      if (GameState.activeQuest === quest.id) { this.isInDialogue = false; return; }
+      if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) { this.isInDialogue = false; return; }
+      GameState.acceptQuest(quest);
+      this.dialogueBox.show({ speaker: npcName, text: `已接取支线：${quest.name}\n${quest.desc}` }, () => { this.isInDialogue = false; });
+      return;
+    }
+    this.isInDialogue = false;
+  }
+
+  /** 通过NPC对话选项完成任务 */
+  private completeQuestFromNPC(npcName: string): void {
+    if (!GameState.activeQuest) { this.isInDialogue = false; return; }
+    const q = GameState.getActiveQuestDef();
+    if (!q || q.completeAt !== npcName) { this.isInDialogue = false; return; }
+    if (!GameState.questReadyToComplete) {
+      this.dialogueBox.show({ speaker: npcName, text: `任务还未完成。\n${GameState.getQuestTrackText()}` }, () => { this.isInDialogue = false; });
+      return;
+    }
+    GameState.completeQuest(q.id);
+    let msg = `任务完成：${q.name}`;
+    if (q.rewards.gold) { GameState.gold += q.rewards.gold; msg += `\n金币+${q.rewards.gold}`; }
+    if (q.rewards.exp) { const lv = GameState.gainExp(q.rewards.exp); msg += `\n经验+${q.rewards.exp}`; if (lv) msg += `\n★升级！Lv.${GameState.level}`; }
+    if (q.rewards.items) { for (const it of q.rewards.items) { Inventory.addItem({ id: it.id, name: it.name, type: 'consumable' as any, desc: '', quantity: it.count }); msg += `\n${it.name}×${it.count}`; } }
+    if (q.rewards.unlock) { GameState.addUnlock(q.rewards.unlock); msg += `\n解锁：${q.rewards.unlock}`; }
+    this.scene.get('UIScene').events.emit('updateStats');
+    if (q.id === 'shikai_trial' && !GameState.hasShikai) {
+      this.dialogueBox.show({ speaker: npcName, text: msg + '\n\n你的斩魄刀已经觉醒了！选择它的真名吧。' }, () => { this.isInDialogue = false; this.showShikaiSelection(); });
+    } else {
+      this.dialogueBox.show({ speaker: npcName, text: msg }, () => { this.isInDialogue = false; this.tryAutoStartNextQuest(); });
+    }
+  }
 
   private startIntroDialogue(): void {
     this.isInDialogue = true;
@@ -822,7 +871,7 @@ export class GameScene extends Phaser.Scene {
   private openShop(_s: any[]): void {
     this.isInDialogue = false; this.pauseForMenu();
     const shopItems = _s;
-    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30).setDepth(310);
+    const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2 - 30).setDepth(310);
     const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-400, -260, 800, 520, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-400, -260, 800, 520, 12); panel.add(bg);
     panel.add(this.add.text(0, -230, '商店', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
     panel.add(this.add.text(0, -200, `金币: ${GameState.gold}`, { fontSize: '14px', color: '#ffcc44', padding: { y: 2 } }).setOrigin(0.5));
@@ -840,8 +889,8 @@ export class GameScene extends Phaser.Scene {
     });
     const cb3 = this.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cb3.on('pointerover', () => cb3.setColor('#ffaaaa')); cb3.on('pointerout', () => cb3.setColor('#ff6666')); cb3.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cb3);
   }
-  private openReturn(): void { this.isInDialogue = false; this.pauseForMenu(); const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-300, -150, 600, 300, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-300, -150, 600, 300, 12); panel.add(bg); panel.add(this.add.text(0, -110, '传送', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); GameState.discoveredZones.forEach((z, i2) => { const rz = ZONE_NAMES[z] || '???'; const btn = this.add.text(-200 + (i2 % 3) * 200, -60 + Math.floor(i2 / 3) * 50, rz, { fontSize: '14px', color: '#88ccff', padding: { x: 12, y: 6 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true }); btn.on('pointerover', () => btn.setColor('#aaddff')); btn.on('pointerout', () => btn.setColor('#88ccff')); btn.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); GameState.zone = z; this.isInDialogue = false; this.scene.restart({ newGame: false }); }); panel.add(btn); }); const cl4 = this.add.text(280, -130, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl4.on('pointerover', () => cl4.setColor('#ffaaaa')); cl4.on('pointerout', () => cl4.setColor('#ff6666')); cl4.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl4); }
-  private openCraft(): void { this.isInDialogue = false; this.pauseForMenu(); const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-350, -200, 700, 400, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-350, -200, 700, 400, 12); panel.add(bg); panel.add(this.add.text(0, -160, '制造', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); panel.add(this.add.text(0, -120, '收集材料来制造装备', { fontSize: '14px', color: '#888899', padding: { y: 2 } }).setOrigin(0.5)); const recipes = [{ name: '铁剑', cost: { '\u77ff\u8109': 3, '\u7075\u6728\u679d': 1 } }, { name: '铁甲', cost: { '\u77ff\u8109': 5, '\u9ebb\u5e03\u7247': 2 } }, { name: '铁手甲', cost: { '\u77ff\u8109': 2, '\u7075\u6728\u679d': 1 } }]; recipes.forEach((r, i2) => { const ry = -70 + i2 * 60; panel.add(this.add.text(-300, ry, r.name, { fontSize: '16px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } })); const costs = Object.entries(r.cost).map(([k, v]) => { const owned = Inventory.items.find(i2 => i2.id === k)?.quantity || 0; return `${k}: ${owned}/${v}`; }).join('  '); panel.add(this.add.text(-100, ry + 4, costs, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } })); const canCraft = Object.entries(r.cost).every(([k, v]) => (Inventory.items.find(i2 => i2.id === k)?.quantity || 0) >= v); const btn2 = this.add.text(200, ry - 2, '[制造]', { fontSize: '14px', color: canCraft ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 10, y: 6 }, backgroundColor: canCraft ? '#11221188' : '#11111188' }).setInteractive({ useHandCursor: true }); if (canCraft) { btn2.on('pointerover', () => btn2.setColor('#88ff88')); btn2.on('pointerout', () => btn2.setColor('#44cc44')); btn2.on('pointerdown', () => { Object.entries(r.cost).forEach(([k, v]) => { const it = Inventory.items.find(i2 => i2.id === k); if (it) it.quantity = Math.max(0, (it.quantity || 0) - v); }); Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green' }); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); }); } panel.add(btn2); }); const cl5 = this.add.text(330, -180, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl5.on('pointerover', () => cl5.setColor('#ffaaaa')); cl5.on('pointerout', () => cl5.setColor('#ff6666')); cl5.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl5); }
+  private openReturn(): void { this.isInDialogue = false; this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-300, -150, 600, 300, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-300, -150, 600, 300, 12); panel.add(bg); panel.add(this.add.text(0, -110, '传送', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); GameState.discoveredZones.forEach((z, i2) => { const rz = ZONE_NAMES[z] || '???'; const btn = this.add.text(-200 + (i2 % 3) * 200, -60 + Math.floor(i2 / 3) * 50, rz, { fontSize: '14px', color: '#88ccff', padding: { x: 12, y: 6 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true }); btn.on('pointerover', () => btn.setColor('#aaddff')); btn.on('pointerout', () => btn.setColor('#88ccff')); btn.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); GameState.zone = z; this.isInDialogue = false; this.scene.restart({ newGame: false }); }); panel.add(btn); }); const cl4 = this.add.text(280, -130, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl4.on('pointerover', () => cl4.setColor('#ffaaaa')); cl4.on('pointerout', () => cl4.setColor('#ff6666')); cl4.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl4); }
+  private openCraft(): void { this.isInDialogue = false; this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-350, -200, 700, 400, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-350, -200, 700, 400, 12); panel.add(bg); panel.add(this.add.text(0, -160, '制造', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); panel.add(this.add.text(0, -120, '收集材料来制造装备', { fontSize: '14px', color: '#888899', padding: { y: 2 } }).setOrigin(0.5)); const recipes = [{ name: '铁剑', cost: { '\u77ff\u8109': 3, '\u7075\u6728\u679d': 1 } }, { name: '铁甲', cost: { '\u77ff\u8109': 5, '\u9ebb\u5e03\u7247': 2 } }, { name: '铁手甲', cost: { '\u77ff\u8109': 2, '\u7075\u6728\u679d': 1 } }]; recipes.forEach((r, i2) => { const ry = -70 + i2 * 60; panel.add(this.add.text(-300, ry, r.name, { fontSize: '16px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } })); const costs = Object.entries(r.cost).map(([k, v]) => { const owned = Inventory.items.find(i2 => i2.id === k)?.quantity || 0; return `${k}: ${owned}/${v}`; }).join('  '); panel.add(this.add.text(-100, ry + 4, costs, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } })); const canCraft = Object.entries(r.cost).every(([k, v]) => (Inventory.items.find(i2 => i2.id === k)?.quantity || 0) >= v); const btn2 = this.add.text(200, ry - 2, '[制造]', { fontSize: '14px', color: canCraft ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 10, y: 6 }, backgroundColor: canCraft ? '#11221188' : '#11111188' }).setInteractive({ useHandCursor: true }); if (canCraft) { btn2.on('pointerover', () => btn2.setColor('#88ff88')); btn2.on('pointerout', () => btn2.setColor('#44cc44')); btn2.on('pointerdown', () => { Object.entries(r.cost).forEach(([k, v]) => { const it = Inventory.items.find(i2 => i2.id === k); if (it) it.quantity = Math.max(0, (it.quantity || 0) - v); }); Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green' }); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); }); } panel.add(btn2); }); const cl5 = this.add.text(330, -180, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl5.on('pointerover', () => cl5.setColor('#ffaaaa')); cl5.on('pointerout', () => cl5.setColor('#ff6666')); cl5.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl5); }
   private showBlacksmithLore(): void { this.isInDialogue = false; }
   private toggleInventory(): void { if (this.inventoryPanel) { this.closeInventory(); return; } this.renderInventoryPanel(); }
   private closeInventory(): void { if (this.inventoryPanel) { this.inventoryPanel.destroy(true); this.inventoryPanel = null; this.resumeFromMenu(); } }
@@ -924,7 +973,21 @@ export class GameScene extends Phaser.Scene {
       p.add(this.add.text(cx + cW - 25, cy + 4, `×${item.quantity}`, { fontSize: '11px', color: '#88cc88', fontStyle: 'bold', padding: { y: 1 } }));
       const ub = this.add.text(cx + cW / 2, cy + 38, '[使用]', { fontSize: '10px', color: '#44cc44', fontStyle: 'bold', padding: { x: 4, y: 2 }, backgroundColor: '#11221188' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
       ub.on('pointerover', () => { ub.setColor('#88ff88'); ub.setBackgroundColor('#224422aa'); }); ub.on('pointerout', () => { ub.setColor('#44cc44'); ub.setBackgroundColor('#11221188'); });
-      ub.on('pointerdown', () => { const ef = getConsumableEffect(item.id); if (ef) { const cx2 = { hp: GameState.hp, maxHp: GameState.maxHp, mp: GameState.mp, maxMp: GameState.maxMp, playerStatus: createPlayerStatus(), isDead: false }; applyConsumable(ef, cx2); GameState.hp = cx2.hp; GameState.mp = cx2.mp; item.quantity--; if (item.quantity <= 0) { const ri = Inventory.items.findIndex(ri2 => ri2.id === item.id); if (ri >= 0) Inventory.items.splice(ri, 1); } this.closeInventory(); this.renderInventoryPanel(); this.scene.get('UIScene').events.emit('updateStats'); } });
+      ub.on('pointerdown', () => {
+        const ef = getConsumableEffect(item.id);
+        if (ef) {
+          const ctx2 = { hp: GameState.hp, maxHp: GameState.maxHp, mp: GameState.mp, maxMp: GameState.maxMp, playerStatus: createPlayerStatus(), isDead: false };
+          const result = applyConsumable(ef, ctx2);
+          GameState.hp = result.hp; GameState.mp = result.mp;
+          item.quantity--;
+          if (item.quantity <= 0) { const ri = Inventory.items.findIndex(ri2 => ri2.id === item.id); if (ri >= 0) Inventory.items.splice(ri, 1); }
+          this.closeInventory(); this.renderInventoryPanel();
+          this.scene.get('UIScene').events.emit('updateStats');
+          // 显示使用结果
+          const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, result.message, { fontSize: '16px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
+          this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 110, duration: 1500, onComplete: () => n.destroy() });
+        }
+      });
       p.add(ub);
     });
 
@@ -962,25 +1025,53 @@ export class GameScene extends Phaser.Scene {
     p.add(this.add.text(lx, oy + th + 72, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 } }));
 
     const attrs = [
-      { l: 'HP', k: 'hp', a: 'allocatedHP', c: 0x44cc66 }, { l: 'MP', k: 'mp', a: 'allocatedMP', c: 0x4488ff },
-      { l: 'ATK', k: 'atk', a: 'allocatedATK', c: 0xff6644 }, { l: 'DEF', k: 'def', a: 'allocatedDEF', c: 0xcc9944 },
-      { l: 'MATK', k: 'matk', a: 'allocatedMATK', c: 0xcc44cc }, { l: 'MDEF', k: 'mdef', a: 'allocatedMDEF', c: 0x6688cc },
-      { l: 'SPD', k: 'spd', a: 'allocatedSPD', c: 0x44ccaa },
+      { l: 'HP', k: 'hp', a: 'allocatedHP' }, { l: 'MP', k: 'mp', a: 'allocatedMP' },
+      { l: 'ATK', k: 'atk', a: 'allocatedATK' }, { l: 'DEF', k: 'def', a: 'allocatedDEF' },
+      { l: 'MATK', k: 'matk', a: 'allocatedMATK' }, { l: 'MDEF', k: 'mdef', a: 'allocatedMDEF' },
+      { l: 'SPD', k: 'spd', a: 'allocatedSPD' },
     ];
     const atY = oy + th + 100;
+    // 用于动态更新的引用
+    const valTexts: Phaser.GameObjects.Text[] = [];
+    const allocTexts: Phaser.GameObjects.Text[] = [];
+    let spText: Phaser.GameObjects.Text;
+    const refreshDisplay = () => {
+      spText.setText(`剩余属性点: ${GameState.statPoints}`);
+      spText.setColor(GameState.statPoints > 0 ? '#ffcc44' : '#667788');
+      attrs.forEach((at, i) => {
+        const av = (GameState as any)[at.k] as number;
+        const al = (GameState as any)[at.a] as number;
+        valTexts[i].setText(`${av}`);
+        allocTexts[i].setText(`(加点: ${al})`);
+      });
+    };
+    spText = this.add.text(lx, oy + th + 72, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 } });
+    p.add(spText);
+
     attrs.forEach((at, i) => {
-      const ay = atY + i * 60; const av = (GameState as any)[at.k] as number; const al = (GameState as any)[at.a] as number;
-      const ar = this.add.graphics(); ar.fillStyle(0x0d0d1d, 0.7); ar.fillRoundedRect(lx, ay, colW - 10, 52, 6); ar.lineStyle(1, 0x334466, 0.3); ar.strokeRoundedRect(lx, ay, colW - 10, 52, 6); p.add(ar);
-      p.add(this.add.text(lx + 12, ay + 6, at.l, { fontSize: '15px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
-      p.add(this.add.text(lx + 65, ay + 7, `${av}`, { fontSize: '18px', color: '#' + at.c.toString(16).padStart(6, '0'), fontStyle: 'bold', padding: { y: 2 } }));
-      const bW = colW - 170, bX = lx + 110;
-      const bb = this.add.rectangle(bX + bW / 2, ay + 22, bW, 10, 0x181830, 0.9); p.add(bb);
-      if (al > 0) { const fW = Math.min(bW, (al / 100) * bW); p.add(this.add.rectangle(bX + fW / 2, ay + 22, Math.max(3, fW), 8, at.c, 0.85)); }
-      p.add(this.add.text(bX + bW + 8, ay + 14, `${al}`, { fontSize: '10px', color: '#6677aa', padding: { y: 1 } }));
-      if (sp > 0) {
-        const ap = this.add.text(bX + bW + 40, ay + 4, '+', { fontSize: '20px', color: '#44cc44', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true }); ap.on('pointerover', () => ap.setColor('#88ff88')); ap.on('pointerout', () => ap.setColor('#44cc44')); ap.on('pointerdown', () => { (GameState as any)[at.a]++; GameState.statPoints--; GameState.recalcStats(); this.closeStatPanel(); this.renderStatPanel(); }); p.add(ap);
-        const sp2 = this.add.text(bX + bW + 70, ay + 4, '-', { fontSize: '20px', color: '#cc4444', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true }); sp2.on('pointerover', () => sp2.setColor('#ff8888')); sp2.on('pointerout', () => sp2.setColor('#cc4444')); sp2.on('pointerdown', () => { if ((GameState as any)[at.a] > 0) { (GameState as any)[at.a]--; GameState.statPoints++; GameState.recalcStats(); this.closeStatPanel(); this.renderStatPanel(); } }); p.add(sp2);
-      }
+      const ay = atY + i * 48;
+      const av = (GameState as any)[at.k] as number; const al = (GameState as any)[at.a] as number;
+      const ar = this.add.graphics(); ar.fillStyle(0x0d0d1d, 0.7); ar.fillRoundedRect(lx, ay, colW - 10, 40, 6); ar.lineStyle(1, 0x334466, 0.3); ar.strokeRoundedRect(lx, ay, colW - 10, 40, 6); p.add(ar);
+      p.add(this.add.text(lx + 16, ay + 10, at.l, { fontSize: '15px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
+      const vt = this.add.text(lx + 80, ay + 10, `${av}`, { fontSize: '18px', color: '#88ccff', fontStyle: 'bold', padding: { y: 2 } });
+      p.add(vt); valTexts.push(vt);
+      const at2 = this.add.text(lx + 140, ay + 12, `(加点: ${al})`, { fontSize: '11px', color: '#6677aa', padding: { y: 1 } });
+      p.add(at2); allocTexts.push(at2);
+
+      const ap = this.add.text(lx + colW - 120, ay + 6, '+', { fontSize: '22px', color: GameState.statPoints > 0 ? '#44cc44' : '#335533', fontStyle: 'bold', padding: { x: 10, y: 4 } }).setInteractive({ useHandCursor: true });
+      ap.on('pointerover', () => { if (GameState.statPoints > 0) ap.setColor('#88ff88'); });
+      ap.on('pointerout', () => { ap.setColor(GameState.statPoints > 0 ? '#44cc44' : '#335533'); });
+      ap.on('pointerdown', () => {
+        if (GameState.statPoints > 0) { (GameState as any)[at.a]++; GameState.statPoints--; GameState.recalcStats(); refreshDisplay(); this.scene.get('UIScene').events.emit('updateStats'); }
+      });
+      p.add(ap);
+      const sp2 = this.add.text(lx + colW - 80, ay + 6, '-', { fontSize: '22px', color: al > 0 ? '#cc4444' : '#553333', fontStyle: 'bold', padding: { x: 10, y: 4 } }).setInteractive({ useHandCursor: true });
+      sp2.on('pointerover', () => { if ((GameState as any)[at.a] > 0) sp2.setColor('#ff8888'); });
+      sp2.on('pointerout', () => { sp2.setColor((GameState as any)[at.a] > 0 ? '#cc4444' : '#553333'); });
+      sp2.on('pointerdown', () => {
+        if ((GameState as any)[at.a] > 0) { (GameState as any)[at.a]--; GameState.statPoints++; GameState.recalcStats(); refreshDisplay(); this.scene.get('UIScene').events.emit('updateStats'); }
+      });
+      p.add(sp2);
     });
 
     // ═══ Right: Equipment ═══
