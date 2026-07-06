@@ -147,6 +147,10 @@ export class GameScene extends Phaser.Scene {
       if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel)
         this.toggleBestiaryPanel();
     });
+    this.input.keyboard!.addKey('Q').on('down', () => {
+      if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel && !this.bestiaryPanel)
+        this.toggleQuestLog();
+    });
     this.input.keyboard!.addKey('ESC').on('down', () => {
       if (this.inventoryPanel) { this.closeInventory(); return; }
       if (this.statPanel) { this.closeStatPanel(); return; }
@@ -1132,37 +1136,229 @@ export class GameScene extends Phaser.Scene {
   }
 
   private closeKidoPanel(): void { this.kidoPanel?.destroy(true); this.kidoPanel = null; if (this.kidoTooltip) { this.kidoTooltip.destroy(); this.kidoTooltip = null; } this.resumeFromMenu(); }
-  private toggleEnhancePanel(): void { if (this.enhancePanel) { this.closeEnhancePanel(); return; } this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX), Math.round(cam.scrollY)).setDepth(300); this.enhancePanel = panel; const overlay = this.add.graphics(); overlay.fillStyle(0x000000, 0.75); overlay.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT); overlay.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains); panel.add(overlay); const pw = 760, ph = GAME_HEIGHT - 120, px = GAME_WIDTH / 2 - pw / 2, py = 60; const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(px, py, pw, ph, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(px, py, pw, ph, 12); panel.add(bg); panel.add(this.add.text(GAME_WIDTH / 2, py + 26, '强化工坊', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+  private toggleEnhancePanel(): void {
+    if (this.enhancePanel) { this.closeEnhancePanel(); return; }
+    this.pauseForMenu(); const cam = this.cameras.main;
+    const p = this.add.container(Math.round(cam.scrollX), Math.round(cam.scrollY)).setDepth(300); this.enhancePanel = p;
+    const ov = this.add.graphics(); ov.fillStyle(0, 0.78); ov.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    ov.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains); p.add(ov);
+    const ox = 30, oy = 20, ow = GAME_WIDTH - 60, oh = GAME_HEIGHT - 40;
+    const mb = this.add.graphics(); mb.fillStyle(0x121222, 0.98); mb.fillRoundedRect(ox, oy, ow, oh, 12);
+    mb.lineStyle(2, 0x4a5a8a, 0.6); mb.strokeRoundedRect(ox, oy, ow, oh, 12); p.add(mb);
+    const th = 54; const tb = this.add.graphics(); tb.fillStyle(0x1a1a36, 1);
+    tb.fillRoundedRect(ox + 4, oy + 4, ow - 8, th, { tl: 10, tr: 10, bl: 0, br: 0 }); p.add(tb);
+    p.add(this.add.text(GAME_WIDTH / 2, oy + th / 2, '◆  强 化 工 坊  ◆', {
+      fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    p.add(this.add.text(ox + ow - 40, oy + th / 2, '✕', {
+      fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerover', function (this: any) { this.setColor('#ff8888'); })
+      .on('pointerout', function (this: any) { this.setColor('#cc6666'); })
+      .on('pointerdown', () => this.closeEnhancePanel()));
+
+    // Tabs
+    const tabs = ['强化', '精炼', '分解'];
+    const tabColors = ['#ff8844', '#4488ff', '#88cc44'];
+    let activeTab = 0;
+    const tabY = oy + th + 10;
+    const renderTabs = () => {
+      tabs.forEach((t, i) => {
+        const tx = ox + 30 + i * 130;
+        const isA = i === activeTab;
+        const tbg = this.add.graphics();
+        tbg.fillStyle(isA ? 0x2a1a0a : 0x111122, 0.8); tbg.fillRoundedRect(tx, tabY, 120, 32, 6);
+        tbg.lineStyle(1, isA ? parseInt(tabColors[i].replace('#', ''), 16) : 0x334466, isA ? 0.8 : 0.4);
+        tbg.strokeRoundedRect(tx, tabY, 120, 32, 6); p.add(tbg);
+        const tt = this.add.text(tx + 60, tabY + 16, t, {
+          fontSize: '14px', color: isA ? tabColors[i] : '#555566', fontStyle: 'bold', padding: { y: 2 }
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        tt.on('pointerdown', () => { if (i !== activeTab) { activeTab = i; this.closeEnhancePanel(); this.toggleEnhancePanel(); } });
+        p.add(tt);
+      });
+    };
+    renderTabs();
+
+    // Equipment list
     const eq = Inventory.equipment;
-    const eqSlots = ['weapon', 'head', 'body', 'bracer', 'boots', 'belt'];
+    const eqSlots = ['weapon', 'head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
+    const sn: Record<string, string> = { weapon: '武器', head: '头部', body: '身体', bracer: '手甲', boots: '战靴', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
+    const listY = tabY + 44;
     eqSlots.forEach((s, i) => {
+      const col = i % 2, row = Math.floor(i / 2); const sx = ox + 30 + col * 520, sy = listY + row * 72;
       const item = (eq as any)[s];
-      const sx = px + 40, sy = py + 70 + i * 90;
-      const rowBg = this.add.graphics(); rowBg.fillStyle(0x111122, 0.5); rowBg.fillRoundedRect(sx, sy, pw - 80, 78, 6); rowBg.lineStyle(1, 0x334466, 0.4); rowBg.strokeRoundedRect(sx, sy, pw - 80, 78, 6); panel.add(rowBg);
-      const slotNames: Record<string, string> = { weapon: '武器', head: '头', body: '身体', bracer: '手甲', boots: '靴', belt: '腰带' };
-      panel.add(this.add.text(sx + 14, sy + 8, slotNames[s] || s, { fontSize: '12px', color: '#88aacc', padding: { y: 1 } }));
+      const er = this.add.graphics(); er.fillStyle(0x0d0d1d, 0.7); er.fillRoundedRect(sx, sy, 500, 62, 6);
+      er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, 500, 62, 6); p.add(er);
+      p.add(this.add.text(sx + 10, sy + 4, sn[s] || s, { fontSize: '10px', color: '#556688', padding: { y: 1 } }));
       if (item) {
-        const enhLv = (item as any).enhanceLevel || 0; const enhLabel = getEnhanceLabel(enhLv);
-        panel.add(this.add.text(sx + 14, sy + 28, `${enhLabel} ${item.name}`, { fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
-        const stats = Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}:${v}`).join('  ');
-        panel.add(this.add.text(sx + 14, sy + 50, stats, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } }));
-        if (enhLv < 10) {
-          const cost = getEnhanceCost(enhLv + 1, (item as any).quality || 'white'); const rate = getEnhanceRate(enhLv + 1);
-          panel.add(this.add.text(sx + 350, sy + 16, `${cost} 金币 | 成功率${Math.round(rate * 100)}%`, { fontSize: '11px', color: '#888899', padding: { y: 1 } }));
-          const enhanceBtn = this.add.text(sx + 520, sy + 8, '[强化]', { fontSize: '14px', color: '#ff8844', fontStyle: 'bold', padding: { x: 12, y: 6 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
-          enhanceBtn.on('pointerover', () => enhanceBtn.setColor('#ffaa66'));
-          enhanceBtn.on('pointerout', () => enhanceBtn.setColor('#ff8844'));
-          enhanceBtn.on('pointerdown', () => {
-            const result = doEnhance(item);
-            if (result.success || !result.success) { this.closeEnhancePanel(); this.toggleEnhancePanel(); this.scene.get('UIScene').events.emit('updateStats'); }
+        const elv = (item as any).enhanceLevel || 0; const enhLabel = getEnhanceLabel(item);
+        const qc: Record<string, string> = { white: '#aaaaaa', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
+        const q = (item as any).quality || 'white';
+        p.add(this.add.text(sx + 10, sy + 20, `${enhLabel} ${item.name}`, { fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
+        const stats = Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join('  ');
+        p.add(this.add.text(sx + 10, sy + 40, stats, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
+
+        if (activeTab === 0) {
+          // 强化
+          if (elv < 10) {
+            const cost = getEnhanceCost(elv + 1, (item as any).quality || 'white'); const rate = getEnhanceRate(elv + 1);
+            p.add(this.add.text(sx + 300, sy + 8, `${cost.gold}金币 | ${Math.round(rate * 100)}%`, { fontSize: '10px', color: '#888899', padding: { y: 1 } }));
+            const btn = this.add.text(sx + 420, sy + 8, '[强化]', { fontSize: '13px', color: '#ff8844', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
+            btn.on('pointerover', () => btn.setColor('#ffaa66'));
+            btn.on('pointerout', () => btn.setColor('#ff8844'));
+            btn.on('pointerdown', () => {
+              const result = doEnhance(item);
+              GameState.recalcStats(); this.closeEnhancePanel(); this.toggleEnhancePanel();
+              this.scene.get('UIScene').events.emit('updateStats');
+              const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, result.message, { fontSize: '16px', color: result.success ? '#88ff88' : '#ff6666', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
+              this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
+            });
+            p.add(btn);
+          } else { p.add(this.add.text(sx + 380, sy + 20, '已满级', { fontSize: '14px', color: '#ffcc44', fontStyle: 'bold', padding: { y: 2 } })); }
+        } else if (activeTab === 1) {
+          // 精炼
+          const maxSlots = getRefineMaxSlots((item as any).quality || 'white');
+          const curSlots = (item as any).refineStats?.length || 0;
+          const refineCost = getRefineCost(item);
+          if (curSlots < maxSlots) {
+            p.add(this.add.text(sx + 300, sy + 8, `${refineCost.gold}金币 | ${curSlots}/${maxSlots}槽`, { fontSize: '10px', color: '#888899', padding: { y: 1 } }));
+            const btn = this.add.text(sx + 420, sy + 8, '[精炼]', { fontSize: '13px', color: '#4488ff', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true });
+            btn.on('pointerover', () => btn.setColor('#66aaff'));
+            btn.on('pointerout', () => btn.setColor('#4488ff'));
+            btn.on('pointerdown', () => {
+              const result = doRefine(item);
+              GameState.recalcStats(); this.closeEnhancePanel(); this.toggleEnhancePanel();
+              this.scene.get('UIScene').events.emit('updateStats');
+              const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, result.message, { fontSize: '16px', color: result.success ? '#88ccff' : '#ff6666', fontStyle: 'bold', backgroundColor: '#111122cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
+              this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
+            });
+            p.add(btn);
+          } else {
+            p.add(this.add.text(sx + 300, sy + 8, `${curSlots}/${maxSlots}槽已满`, { fontSize: '10px', color: '#888899', padding: { y: 1 } }));
+            const btn = this.add.text(sx + 420, sy + 8, '[重置]', { fontSize: '13px', color: '#cc8844', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
+            btn.on('pointerdown', () => { doRefineReset(item); GameState.recalcStats(); this.closeEnhancePanel(); this.toggleEnhancePanel(); this.scene.get('UIScene').events.emit('updateStats'); });
+            p.add(btn);
+          }
+        } else {
+          // 分解
+          const decompReturn = getDecompReturn(item);
+          const matStr = decompReturn.materials.map(m => `${m.name}×${m.qty}`).join(', ');
+          p.add(this.add.text(sx + 300, sy + 8, `${decompReturn.gold}金币 | ${matStr}`, { fontSize: '9px', color: '#888899', padding: { y: 1 } }));
+          const btn = this.add.text(sx + 420, sy + 8, '[分解]', { fontSize: '13px', color: '#88cc44', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#11221188' }).setInteractive({ useHandCursor: true });
+          btn.on('pointerover', () => btn.setColor('#aaffaa'));
+          btn.on('pointerout', () => btn.setColor('#88cc44'));
+          btn.on('pointerdown', () => {
+            const result = doDecompose(item);
+            GameState.recalcStats(); this.closeEnhancePanel(); this.toggleEnhancePanel();
+            this.scene.get('UIScene').events.emit('updateStats');
+            const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, result.message, { fontSize: '16px', color: '#88cc44', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
+            this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
           });
-          panel.add(enhanceBtn);
-        } else { panel.add(this.add.text(sx + 400, sy + 28, '已满级', { fontSize: '14px', color: '#ffcc44', fontStyle: 'bold', padding: { y: 2 } })); }
-      } else { panel.add(this.add.text(sx + 14, sy + 28, '未装备', { fontSize: '14px', color: '#555566', padding: { y: 2 } })); }
+          p.add(btn);
+        }
+      } else { p.add(this.add.text(sx + 10, sy + 24, '未装备', { fontSize: '13px', color: '#334455', padding: { y: 1 } })); }
     });
-    const closeBtn = this.add.text(px + pw - 16, py + 14, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); closeBtn.on('pointerover', () => closeBtn.setColor('#ffaaaa')); closeBtn.on('pointerout', () => closeBtn.setColor('#ff6666')); closeBtn.on('pointerdown', () => this.closeEnhancePanel()); panel.add(closeBtn);
+
+    const fy = oy + oh - 28; const ft = this.add.graphics();
+    ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
+    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'ESC 关闭  |  切换标签选择功能', {
+      fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
   }
+
   private closeEnhancePanel(): void { this.enhancePanel?.destroy(true); this.enhancePanel = null; this.resumeFromMenu(); }
+
+  // ═══ Quest Log ═══
+  private questLogPanel: Phaser.GameObjects.Container | null = null;
+
+  private toggleQuestLog(): void {
+    if (this.questLogPanel) { this.questLogPanel.destroy(true); this.questLogPanel = null; this.resumeFromMenu(); return; }
+    this.pauseForMenu(); this.renderQuestLogPanel();
+  }
+
+  private renderQuestLogPanel(): void {
+    const cam = this.cameras.main;
+    const p = this.add.container(Math.round(cam.scrollX), Math.round(cam.scrollY)).setDepth(300);
+    this.questLogPanel = p;
+    const ov = this.add.graphics(); ov.fillStyle(0, 0.78); ov.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    ov.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains); p.add(ov);
+    const ox = 30, oy = 20, ow = GAME_WIDTH - 60, oh = GAME_HEIGHT - 40;
+    const mb = this.add.graphics(); mb.fillStyle(0x121222, 0.98); mb.fillRoundedRect(ox, oy, ow, oh, 12);
+    mb.lineStyle(2, 0x4a5a8a, 0.6); mb.strokeRoundedRect(ox, oy, ow, oh, 12); p.add(mb);
+    const th = 54; const tb = this.add.graphics(); tb.fillStyle(0x1a1a36, 1);
+    tb.fillRoundedRect(ox + 4, oy + 4, ow - 8, th, { tl: 10, tr: 10, bl: 0, br: 0 }); p.add(tb);
+    p.add(this.add.text(GAME_WIDTH / 2, oy + th / 2, '\u25c6  \u4efb \u52a1 \u65e5 \u5fd7  \u25c6', {
+      fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+    p.add(this.add.text(ox + ow - 40, oy + th / 2, '\u2715', {
+      fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerover', function (this: any) { this.setColor('#ff8888'); })
+      .on('pointerout', function (this: any) { this.setColor('#cc6666'); })
+      .on('pointerdown', () => this.toggleQuestLog()));
+
+    // 当前任务
+    let cy = oy + th + 20;
+    p.add(this.add.text(ox + 30, cy, '\u5f53\u524d\u4efb\u52a1', { fontSize: '16px', color: '#88aacc', fontStyle: 'bold', padding: { y: 3 } }));
+    cy += 30;
+    if (GameState.activeQuest) {
+      const q = GameState.getActiveQuestDef();
+      if (q) {
+        p.add(this.add.text(ox + 30, cy, `\u2605 ${q.name}`, { fontSize: '15px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
+        cy += 24;
+        p.add(this.add.text(ox + 30, cy, q.desc, { fontSize: '12px', color: '#aaaacc', padding: { y: 1 } }));
+        cy += 22;
+        for (const obj of q.objectives) {
+          const prog = GameState.questObjProgress[obj.target] || 0;
+          const done = prog >= obj.count;
+          p.add(this.add.text(ox + 50, cy, `${done ? '\u2713' : '\u25cb'} ${obj.desc} ${prog}/${obj.count}`, {
+            fontSize: '12px', color: done ? '#88cc88' : '#ccccdd', padding: { y: 1 } }));
+          cy += 20;
+        }
+        cy += 10;
+        // 奖励预览
+        let rewardStr = '\u5956\u52b1: ';
+        if (q.rewards.gold) rewardStr += `${q.rewards.gold}\u91d1\u5e01 `;
+        if (q.rewards.exp) rewardStr += `${q.rewards.exp}\u7ecf\u9a8c `;
+        if (q.rewards.items) rewardStr += q.rewards.items.map(it => `${it.name}\u00d7${it.count}`).join(' ');
+        if (q.rewards.unlock) rewardStr += `\u89e3\u9501:${q.rewards.unlock}`;
+        p.add(this.add.text(ox + 30, cy, rewardStr, { fontSize: '11px', color: '#ffcc44', padding: { y: 1 } }));
+        cy += 24;
+      }
+    } else {
+      p.add(this.add.text(ox + 30, cy, '\u65e0\u6d3b\u8dc3\u4efb\u52a1\uff0c\u53bb\u627eNPC\u5bf9\u8bdd\u63a5\u53d6\u4efb\u52a1\u5427\u3002', { fontSize: '13px', color: '#667788', padding: { y: 2 } }));
+      cy += 24;
+    }
+
+    // 分割线
+    cy += 10;
+    const sep = this.add.graphics(); sep.lineStyle(1, 0x334466, 0.4); sep.lineBetween(ox + 30, cy, ox + ow - 30, cy); p.add(sep);
+    cy += 16;
+
+    // 已完成任务
+    p.add(this.add.text(ox + 30, cy, `\u5df2\u5b8c\u6210\u4efb\u52a1 (${GameState.questCompleted.length})`, { fontSize: '16px', color: '#88aacc', fontStyle: 'bold', padding: { y: 3 } }));
+    cy += 30;
+    const completed = GameState.questCompleted;
+    completed.forEach((qid, i) => {
+      const qd = MAIN_QUESTS[qid];
+      if (qd) {
+        const col = i % 3, row = Math.floor(i / 3);
+        const cx2 = ox + 30 + col * 400, ry = cy + row * 24;
+        p.add(this.add.text(cx2, ry, `\u2713 ${qd.name}`, { fontSize: '12px', color: '#558855', padding: { y: 1 } }));
+      }
+    });
+
+    // 支线任务
+    cy += Math.ceil(completed.length / 3) * 24 + 20;
+    p.add(this.add.text(ox + 30, cy, '\u53ef\u63a5\u53d6\u7684\u652f\u7ebf', { fontSize: '16px', color: '#88aacc', fontStyle: 'bold', padding: { y: 3 } }));
+    cy += 30;
+    const sideQuests = Object.values(SIDE_QUESTS).filter(sq => !GameState.questCompleted.includes(sq.id));
+    sideQuests.forEach((sq, i) => {
+      p.add(this.add.text(ox + 30 + (i % 2) * 600, cy + Math.floor(i / 2) * 24, `\u25cb ${sq.name} (${sq.acceptFrom})`, { fontSize: '12px', color: '#aaaacc', padding: { y: 1 } }));
+    });
+
+    const fy = oy + oh - 28; const ft = this.add.graphics();
+    ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
+    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'Q\u952e \u5f00\u5173  |  ESC \u5173\u95ed', {
+      fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+  }
 
   // ═══ Bestiary ═══
   private toggleBestiaryPanel(): void { if (this.bestiaryPanel) { this.closeBestiaryPanel(); return; } this.pauseForMenu(); this.renderBestiaryPanel(); }
