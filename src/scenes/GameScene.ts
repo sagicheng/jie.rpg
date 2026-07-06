@@ -1171,9 +1171,9 @@ export class GameScene extends Phaser.Scene {
     mb.lineStyle(2, 0x4a5a8a, 0.6); mb.strokeRoundedRect(ox, oy, ow, oh, 12); p.add(mb);
     const th = 54; const tb = this.add.graphics(); tb.fillStyle(0x1a1a36, 1);
     tb.fillRoundedRect(ox + 4, oy + 4, ow - 8, th, { tl: 10, tr: 10, bl: 0, br: 0 }); p.add(tb);
-    p.add(this.add.text(GAME_WIDTH / 2, oy + th / 2, '◆  鬼 道 天 赋  ◆', {
+    p.add(this.add.text(GAME_WIDTH / 2, oy + th / 2, '\u25c6  \u9b3c \u9053 \u5929 \u8d4b  \u25c6', {
       fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
-    p.add(this.add.text(ox + ow - 40, oy + th / 2, '✕', {
+    p.add(this.add.text(ox + ow - 40, oy + th / 2, '\u2715', {
       fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5)
       .setInteractive({ useHandCursor: true })
       .on('pointerover', function (this: any) { this.setColor('#ff8888'); })
@@ -1181,108 +1181,150 @@ export class GameScene extends Phaser.Scene {
       .on('pointerdown', () => this.closeKidoPanel()));
 
     const schools: { id: KidoSchool; name: string; color: string }[] = [
-      { id: 'hado', name: '破道', color: '#ff6644' },
-      { id: 'bakudo', name: '縛道', color: '#4488ff' },
-      { id: 'kaido', name: '回道', color: '#44cc66' },
+      { id: 'hado', name: '\u7834\u9053', color: '#ff6644' },
+      { id: 'bakudo', name: '\u7e1b\u9053', color: '#4488ff' },
+      { id: 'kaido', name: '\u56de\u9053', color: '#44cc66' },
     ];
-    let pts = 0; Object.keys(KIDO_NODES).forEach(id => { pts += Kido.getPoints(id) || 0; });
-    const total = calcKidoPoints(GameState.level, GameState.completedCount);
-    let activeTab: KidoSchool = Kido.school || 'hado';
-    p.add(this.add.text(GAME_WIDTH / 2, oy + th + 16, '鬼道点: ' + pts + ' / ' + total + '  |  当前: ' + (schools.find(s => s.id === activeTab)?.name || ''), {
-      fontSize: '14px', color: '#ffcc44', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5));
 
+    // 使用Kido.school作为当前tab（持久化）
+    if (!Kido.school) Kido.school = 'hado';
+    const activeTab: KidoSchool = Kido.school;
+    const avail = Kido.availablePoints();
+    const totalSpent = Kido.pointsSpent();
+    p.add(this.add.text(GAME_WIDTH / 2, oy + th + 16, `\u53ef\u7528\u9b3c\u9053\u70b9: ${avail}  |  \u5df2\u6295\u5165: ${totalSpent}  |  \u5f53\u524d: ${schools.find(s => s.id === activeTab)?.name || ''}`, {
+      fontSize: '14px', color: '#ffcc44', fontStyle: 'bold', padding: { y: 2 }, backgroundColor: '#121222' }).setOrigin(0.5));
+
+    // Tab buttons
     const tabY = oy + th + 44;
     schools.forEach((s, i) => {
-      const isA = s.id === activeTab; const tx = 660 + i * 200;
+      const isA = s.id === activeTab; const tx = ox + 30 + i * 140;
       const tb2 = this.add.graphics();
-      tb2.fillStyle(isA ? 0x2a1a1a : 0x111122, 0.8); tb2.fillRoundedRect(tx - 80, tabY, 160, 34, 6);
+      tb2.fillStyle(isA ? 0x2a1a0a : 0x111122, 0.8); tb2.fillRoundedRect(tx, tabY, 130, 34, 6);
       tb2.lineStyle(1, isA ? parseInt(s.color.replace('#', ''), 16) : 0x334466, isA ? 0.8 : 0.4);
-      tb2.strokeRoundedRect(tx - 80, tabY, 160, 34, 6); p.add(tb2);
-      const t = this.add.text(tx, tabY + 17, s.name, {
+      tb2.strokeRoundedRect(tx, tabY, 130, 34, 6); p.add(tb2);
+      const t = this.add.text(tx + 65, tabY + 17, s.name, {
         fontSize: '15px', color: isA ? s.color : '#555566', fontStyle: 'bold', padding: { y: 2 }
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
       t.on('pointerover', () => { if (!isA) t.setColor('#888899'); });
       t.on('pointerout', () => { if (!isA) t.setColor('#555566'); });
-      t.on('pointerdown', () => { if (s.id !== activeTab) { activeTab = s.id; this.closeKidoPanel(); this.showKidoPanel(); } });
+      t.on('pointerdown', () => {
+        if (s.id !== activeTab) { Kido.school = s.id; this.closeKidoPanel(); this.showKidoPanel(); }
+      });
       p.add(t);
     });
 
-    const sch = Object.values(KIDO_NODES).filter(n => n.school === activeTab).sort((a, b) => a.tier - b.tier || (a.column || 0) - (b.column || 0));
-    const ny2 = tabY + 56, nGap = 85, nR = 26;
-    const colMap: Record<number, number> = {}; let colIdx = 0;
-    sch.forEach(n => { if (!(n.tier in colMap)) { colMap[n.tier] = colIdx; colIdx++; } });
-    const mc = Math.max(1, colIdx);
-    const areaW = ow - 80;
+    // Get nodes for active school, grouped by tier
+    const sch = Object.values(KIDO_NODES).filter(n => n.school === activeTab);
+    const tiers = [1, 2, 3, 4, 5];
+    const colStr = activeTab === 'hado' ? '#ff6644' : activeTab === 'bakudo' ? '#4488ff' : '#44cc66';
+    const colNum = parseInt(colStr.replace('#', ''), 16);
 
-    sch.forEach(n => {
-      const row = (n.tier || 1) - 1; const col = colMap[n.tier] || 0;
-      const nx = ox + 60 + (areaW / (mc + 1)) * (col + 1);
-      const ny = ny2 + row * nGap;
-      const nodePts = Kido.getPoints(n.id) || 0;
-      const inSchool = Kido.pointsInSchool(activeTab as KidoSchool);
-      const unlocked = inSchool >= (TIER_LOCK[n.tier] || 0);
-      const active = nodePts > 0; const canAdd = Kido.canAddPoint(n.id);
-      const colStr = activeTab === 'hado' ? '#ff6644' : activeTab === 'bakudo' ? '#4488ff' : '#44cc66';
-      const colNum = parseInt(colStr.replace('#', ''), 16);
+    // Layout: 5 rows (one per tier), nodes spread horizontally within each row
+    const nodeAreaY = tabY + 50;
+    const nodeAreaH = oh - (nodeAreaY - oy) - 50;
+    const rowH = nodeAreaH / 5;
+    const nR = 26;
 
-      if (row > 0) {
-        const parent = sch.find(p => (p.tier || 1) === n.tier - 1 && colMap[p.tier] === col);
-        if (parent) {
-          const py = ny2 + ((parent.tier || 1) - 1) * nGap;
-          const pPts = Kido.getPoints(parent.id) || 0;
-          const lg = this.add.graphics();
-          lg.lineStyle(pPts > 0 ? 3 : 1, pPts > 0 ? colNum : 0x334466, pPts > 0 ? 0.7 : 0.3);
-          lg.beginPath(); lg.moveTo(nx, ny - nR - 4); lg.lineTo(nx, py + nR + 4); lg.strokePath();
-          p.add(lg);
+    tiers.forEach((tier, tierIdx) => {
+      const tierNodes = sch.filter(n => n.tier === tier).sort((a, b) => (a.column || 0) - (b.column || 0));
+      if (tierNodes.length === 0) return;
+      const rowY = nodeAreaY + tierIdx * rowH + rowH / 2;
+
+      // Tier label
+      const tierLock = TIER_LOCK[tier] || 0;
+      const inSchool = Kido.pointsInSchool(activeTab);
+      const tierUnlocked = inSchool >= tierLock;
+      p.add(this.add.text(ox + 20, rowY - 10, `T${tier} (${tierLock}\u70b9)`, {
+        fontSize: '10px', color: tierUnlocked ? '#667788' : '#444455', padding: { y: 1 }
+      }));
+
+      // Nodes in this tier
+      const nodeSpacing = (ow - 120) / Math.max(tierNodes.length, 1);
+      tierNodes.forEach((n, ni) => {
+        const nx = ox + 80 + nodeSpacing * (ni + 0.5);
+        const ny = rowY;
+        const nodePts = Kido.getPoints(n.id) || 0;
+        const unlocked = tierUnlocked;
+        const active = nodePts > 0;
+        const canAdd = Kido.canAddPoint(n.id);
+        const isMaxed = nodePts >= n.maxPoints;
+
+        // Connection line to parent (previous tier, same column)
+        if (tierIdx > 0) {
+          const parentTier = tier - 1;
+          const parentNodes = sch.filter(nn => nn.tier === parentTier);
+          // Find closest parent by column
+          const parent = parentNodes.reduce((best, nn) => {
+            const dist = Math.abs((nn.column || 0) - (n.column || 0));
+            return dist < Math.abs((best?.column || 0) - (n.column || 0)) ? nn : best;
+          }, parentNodes[0]);
+          if (parent) {
+            const parentIdx = parentNodes.indexOf(parent);
+            const parentSpacing = (ow - 120) / Math.max(parentNodes.length, 1);
+            const py = nodeAreaY + (tierIdx - 1) * rowH + rowH / 2;
+            const parentPts = Kido.getPoints(parent.id) || 0;
+            const lg = this.add.graphics();
+            lg.lineStyle(parentPts > 0 ? 3 : 1, parentPts > 0 ? colNum : 0x334466, parentPts > 0 ? 0.7 : 0.3);
+            lg.beginPath(); lg.moveTo(nx, ny - nR - 2); lg.lineTo(nx, py + nR + 2); lg.strokePath();
+            p.add(lg);
+          }
         }
-      }
 
-      const og = this.add.graphics();
-      og.fillStyle(colNum, active ? 0.12 : 0.03); og.fillCircle(nx, ny, nR + 6); p.add(og);
+        // Node glow
+        const og = this.add.graphics();
+        og.fillStyle(colNum, active ? 0.15 : 0.03); og.fillCircle(nx, ny, nR + 8); p.add(og);
 
-      const nc = this.add.graphics();
-      nc.fillStyle(active ? colNum : unlocked ? 0x1a1a3e : 0x080812, active ? 0.95 : 0.6);
-      nc.fillCircle(nx, ny, nR);
-      nc.lineStyle(active ? 3 : 1, active ? colNum : 0x445566, active ? 1 : 0.5);
-      nc.strokeCircle(nx, ny, nR); p.add(nc);
+        // Node circle
+        const nc = this.add.graphics();
+        nc.fillStyle(active ? colNum : unlocked ? 0x1a1a3e : 0x080812, active ? 0.95 : 0.6);
+        nc.fillCircle(nx, ny, nR);
+        nc.lineStyle(active ? 3 : 1, active ? colNum : unlocked ? 0x445566 : 0x334455, active ? 1 : 0.5);
+        nc.strokeCircle(nx, ny, nR); p.add(nc);
 
-      if (active) {
-        p.add(this.add.text(nx, ny - 8, 'T' + n.tier, {
-          fontSize: '8px', color: '#ffffff', fontStyle: 'bold',
-          backgroundColor: '#' + colNum.toString(16).padStart(6, '0') + '88', padding: { x: 3, y: 1 }
+        // Points display
+        const ptStr = nodePts > 0 ? `${nodePts}/${n.maxPoints}` : n.passive ? 'P' : '';
+        p.add(this.add.text(nx, ny - 2, ptStr, {
+          fontSize: '11px', color: unlocked ? '#ffffff' : '#334455', fontStyle: 'bold', padding: { y: 1 }
         }).setOrigin(0.5));
-      }
 
-      const lt2 = nodePts > 0 ? nodePts + '/' + n.maxPoints : n.passive ? 'P' : '';
-      p.add(this.add.text(nx, ny + (active ? 4 : -2), lt2, {
-        fontSize: '10px', color: unlocked ? '#ffffff' : '#334455', fontStyle: 'bold', padding: { y: 1 }
-      }).setOrigin(0.5));
+        // Name
+        p.add(this.add.text(nx, ny + nR + 6, n.name, {
+          fontSize: '11px', color: unlocked ? '#ccccdd' : '#445566', padding: { y: 1 }
+        }).setOrigin(0.5));
 
-      p.add(this.add.text(nx, ny + nR + 8, n.name, {
-        fontSize: '11px', color: unlocked ? '#ccccdd' : '#445566', padding: { y: 1 }
-      }).setOrigin(0.5));
-
-      const z = this.add.zone(nx, ny, nR * 3, nR * 3 + 30).setInteractive({ useHandCursor: true });
-      z.on('pointerover', () => {
-        if (this.kidoTooltip) this.kidoTooltip.destroy();
-        this.kidoTooltip = this.add.container(Math.min(nx + 30, GAME_WIDTH - 220), ny - 10).setDepth(320);
-        const tt = this.add.graphics(); tt.fillStyle(0x0a0a1a, 0.95); tt.fillRoundedRect(0, 0, 210, 72, 6);
-        tt.lineStyle(1, colNum, 0.6); tt.strokeRoundedRect(0, 0, 210, 72, 6); this.kidoTooltip.add(tt);
-        this.kidoTooltip.add(this.add.text(8, 6, n.name, { fontSize: '12px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 1 } }));
-        this.kidoTooltip.add(this.add.text(8, 24, (n.desc || ''), { fontSize: '9px', color: '#aaaacc', wordWrap: { width: 194 }, padding: { y: 1 } }));
-        this.kidoTooltip.add(this.add.text(8, 48, canAdd ? '[点击加点]' : nodePts >= n.maxPoints ? '已满' : unlocked ? '需先点前置' : '锁定', {
-          fontSize: '10px', color: canAdd ? '#88cc88' : '#666688', padding: { y: 1 } }));
+        // Interactive zone
+        const z = this.add.zone(nx, ny, nR * 3, nR * 3 + 24).setInteractive({ useHandCursor: true });
+        z.on('pointerover', () => {
+          if (this.kidoTooltip) this.kidoTooltip.destroy();
+          this.kidoTooltip = this.add.container(Math.min(nx + 30, GAME_WIDTH - 240), ny - 10).setDepth(320);
+          const tt = this.add.graphics(); tt.fillStyle(0x0a0a1a, 0.95); tt.fillRoundedRect(0, 0, 220, 80, 6);
+          tt.lineStyle(1, colNum, 0.6); tt.strokeRoundedRect(0, 0, 220, 80, 6); this.kidoTooltip.add(tt);
+          this.kidoTooltip.add(this.add.text(8, 6, n.name, { fontSize: '12px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 1 } }));
+          this.kidoTooltip.add(this.add.text(8, 24, n.desc, { fontSize: '9px', color: '#aaaacc', wordWrap: { width: 204 }, padding: { y: 1 } }));
+          let status = '';
+          let statusColor = '#666688';
+          if (isMaxed) { status = '\u5df2\u6ee1\u7ea7'; statusColor = '#ffcc44'; }
+          else if (canAdd) { status = `[\u70b9\u51fb\u52a0\u70b9] \u5269\u4f59${avail}\u70b9`; statusColor = '#88cc88'; }
+          else if (!unlocked) { status = `\u9700\u8be5\u7cfb${tierLock}\u70b9\u89e3\u9501`; statusColor = '#cc6644'; }
+          else if (avail <= 0) { status = '\u9b3c\u9053\u70b9\u4e0d\u8db3'; statusColor = '#cc6644'; }
+          this.kidoTooltip.add(this.add.text(8, 56, status, { fontSize: '10px', color: statusColor, padding: { y: 1 } }));
+        });
+        z.on('pointerout', () => { if (this.kidoTooltip) { this.kidoTooltip.destroy(); this.kidoTooltip = null; } });
+        z.on('pointerdown', () => {
+          if (canAdd) {
+            Kido.addPoint(n.id);
+            GameState.recalcStats();
+            this.closeKidoPanel(); this.showKidoPanel();
+            this.scene.get('UIScene').events.emit('updateStats');
+          }
+        });
+        p.add(z);
       });
-      z.on('pointerout', () => { if (this.kidoTooltip) { this.kidoTooltip.destroy(); this.kidoTooltip = null; } });
-      z.on('pointerdown', () => {
-        if (canAdd) { Kido.addPoint(n.id); GameState.recalcStats(); this.closeKidoPanel(); this.showKidoPanel(); this.scene.get('UIScene').events.emit('updateStats'); }
-      });
-      p.add(z);
     });
 
     const fy = oy + oh - 28; const ft = this.add.graphics();
     ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
-    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'K键 开关  |  ESC 关闭  |  悬停查看  |  点击加点', {
+    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'K\u952e \u5f00\u5173  |  ESC \u5173\u95ed  |  \u60ac\u505c\u67e5\u770b  |  \u70b9\u51fb\u52a0\u70b9  |  \u5207\u6362\u6807\u7b7e\u4fdd\u5b58\u5f53\u524d\u7cfb\u522b', {
       fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
   }
 
