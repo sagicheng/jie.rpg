@@ -2,7 +2,7 @@
 import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES, ZANPAKUTO_GROWTH } from '../config';
 import { DialogueBox, DialogueLine } from '../ui/DialogueBox';
 import { GameState } from '../systems/GameState';
-import { createEnemyData, EnemyData, expForLevel } from '../systems/BattleData';
+import { createEnemyData, EnemyData, expForLevel, generateLoot } from '../systems/BattleData';
 import { getEnemyData, NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress } from '../systems/BestiaryData';
 import { Inventory, EQUIP_TEMPLATES, Item } from '../systems/Inventory';
 import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
@@ -122,6 +122,10 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10).setCollideWorldBounds(true);
     this.player.body!.setSize(24, 32);
     this.player.body!.setOffset(4, 0);
+
+    // 相机跟随玩家
+    this.cameras.main.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT * 2);
+    this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
 
     this.createNPCs();
     this.createEnemies();
@@ -332,6 +336,30 @@ export class GameScene extends Phaser.Scene {
     const a=Phaser.Math.Angle.Between(er.sprite.x,er.sprite.y,this.player.x,this.player.y);this.player.x+=Math.cos(a)*80;this.player.y+=Math.sin(a)*80;
     if (result === 'victory') {
       const ib=er.data.type==='妖将'||er.data.type==='妖王';
+      // 战斗奖励
+      const expGain = er.data.expReward || 0;
+      const goldGain = er.data.goldReward || 0;
+      const leveled = GameState.gainExp(expGain);
+      GameState.gold += goldGain;
+      // 图鉴记录
+      GameState.recordKill(er.data.name);
+      // 任务进度
+      GameState.updateQuestProgress('kill', er.data.name);
+      // 掉落
+      const loot = generateLoot(er.data.type, GameState.zone);
+      const lootNames: string[] = [];
+      for (const drop of loot) { Inventory.addItem(drop as any); lootNames.push(drop.name); }
+      // 显示战斗结果通知
+      let msg = `经验+${expGain}  金币+${goldGain}`;
+      if (lootNames.length > 0) msg += `\n掉落: ${lootNames.join(', ')}`;
+      if (leveled) msg += `\n★ 升级！Lv.${GameState.level}`;
+      const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, msg, {
+        fontSize: '16px', color: '#88ff88', fontStyle: 'bold',
+        backgroundColor: '#112211cc', padding: { x: 20, y: 10 },
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+      this.tweens.add({ targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 120, duration: 2500, onComplete: () => notif.destroy() });
+      this.scene.get('UIScene').events.emit('updateStats');
+
       er.data.hp=0;er.sprite.setVisible(false);er.sprite.setActive(false).setPosition(-9999,-9999);er.label.setVisible(false);
       if (er.respawnTimer) er.respawnTimer.destroy();
       const d=ib?7200000:er.data.type==='恶妖'?300000:30000;
@@ -777,11 +805,47 @@ export class GameScene extends Phaser.Scene {
         p.add(this.add.text(sx + 8, sy + 20, `${it.name}${lvTxt}`, { fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ');
         p.add(this.add.text(sx + 8, sy + 40, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
+        // 点击卸下装备
+        const slotZone = this.add.zone(sx, sy, eW, eH).setOrigin(0, 0).setInteractive({ useHandCursor: true });
+        slotZone.on('pointerdown', () => {
+          Inventory.unequip(s as any);
+          GameState.recalcStats();
+          this.closeInventory(); this.renderInventoryPanel();
+          this.scene.get('UIScene').events.emit('updateStats');
+        });
+        p.add(slotZone);
       } else { p.add(this.add.text(sx + 8, sy + 24, '空', { fontSize: '12px', color: '#334455', padding: { y: 1 } })); }
     });
 
+    // 背包装备（可穿戴）
+    const equipItems = Inventory.items.filter(it => it.type === 'equipment');
+    if (equipItems.length > 0) {
+      const eiY = eqY + 2 * (eH + eGap) + 16;
+      p.add(this.add.text(ox + 20, eiY, '装备（点击穿戴）', { fontSize: '14px', color: '#88aacc', fontStyle: 'bold', padding: { y: 2 } }));
+      const ec = 6, ecardW = (ow - 50) / ec - 8;
+      equipItems.forEach((item, i) => {
+        const col = i % ec, row = Math.floor(i / ec); const ex = ox + 20 + col * (ecardW + 8), ey = eiY + 28 + row * 56;
+        const q = (item as any).quality || 'white';
+        const cd2 = this.add.graphics(); cd2.fillStyle(0x0a0a1a, 0.7); cd2.fillRoundedRect(ex, ey, ecardW, 48, 5); cd2.lineStyle(1, parseInt((qc[q] || '#666666').replace('#', ''), 16), 0.4); cd2.strokeRoundedRect(ex, ey, ecardW, 48, 5); p.add(cd2);
+        const elv = (item as any).enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
+        p.add(this.add.text(ex + 6, ey + 4, `${item.name}${lvTxt}`, { fontSize: '11px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
+        const sts = item.stats ? Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ') : '';
+        p.add(this.add.text(ex + 6, ey + 24, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
+        const ez = this.add.zone(ex, ey, ecardW, 48).setOrigin(0, 0).setInteractive({ useHandCursor: true });
+        ez.on('pointerover', () => { cd2.clear(); cd2.fillStyle(0x1a2a3a, 0.8); cd2.fillRoundedRect(ex, ey, ecardW, 48, 5); cd2.lineStyle(1, parseInt((qc[q] || '#666666').replace('#', ''), 16), 0.6); cd2.strokeRoundedRect(ex, ey, ecardW, 48, 5); });
+        ez.on('pointerout', () => { cd2.clear(); cd2.fillStyle(0x0a0a1a, 0.7); cd2.fillRoundedRect(ex, ey, ecardW, 48, 5); cd2.lineStyle(1, parseInt((qc[q] || '#666666').replace('#', ''), 16), 0.4); cd2.strokeRoundedRect(ex, ey, ecardW, 48, 5); });
+        ez.on('pointerdown', () => {
+          Inventory.equip(item);
+          GameState.recalcStats();
+          this.closeInventory(); this.renderInventoryPanel();
+          this.scene.get('UIScene').events.emit('updateStats');
+        });
+        p.add(ez);
+      });
+    }
+
     // Consumables
-    const consY = eqY + 2 * (eH + eGap) + 16;
+    const consY = eqY + 2 * (eH + eGap) + 16 + (equipItems.length > 0 ? (Math.ceil(equipItems.length / 6) * 56 + 28) : 0);
     p.add(this.add.text(ox + 20, consY, '消耗品', { fontSize: '15px', color: '#88aacc', fontStyle: 'bold', padding: { y: 2 } }));
     const cons = Inventory.items.filter(it => it.type === 'consumable' && it.quantity > 0);
     const cc = 8, cW = (ow - 50) / cc - 8;
