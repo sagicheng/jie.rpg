@@ -1483,31 +1483,56 @@ export class GameScene extends Phaser.Scene {
     const sep = this.add.graphics(); sep.lineStyle(1, 0x334466, 0.4); sep.lineBetween(ox + 30, cy, ox + ow - 30, cy); p.add(sep);
     cy += 16;
 
-    // 已完成任务
-    p.add(this.add.text(ox + 30, cy, `\u5df2\u5b8c\u6210\u4efb\u52a1 (${GameState.questCompleted.length})`, { fontSize: '16px', color: '#88aacc', fontStyle: 'bold', padding: { y: 3 } }));
-    cy += 30;
-    const completed = GameState.questCompleted;
-    completed.forEach((qid, i) => {
-      const qd = MAIN_QUESTS[qid];
-      if (qd) {
-        const col = i % 3, row = Math.floor(i / 3);
-        const cx2 = ox + 30 + col * 400, ry = cy + row * 24;
-        p.add(this.add.text(cx2, ry, `\u2713 ${qd.name}`, { fontSize: '12px', color: '#558855', padding: { y: 1 } }));
-      }
-    });
+    // 主线任务列表（全部）
+    p.add(this.add.text(ox + 30, cy, '主线任务', { fontSize: '16px', color: '#88aacc', fontStyle: 'bold', padding: { y: 3 } }));
+    cy += 28;
+    const colW2 = (ow - 60) / 2;
+    let mainIdx = 0;
+    for (const questId of MAIN_QUEST_ORDER) {
+      const quest = MAIN_QUESTS[questId];
+      if (!quest) continue;
+      const isCompleted = GameState.questCompleted.includes(questId);
+      const isActive = GameState.activeQuest === questId;
+      const isAvailable = !isCompleted && !isActive && (!quest.prerequisite || GameState.questCompleted.includes(quest.prerequisite));
+      const isLocked = !isCompleted && !isActive && !isAvailable;
+      const col = mainIdx % 2, row = Math.floor(mainIdx / 2);
+      const mx = ox + 30 + col * colW2, my = cy + row * 22;
+      let icon = '\u25cb', color = '#556677';
+      if (isCompleted) { icon = '\u2713'; color = '#558855'; }
+      else if (isActive) { icon = '\u2605'; color = '#ffe8b0'; }
+      else if (isAvailable) { icon = '\u25cb'; color = '#aabbcc'; }
+      else { icon = '\u25a6'; color = '#445566'; } // 锁定
+      const chLabel = quest.chapter === 0 ? '\u5e8f\u7ae0' : `\u7b2c${quest.chapter}\u7ae0`;
+      p.add(this.add.text(mx, my, `${icon} [${chLabel}] ${quest.name}`, { fontSize: '12px', color, fontStyle: isActive ? 'bold' : 'normal', padding: { y: 1 } }));
+      mainIdx++;
+    }
+    cy += Math.ceil(mainIdx / 2) * 22 + 16;
+
+    // 分割线2
+    const sep2 = this.add.graphics(); sep2.lineStyle(1, 0x334466, 0.4); sep2.lineBetween(ox + 30, cy, ox + ow - 30, cy); p.add(sep2);
+    cy += 16;
 
     // 支线任务
-    cy += Math.ceil(completed.length / 3) * 24 + 20;
-    p.add(this.add.text(ox + 30, cy, '\u53ef\u63a5\u53d6\u7684\u652f\u7ebf', { fontSize: '16px', color: '#88aacc', fontStyle: 'bold', padding: { y: 3 } }));
-    cy += 30;
-    const sideQuests = Object.values(SIDE_QUESTS).filter(sq => !GameState.questCompleted.includes(sq.id));
+    p.add(this.add.text(ox + 30, cy, '支线任务', { fontSize: '16px', color: '#88aacc', fontStyle: 'bold', padding: { y: 3 } }));
+    cy += 28;
+    const sideQuests = Object.values(SIDE_QUESTS);
     sideQuests.forEach((sq, i) => {
-      p.add(this.add.text(ox + 30 + (i % 2) * 600, cy + Math.floor(i / 2) * 24, `\u25cb ${sq.name} (${sq.acceptFrom})`, { fontSize: '12px', color: '#aaaacc', padding: { y: 1 } }));
+      const isCompleted = GameState.questCompleted.includes(sq.id);
+      const isActive = GameState.activeQuest === sq.id;
+      const isAvailable = !isCompleted && !isActive && (!sq.prerequisite || GameState.questCompleted.includes(sq.prerequisite));
+      const col = i % 2, row = Math.floor(i / 2);
+      const sx2 = ox + 30 + col * colW2, sy2 = cy + row * 22;
+      let icon = '\u25cb', color = '#556677';
+      if (isCompleted) { icon = '\u2713'; color = '#558855'; }
+      else if (isActive) { icon = '\u2605'; color = '#ffe8b0'; }
+      else if (isAvailable) { icon = '\u25cb'; color = '#aabbcc'; }
+      else { icon = '\u25a6'; color = '#445566'; }
+      p.add(this.add.text(sx2, sy2, `${icon} ${sq.name} (${sq.acceptFrom})`, { fontSize: '12px', color, fontStyle: isActive ? 'bold' : 'normal', padding: { y: 1 } }));
     });
 
     const fy = oy + oh - 28; const ft = this.add.graphics();
     ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
-    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'Q\u952e \u5f00\u5173  |  ESC \u5173\u95ed', {
+    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'L\u952e \u5f00\u5173  |  ESC \u5173\u95ed  |  \u2605\u8fdb\u884c\u4e2d  \u2713\u5b8c\u6210  \u25cb\u53ef\u63a5\u53d6  \u25a6\u9501\u5b9a', {
       fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
   }
 
