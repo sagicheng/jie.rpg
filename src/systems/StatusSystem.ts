@@ -6,7 +6,7 @@
 export type StatusType =
   | 'burn' | 'freeze' | 'poison' | 'parasite'
   | 'slow' | 'stun' | 'bind' | 'taunt'
-  | 'fear' | 'atkDown' | 'defDown' | 'mpDrain';
+  | 'fear' | 'atkDown' | 'defDown' | 'matkDown';
 
 /** 状态效果定义 */
 export const STATUS_INFO: Record<StatusType, {
@@ -24,12 +24,12 @@ export const STATUS_INFO: Record<StatusType, {
   parasite: { name: '寄生', icon: '🦠', maxTurns: 4, blocksAction: false, dotPct: 0.05, mpDrainPct: 0,    statMod: 1.0 },
   slow:     { name: '减速', icon: '🐌', maxTurns: 3, blocksAction: false, dotPct: 0,    mpDrainPct: 0,    statMod: 0.7 },
   stun:     { name: '眩晕', icon: '💫', maxTurns: 2, blocksAction: true,  dotPct: 0,    mpDrainPct: 0,    statMod: 1.0 },
-  bind:     { name: '束缚', icon: '⛓️', maxTurns: 3, blocksAction: true,  dotPct: 0,    mpDrainPct: 0,    statMod: 1.0 },
+  bind:     { name: '禁锢', icon: '⛓️', maxTurns: 2, blocksAction: true,  dotPct: 0,    mpDrainPct: 0,    statMod: 1.0 },
   taunt:    { name: '嘲讽', icon: '😤', maxTurns: 2, blocksAction: false, dotPct: 0,    mpDrainPct: 0,    statMod: 1.0 },
   fear:     { name: '恐惧', icon: '👁️', maxTurns: 2, blocksAction: false, dotPct: 0,    mpDrainPct: 0,    statMod: 1.0 },
   atkDown:  { name: '攻降', icon: '⬇️', maxTurns: 3, blocksAction: false, dotPct: 0,    mpDrainPct: 0,    statMod: 0.75 },
   defDown:  { name: '防降', icon: '🛡️', maxTurns: 3, blocksAction: false, dotPct: 0,    mpDrainPct: 0,    statMod: 0.75 },
-  mpDrain:  { name: '灵消', icon: '💨', maxTurns: 3, blocksAction: false, dotPct: 0,    mpDrainPct: 0.10, statMod: 1.0 },
+  matkDown: { name: '降灵压', icon: '🌀', maxTurns: 3, blocksAction: false, dotPct: 0,    mpDrainPct: 0,    statMod: 0.85 },
 };
 
 // ═══════════════════════════════════════════
@@ -49,7 +49,7 @@ export interface EnemyStatus {
   fear: number;
   atkDown: number;
   defDown: number;
-  mpDrain: number;
+  matkDown: number;
   // 鬼道系统遗留字段（兼容）
   sealed: number;
   slowed: number;       // 旧字段，等同slow
@@ -62,7 +62,7 @@ export function createEnemyStatus(): EnemyStatus {
   return {
     burn: 0, freeze: 0, poison: 0, poisonDmg: 0, parasite: 0,
     slow: 0, stun: 0, bind: 0, taunt: 0, fear: 0,
-    atkDown: 0, defDown: 0, mpDrain: 0,
+    atkDown: 0, defDown: 0, matkDown: 0,
     sealed: 0, slowed: 0, bound: 0, frozen: 0,
   };
 }
@@ -85,7 +85,7 @@ export interface PlayerStatus {
   fear: number;
   atkDown: number;
   defDown: number;
-  mpDrain: number;
+  matkDown: number;
   // 鬼道遗留
   playerShield: number;
   playerShieldTurns: number;
@@ -98,7 +98,7 @@ export function createPlayerStatus(): PlayerStatus {
   return {
     burn: 0, freeze: 0, poison: 0, poisonDmg: 0, parasite: 0,
     slow: 0, stun: 0, bind: 0, taunt: 0, tauntSourceIdx: -1, fear: 0,
-    atkDown: 0, defDown: 0, mpDrain: 0,
+    atkDown: 0, defDown: 0, matkDown: 0,
     playerShield: 0, playerShieldTurns: 0,
     regenAmount: 0, regenTurns: 0,
   };
@@ -141,6 +141,45 @@ export function getEnemySpdMod(ks: EnemyStatus): number {
   return ks.slow > 0 ? 0.7 : 1.0;
 }
 
+/** 获取敌人MATK修正 (降灵压-15%) */
+export function getEnemyMatkMod(ks: EnemyStatus): number {
+  return ks.matkDown > 0 ? 0.85 : 1.0;
+}
+
+// ═══════════════════════════════════════════
+// 玩家属性修正 (玩家被上异常时)
+// ═══════════════════════════════════════════
+
+/** 获取玩家ATK修正 (攻降-25%) */
+export function getPlayerAtkMod(ps: PlayerStatus): number {
+  return ps.atkDown > 0 ? 0.75 : 1.0;
+}
+
+/** 获取玩家DEF修正 (防降-25%) */
+export function getPlayerDefMod(ps: PlayerStatus): number {
+  return ps.defDown > 0 ? 0.75 : 1.0;
+}
+
+/** 获取玩家MATK修正 (降灵压-15%) */
+export function getPlayerMatkMod(ps: PlayerStatus): number {
+  return ps.matkDown > 0 ? 0.85 : 1.0;
+}
+
+/** 获取玩家SPD修正 (减速-30%) */
+export function getPlayerSpdMod(ps: PlayerStatus): number {
+  return ps.slow > 0 ? 0.7 : 1.0;
+}
+
+/** 玩家是否被阻止行动 (冻结/眩晕/禁锢) */
+export function isPlayerBlocked(ps: PlayerStatus): boolean {
+  return ps.freeze > 0 || ps.stun > 0 || ps.bind > 0;
+}
+
+/** 玩家是否因恐惧跳过行动 (50%) */
+export function doesPlayerSkipFromFear(ps: PlayerStatus): boolean {
+  return ps.fear > 0 && Math.random() < 0.50;
+}
+
 // ═══════════════════════════════════════════
 // 施加状态到敌人
 // ═══════════════════════════════════════════
@@ -176,7 +215,7 @@ export function applyStatusToEnemy(
     case 'bind':
       ks.bind = Math.max(ks.bind, turns);
       ks.bound = Math.max(ks.bound, turns);
-      return `束缚 ${turns}回合`;
+      return `禁锢 ${turns}回合`;
     case 'seal':
       ks.sealed = Math.max(ks.sealed, turns);
       return `封印 ${turns}回合`;
@@ -192,9 +231,9 @@ export function applyStatusToEnemy(
     case 'defDown':
       ks.defDown = Math.max(ks.defDown, turns);
       return `防御降低 ${turns}回合`;
-    case 'mpDrain':
-      ks.mpDrain = Math.max(ks.mpDrain, turns);
-      return `灵消 ${turns}回合`;
+    case 'matkDown':
+      ks.matkDown = Math.max(ks.matkDown, turns);
+      return `降灵压 ${turns}回合`;
     default:
       return '';
   }
@@ -231,7 +270,7 @@ export function applyStatusToPlayer(
       return `眩晕 ${turns}回合`;
     case 'bind':
       ps.bind = Math.max(ps.bind, turns);
-      return `束缚 ${turns}回合`;
+      return `禁锢 ${turns}回合`;
     case 'taunt':
       ps.taunt = Math.max(ps.taunt, turns);
       ps.tauntSourceIdx = sourceIdx;
@@ -245,9 +284,9 @@ export function applyStatusToPlayer(
     case 'defDown':
       ps.defDown = Math.max(ps.defDown, turns);
       return `防御降低 ${turns}回合`;
-    case 'mpDrain':
-      ps.mpDrain = Math.max(ps.mpDrain, turns);
-      return `灵消 ${turns}回合`;
+    case 'matkDown':
+      ps.matkDown = Math.max(ps.matkDown, turns);
+      return `降灵压 ${turns}回合`;
     default:
       return '';
   }
@@ -260,14 +299,14 @@ export function applyStatusToPlayer(
 export function clearAllEnemyStatus(ks: EnemyStatus): void {
   ks.burn = 0; ks.freeze = 0; ks.poison = 0; ks.poisonDmg = 0; ks.parasite = 0;
   ks.slow = 0; ks.stun = 0; ks.bind = 0; ks.taunt = 0; ks.fear = 0;
-  ks.atkDown = 0; ks.defDown = 0; ks.mpDrain = 0;
+  ks.atkDown = 0; ks.defDown = 0; ks.matkDown = 0;
   ks.sealed = 0; ks.slowed = 0; ks.bound = 0; ks.frozen = 0;
 }
 
 export function clearAllPlayerStatus(ps: PlayerStatus): void {
   ps.burn = 0; ps.freeze = 0; ps.poison = 0; ps.poisonDmg = 0; ps.parasite = 0;
   ps.slow = 0; ps.stun = 0; ps.bind = 0; ps.taunt = 0; ps.tauntSourceIdx = -1; ps.fear = 0;
-  ps.atkDown = 0; ps.defDown = 0; ps.mpDrain = 0;
+  ps.atkDown = 0; ps.defDown = 0; ps.matkDown = 0;
 }
 
 /** 获取敌人当前激活的状态图标列表 */

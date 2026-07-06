@@ -30,7 +30,7 @@ export interface EnemyData {
   mdef: number;
   spd: number;
   statusRes: number;
-  skills: { name: string; power: number; desc: string; damageType: 'physical' | 'magical' }[];
+  skills: { name: string; power: number; desc: string; damageType: 'physical' | 'magical'; statusEffect?: { subtype: string; rate: number; turns: number } }[];
   expReward: number;
   goldReward: number;
   drops: { item: string; rate: number }[];
@@ -57,11 +57,15 @@ export function createEnemyData(name: string, type: EnemyType, element: string, 
     skills: type === '杂妖' ? [{ name: '撞击', power: 1.0, desc: '普通攻击', damageType: 'physical' }]
            : type === '恶妖' ? [
                { name: '猛击', power: 1.3, desc: '强力一击', damageType: 'physical' },
-               { name: '妖气弹', power: 1.1, desc: '魔力弹攻击', damageType: 'magical' },
+               { name: '妖气弹', power: 1.1, desc: '魔力弹攻击·带毒', damageType: 'magical', statusEffect: { subtype: 'poison', rate: 0.25, turns: 3 } },
              ]
-           : [
-               { name: '绝杀', power: 2.0, desc: '致命一击', damageType: 'physical' },
-               { name: '威压', power: 1.5, desc: '全体魔力攻击', damageType: 'magical' },
+           : type === '妖将' ? [
+               { name: '绝杀', power: 2.0, desc: '致命一击·降攻', damageType: 'physical', statusEffect: { subtype: 'atkDown', rate: 0.30, turns: 3 } },
+               { name: '威压', power: 1.5, desc: '全体魔力攻击·震慑', damageType: 'magical', statusEffect: { subtype: 'fear', rate: 0.35, turns: 2 } },
+             ]
+           : [ // 妖王
+               { name: '绝杀', power: 2.0, desc: '致命一击·震慑', damageType: 'physical', statusEffect: { subtype: 'stun', rate: 0.25, turns: 1 } },
+               { name: '威压', power: 1.5, desc: '灵压威压·降灵压', damageType: 'magical', statusEffect: { subtype: 'matkDown', rate: 0.40, turns: 3 } },
              ],
     expReward: Math.round(pl * 3 * expRates[type]),
     goldReward: Math.round(pl * 2 * goldRates[type]),

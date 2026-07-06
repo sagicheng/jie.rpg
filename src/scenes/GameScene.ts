@@ -1073,28 +1073,60 @@ export class GameScene extends Phaser.Scene {
     p.add(this.add.text(ox + ow - 40, oy + th / 2, '✕', { fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true })
       .on('pointerover', function (this: any) { this.setColor('#ff8888'); }).on('pointerout', function (this: any) { this.setColor('#cc6666'); }).on('pointerdown', () => this.closeStatPanel()));
 
+    // Two-column layout with generous spacing
+    const colW = (ow - 100) / 2;
+    const lx = ox + 30;          // left column x
+    const rx = lx + colW + 40;   // right column x
+    const hdrY = oy + th + 14;   // content start y
+
+    // ═══ Left column: Info block ═══
+    // Player info banner
+    const infoBg = this.add.graphics(); infoBg.fillStyle(0x1a1a36, 0.6); infoBg.fillRoundedRect(lx, hdrY, colW, 58, 6); infoBg.lineStyle(1, 0x334466, 0.4); infoBg.strokeRoundedRect(lx, hdrY, colW, 58, 6); p.add(infoBg);
+    p.add(this.add.text(lx + 16, hdrY + 8, `${GameState.playerName}   Lv.${GameState.level}`, { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 2 } }));
+    p.add(this.add.text(lx + 16, hdrY + 32, `金币: ${GameState.gold}    元素: ${GameState.element || '无'}    斩魄刀: ${GameState.zanpakuto || '无'}`, { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }));
+
+    // Six power system unlock status
+    const unlockY = hdrY + 72;
+    const unlockBg = this.add.graphics(); unlockBg.fillStyle(0x0d0d1d, 0.7); unlockBg.fillRoundedRect(lx, unlockY, colW, 40, 6); unlockBg.lineStyle(1, 0x334466, 0.3); unlockBg.strokeRoundedRect(lx, unlockY, colW, 40, 6); p.add(unlockBg);
+    p.add(this.add.text(lx + 16, unlockY + 6, '力量体系', { fontSize: '11px', color: '#556688', padding: { y: 1 } }));
+    const powers = [
+      { n: '始解', on: GameState.hasShikai }, { n: '卍解', on: GameState.hasBankai }, { n: '虚化', on: GameState.hasHollow },
+      { n: '完现', on: GameState.hasFullbring }, { n: '圣文', on: GameState.hasSchrift }, { n: '狱解', on: GameState.hasHell },
+    ];
+    const pwSpacing = (colW - 32) / 6;
+    powers.forEach((pw, i) => {
+      const px = lx + 16 + i * pwSpacing + pwSpacing / 2;
+      p.add(this.add.text(px, unlockY + 26, `${pw.n}${pw.on ? '✓' : '✗'}`, {
+        fontSize: '12px', color: pw.on ? '#44cc88' : '#445566', fontStyle: 'bold', padding: { y: 1 }
+      }).setOrigin(0.5));
+    });
+
+    // Stat points banner (prominent)
+    const spY = unlockY + 54;
+    const spBg = this.add.graphics(); spBg.fillStyle(0x2a1a0a, 0.8); spBg.fillRoundedRect(lx, spY, colW, 42, 6); spBg.lineStyle(1, 0x665533, 0.5); spBg.strokeRoundedRect(lx, spY, colW, 42, 6); p.add(spBg);
     const sp = GameState.statPoints;
-    const colW = (ow - 80) / 2, lx = ox + 24, rx = lx + colW + 30;
+    let spText: Phaser.GameObjects.Text;
+    spText = this.add.text(lx + 20, spY + 11, `剩余属性点: ${sp}`, {
+      fontSize: '20px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 }
+    });
+    p.add(spText);
+    p.add(this.add.text(lx + colW - 20, spY + 14, 'HP+15 / MP+5 / 其他+1', {
+      fontSize: '11px', color: '#556688', padding: { y: 1 }
+    }).setOrigin(1, 0));
 
-    // ═══ Left: Info + Stats ═══
-    p.add(this.add.text(lx, oy + th + 20, `玩家: ${GameState.playerName}   Lv.${GameState.level}   金币: ${GameState.gold}`, { fontSize: '14px', color: '#aabbdd', padding: { y: 2 } }));
-    p.add(this.add.text(lx, oy + th + 42, `元素: ${GameState.element || '无'}   斩魄刀: ${GameState.zanpakuto || '无'}`, { fontSize: '12px', color: '#8899aa', padding: { y: 2 } }));
-    const unlockStr = `始解${GameState.hasShikai ? '✓' : '✗'}  卍解${GameState.hasBankai ? '✓' : '✗'}  虚化${GameState.hasHollow ? '✓' : '✗'}  完现${GameState.hasFullbring ? '✓' : '✗'}  圣文${GameState.hasSchrift ? '✓' : '✗'}  狱解${GameState.hasHell ? '✓' : '✗'}`;
-    p.add(this.add.text(lx, oy + th + 62, unlockStr, { fontSize: '11px', color: '#667788', padding: { y: 2 } }));
-    p.add(this.add.text(lx, oy + th + 82, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 }, backgroundColor: '#121222' }));
-
+    // ═══ Left column: Attributes ═══
     const attrs = [
       { l: 'HP', k: 'maxHp', a: 'allocatedHP', per: 15 }, { l: 'MP', k: 'maxMp', a: 'allocatedMP', per: 5 },
       { l: 'ATK', k: 'atk', a: 'allocatedATK', per: 1 }, { l: 'DEF', k: 'def', a: 'allocatedDEF', per: 1 },
       { l: 'MATK', k: 'matk', a: 'allocatedMATK', per: 1 }, { l: 'MDEF', k: 'mdef', a: 'allocatedMDEF', per: 1 },
       { l: 'SPD', k: 'spd', a: 'allocatedSPD', per: 1 },
     ];
-    const atY = oy + th + 100;
+    const atY = spY + 56;
+    const rowH = 56;
     const valTexts: Phaser.GameObjects.Text[] = [];
     const allocTexts: Phaser.GameObjects.Text[] = [];
     const addBtns: Phaser.GameObjects.Text[] = [];
     const subBtns: Phaser.GameObjects.Text[] = [];
-    let spText: Phaser.GameObjects.Text;
     const refreshDisplay = () => {
       spText.setText(`剩余属性点: ${GameState.statPoints}`);
       spText.setColor(GameState.statPoints > 0 ? '#ffcc44' : '#667788');
@@ -1107,27 +1139,29 @@ export class GameScene extends Phaser.Scene {
         subBtns[i].setColor(al > 0 ? '#cc4444' : '#553333');
       });
     };
-    spText = this.add.text(lx, oy + th + 72, `剩余属性点: ${sp}`, { fontSize: '18px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 }, backgroundColor: '#121222' });
-    p.add(spText);
 
     attrs.forEach((at, i) => {
-      const ay = atY + i * 48;
+      const ay = atY + i * rowH;
       const av = (GameState as any)[at.k] as number; const al = (GameState as any)[at.a] as number;
-      const ar = this.add.graphics(); ar.fillStyle(0x0d0d1d, 0.7); ar.fillRoundedRect(lx, ay, colW - 10, 40, 6); ar.lineStyle(1, 0x334466, 0.3); ar.strokeRoundedRect(lx, ay, colW - 10, 40, 6); p.add(ar);
-      p.add(this.add.text(lx + 16, ay + 10, at.l, { fontSize: '15px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
-      const vt = this.add.text(lx + 80, ay + 10, `${av}`, { fontSize: '18px', color: '#88ccff', fontStyle: 'bold', padding: { y: 2 } });
+      const ar = this.add.graphics(); ar.fillStyle(0x0d0d1d, 0.7); ar.fillRoundedRect(lx, ay, colW, 46, 6); ar.lineStyle(1, 0x334466, 0.3); ar.strokeRoundedRect(lx, ay, colW, 46, 6); p.add(ar);
+      // Label
+      p.add(this.add.text(lx + 18, ay + 14, at.l, { fontSize: '16px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
+      // Value
+      const vt = this.add.text(lx + 90, ay + 12, `${av}`, { fontSize: '20px', color: '#88ccff', fontStyle: 'bold', padding: { y: 2 } });
       p.add(vt); valTexts.push(vt);
-      const at2 = this.add.text(lx + 140, ay + 12, `(加点${al} × ${at.per} = +${al * at.per})`, { fontSize: '11px', color: '#6677aa', padding: { y: 1 } });
+      // Allocation detail
+      const at2 = this.add.text(lx + 160, ay + 16, `(加点${al} × ${at.per} = +${al * at.per})`, { fontSize: '12px', color: '#6677aa', padding: { y: 1 } });
       p.add(at2); allocTexts.push(at2);
-
-      const ap = this.add.text(lx + colW - 120, ay + 6, '+', { fontSize: '22px', color: GameState.statPoints > 0 ? '#44cc44' : '#335533', fontStyle: 'bold', padding: { x: 10, y: 4 } }).setInteractive({ useHandCursor: true });
+      // + button
+      const ap = this.add.text(lx + colW - 110, ay + 8, '＋', { fontSize: '24px', color: GameState.statPoints > 0 ? '#44cc44' : '#335533', fontStyle: 'bold', padding: { x: 12, y: 6 } }).setInteractive({ useHandCursor: true });
       ap.on('pointerover', () => { if (GameState.statPoints > 0) ap.setColor('#88ff88'); });
       ap.on('pointerout', () => { ap.setColor(GameState.statPoints > 0 ? '#44cc44' : '#335533'); });
       ap.on('pointerdown', () => {
         if (GameState.statPoints > 0) { (GameState as any)[at.a]++; GameState.statPoints--; GameState.recalcStats(); refreshDisplay(); this.scene.get('UIScene').events.emit('updateStats'); }
       });
       p.add(ap); addBtns.push(ap);
-      const sp2 = this.add.text(lx + colW - 80, ay + 6, '-', { fontSize: '22px', color: al > 0 ? '#cc4444' : '#553333', fontStyle: 'bold', padding: { x: 10, y: 4 } }).setInteractive({ useHandCursor: true });
+      // - button
+      const sp2 = this.add.text(lx + colW - 60, ay + 8, '－', { fontSize: '24px', color: al > 0 ? '#cc4444' : '#553333', fontStyle: 'bold', padding: { x: 12, y: 6 } }).setInteractive({ useHandCursor: true });
       sp2.on('pointerover', () => { if ((GameState as any)[at.a] > 0) sp2.setColor('#ff8888'); });
       sp2.on('pointerout', () => { sp2.setColor((GameState as any)[at.a] > 0 ? '#cc4444' : '#553333'); });
       sp2.on('pointerdown', () => {
@@ -1136,30 +1170,79 @@ export class GameScene extends Phaser.Scene {
       p.add(sp2); subBtns.push(sp2);
     });
 
-    // ═══ Right: Equipment ═══
-    p.add(this.add.text(rx, oy + th + 20, '装备栏', { fontSize: '16px', color: '#aaccdd', fontStyle: 'bold', padding: { y: 3 } }));
-    const eq = Inventory.equipment; const sn: Record<string, string> = { weapon: '武器', head: '头部', body: '身体', bracer: '手甲', boots: '战靴', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
+    // ═══ Right column: Equipment grid ═══
+    p.add(this.add.text(rx, hdrY, '装备栏', { fontSize: '18px', color: '#aaccdd', fontStyle: 'bold', padding: { y: 3 } }));
+    p.add(this.add.text(rx + 80, hdrY + 4, '（点击装备可卸下）', { fontSize: '11px', color: '#556688', padding: { y: 1 } }));
+    const eq = Inventory.equipment;
+    const sn: Record<string, string> = { weapon: '斩魄刀', head: '头部', body: '身体', bracer: '手甲', boots: '战靴', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
     const eqs = ['weapon', 'head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
-    const eqY = oy + th + 52;
+    const eqY = hdrY + 36;
+    const eqColW = (colW - 10) / 2;
+    const eqRowH = 76;
     eqs.forEach((s, i) => {
-      const c2 = i % 2, r2 = Math.floor(i / 2); const sx = rx + c2 * (colW / 2 + 4), sy = eqY + r2 * 68;
-      const er = this.add.graphics(); er.fillStyle(0x0d0d1d, 0.6); er.fillRoundedRect(sx, sy, colW / 2 - 4, 58, 5);
-      er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, colW / 2 - 4, 58, 5); p.add(er);
-      p.add(this.add.text(sx + 8, sy + 4, sn[s], { fontSize: '10px', color: '#556688', padding: { y: 1 } }));
+      const c2 = i % 2, r2 = Math.floor(i / 2);
+      const sx = rx + c2 * (eqColW + 10), sy = eqY + r2 * eqRowH;
+      const er = this.add.graphics(); er.fillStyle(0x0d0d1d, 0.6); er.fillRoundedRect(sx, sy, eqColW, 66, 6);
+      er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, eqColW, 66, 6); p.add(er);
+      // Slot name label
+      p.add(this.add.text(sx + 10, sy + 6, sn[s], { fontSize: '11px', color: '#667799', fontStyle: 'bold', padding: { y: 1 } }));
+      if (s === 'weapon') {
+        // 斩魄刀槽位 - 展示用，不可卸下
+        const zk = GameState.zanpakuto;
+        if (zk) {
+          p.add(this.add.text(sx + 10, sy + 24, zk, { fontSize: '13px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 1 } }));
+          p.add(this.add.text(sx + 10, sy + 46, `元素: ${GameState.element || '无'}  (始解${GameState.hasShikai ? '✓' : '✗'})`, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
+        } else {
+          p.add(this.add.text(sx + 10, sy + 28, '— 未觉醒 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
+        }
+        return;
+      }
       const it = (eq as any)[s];
       if (it) {
         const elv = (it as any).enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
         const qc: Record<string, string> = { white: '#cccccc', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
         const q = (it as any).quality || 'white';
-        p.add(this.add.text(sx + 8, sy + 20, `${it.name}${lvTxt}`, { fontSize: '12px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
-        const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ');
-        p.add(this.add.text(sx + 8, sy + 38, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
-      } else { p.add(this.add.text(sx + 8, sy + 24, '空', { fontSize: '12px', color: '#334455', padding: { y: 1 } })); }
+        const itemTxt = this.add.text(sx + 10, sy + 24, `${it.name}${lvTxt}`, {
+          fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 }
+        });
+        // Truncate long names
+        if (itemTxt.width > eqColW - 20) { itemTxt.setText(it.name.slice(0, 8) + '…' + lvTxt); }
+        p.add(itemTxt);
+        const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join('  ');
+        p.add(this.add.text(sx + 10, sy + 46, sts, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
+        // Click to unequip
+        er.setInteractive(new Phaser.Geom.Rectangle(sx, sy, eqColW, 66), Phaser.Geom.Rectangle.Contains);
+        er.on('pointerdown', () => {
+          Inventory.unequip(s as any);
+          GameState.recalcStats();
+          this.closeStatPanel(); this.renderStatPanel(); this.scene.get('UIScene').events.emit('updateStats');
+        });
+      } else {
+        p.add(this.add.text(sx + 10, sy + 28, '— 空 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
+      }
     });
+
+    // ═══ Right column: Derived combat stats summary (below equipment) ═══
+    const sumY = eqY + 5 * eqRowH + 8;
+    if (sumY + 142 < oy + oh) {
+      const sumBg = this.add.graphics(); sumBg.fillStyle(0x1a1a36, 0.5); sumBg.fillRoundedRect(rx, sumY, colW, 132, 6); sumBg.lineStyle(1, 0x334466, 0.3); sumBg.strokeRoundedRect(rx, sumY, colW, 132, 6); p.add(sumBg);
+      p.add(this.add.text(rx + 16, sumY + 8, '战斗属性', { fontSize: '13px', color: '#aaccdd', fontStyle: 'bold', padding: { y: 1 } }));
+      const ds = [
+        `生命: ${GameState.maxHp}`, `法力: ${GameState.maxMp}`,
+        `物攻: ${GameState.atk}`, `物防: ${GameState.def}`,
+        `魔攻: ${GameState.matk}`, `魔防: ${GameState.mdef}`,
+        `速度: ${GameState.spd}`, `暴击: ${(GameState as any).critRate || 0}%`,
+        `异常命中: ${Math.round(GameState.statusAcc * 100)}%`,
+      ];
+      ds.forEach((line, i) => {
+        const c2 = i % 2, r2 = Math.floor(i / 2);
+        p.add(this.add.text(rx + 16 + c2 * (colW / 2 - 10), sumY + 32 + r2 * 22, line, { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }));
+      });
+    }
 
     // Footer
     const fy = oy + oh - 28; const ft = this.add.graphics(); ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
-    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'C键 开关  |  ESC 关闭', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+    p.add(this.add.text(GAME_WIDTH / 2, fy + 12, 'C键 开关  |  ESC 关闭  |  ＋/－ 加减属性点  |  点击装备卸下', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
   }
 
   private showKidoPanel(): void {
@@ -1660,7 +1743,7 @@ export class GameScene extends Phaser.Scene {
     let cy=pad+68;const lh=22;const ec:Record<string,string>={火:'#ff6644',水:'#4488ff',风:'#44cc88',土:'#cc9944',暗:'#8844cc',光:'#ffdd44',无:'#888899'};
     [{l:'元素',v:df.element,c:ec[df.element]||'#888899'},{l:'弱点',v:df.weakness||'无',c:df.weakness?'#ff8866':'#666688'},{l:'抗性',v:df.resist||'无',c:df.resist?'#6688cc':'#666688'}].forEach(p=>{dc.add(this.add.text(pad+8,cy,`${p.l}：`,{fontSize:'12px',color:'#7788aa',padding:{y:1}}));dc.add(this.add.text(pad+60,cy,p.v,{fontSize:'12px',color:p.c,fontStyle:'bold',padding:{y:1}}));cy+=lh;});
     cy+=6;const h1=this.add.graphics();h1.lineStyle(1,0x2a3a4a,0.4);h1.lineBetween(pad,cy,w-pad,cy);dc.add(h1);cy+=12;
-    const sn:Record<string,string>={灼烧:'灼烧',冻结:'冻结',中毒:'中毒',寄生:'寄生',减速:'减速',眩晕:'眩晕',束缚:'束缚',嘲讽:'嘲讽',恐惧:'恐惧',攻降:'攻降',防降:'防降',灵消:'灵消'};
+    const sn:Record<string,string>={灼烧:'灼烧',冻结:'冻结',中毒:'中毒',寄生:'寄生',减速:'减速',眩晕:'眩晕',禁锢:'禁锢',嘲讽:'嘲讽',恐惧:'恐惧',攻降:'攻降',防降:'防降',降灵压:'降灵压'};
     const es=Object.entries(df.statusResist||{});if(es.length===0){dc.add(this.add.text(pad+8,cy,'无特殊抗性',{fontSize:'11px',color:'#556688',padding:{y:2}}));cy+=lh;}
     else{es.forEach(([k,v]:any,i:number)=>{const col=i%2;const sx=pad+8+col*(w/2-8);const pct=Math.round(v*100);const sc=pct>=80?'#ff5555':pct>=40?'#ffaa44':'#66cc66';dc.add(this.add.text(sx,cy+Math.floor(i/2)*lh,`${sn[k]||k} ${pct}%`,{fontSize:'11px',color:sc,padding:{y:2}}));});cy+=Math.ceil(es.length/2)*lh;}
     cy+=6;const h2=this.add.graphics();h2.lineStyle(1,0x2a3a4a,0.4);h2.lineBetween(pad,cy,w-pad,cy);dc.add(h2);cy+=12;

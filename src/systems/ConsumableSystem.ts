@@ -261,7 +261,7 @@ function cureOneStatus(ps: PlayerStatus, type: string): boolean {
     case 'fear':     if (ps.fear > 0)     { ps.fear = 0; return true; } break;
     case 'atkDown':  if (ps.atkDown > 0)  { ps.atkDown = 0; return true; } break;
     case 'defDown':  if (ps.defDown > 0)  { ps.defDown = 0; return true; } break;
-    case 'mpDrain':  if (ps.mpDrain > 0)  { ps.mpDrain = 0; return true; } break;
+    case 'matkDown': if (ps.matkDown > 0) { ps.matkDown = 0; return true; } break;
     case 'taunt':    if (ps.taunt > 0)    { ps.taunt = 0; ps.tauntSourceIdx = -1; return true; } break;
     case 'sealed':   return false; // sealed 不在 PlayerStatus 里，由 BattleScene 管理
   }
@@ -271,7 +271,7 @@ function cureOneStatus(ps: PlayerStatus, type: string): boolean {
 function clearAllPlayerStatusInternal(ps: PlayerStatus): void {
   ps.burn = 0; ps.freeze = 0; ps.poison = 0; ps.poisonDmg = 0; ps.parasite = 0;
   ps.slow = 0; ps.stun = 0; ps.bind = 0; ps.taunt = 0; ps.tauntSourceIdx = -1; ps.fear = 0;
-  ps.atkDown = 0; ps.defDown = 0; ps.mpDrain = 0;
+  ps.atkDown = 0; ps.defDown = 0; ps.matkDown = 0;
   ps.playerShield = 0; ps.playerShieldTurns = 0;
   ps.regenAmount = 0; ps.regenTurns = 0;
 }

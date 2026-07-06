@@ -365,7 +365,7 @@ export function applyDebuffFromMechanics(
       case 'fear':    enemyStatus.fear = Math.max(enemyStatus.fear, turns); applied.push('恐惧'); break;
       case 'stun':    enemyStatus.stun = Math.max(enemyStatus.stun, turns); applied.push('眩晕'); break;
       case 'taunt':   enemyStatus.taunt = Math.max(enemyStatus.taunt, turns); applied.push('嘲讽'); break;
-      case 'mpDrain': enemyStatus.mpDrain = Math.max(enemyStatus.mpDrain, turns); applied.push('灵消'); break;
+      case 'matkDown': enemyStatus.matkDown = Math.max(enemyStatus.matkDown, turns); applied.push('降灵压'); break;
       case 'accDown': enemyStatus.atkDown = Math.max(enemyStatus.atkDown, turns); applied.push('命中降低'); break;
     }
   }

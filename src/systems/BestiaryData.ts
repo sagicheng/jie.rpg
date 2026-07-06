@@ -13,8 +13,8 @@ import { EnemyData, EnemyType, createEnemyData } from './BattleData';
 /** 异常状态抗性表 (0~1, 1=免疫) */
 export interface StatusResist {
   灼烧?: number; 冻结?: number; 中毒?: number; 寄生?: number;
-  减速?: number; 眩晕?: number; 束缚?: number; 嘲讽?: number;
-  恐惧?: number; 攻降?: number; 防降?: number; 灵消?: number;
+  减速?: number; 眩晕?: number; 禁锢?: number; 嘲讽?: number;
+  恐惧?: number; 攻降?: number; 防降?: number; 降灵压?: number;
 }
 
 /** 具名敌人定义 */
@@ -32,7 +32,7 @@ export interface NamedEnemyDef {
   /** 异常状态抗性 */
   statusResist: StatusResist;
   /** 专属技能（覆盖默认模板技能） */
-  skills?: { name: string; power: number; desc: string; damageType: 'physical' | 'magical' }[];
+  skills?: { name: string; power: number; desc: string; damageType: 'physical' | 'magical'; statusEffect?: { subtype: string; rate: number; turns: number } }[];
   /** 专属掉落（覆盖默认模板掉落） */
   drops?: { item: string; rate: number; quality?: 'white' | 'green' | 'blue' | 'purple' | 'gold' }[];
   /** 先遣队笔记/背景描述 */
@@ -165,7 +165,7 @@ const ZONE3_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '暴走虚', type: '杂妖', element: '无',
-    statusResist: { 眩晕: 0.60, 恐惧: 0.70, 束缚: 0.40 },
+    statusResist: { 眩晕: 0.60, 恐惧: 0.70, 禁锢: 0.40 },
     skills: [{ name: '疯狂乱抓', power: 1.3, desc: '失去理智的连续抓击', damageType: 'physical' }],
     lore: '失去理智暴走的虚。攻击毫无章法但异常凶猛。',
   },
@@ -192,7 +192,7 @@ const ZONE4_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '暴走虚·改', type: '杂妖', element: '无',
-    statusResist: { 眩晕: 0.70, 恐惧: 0.80, 束缚: 0.50 },
+    statusResist: { 眩晕: 0.70, 恐惧: 0.80, 禁锢: 0.50 },
     skills: [{ name: '狂暴连爪', power: 1.4, desc: '更狂暴的连续爪击', damageType: 'physical' }],
     statMult: { HP: 1.1, ATK: 1.1 },
     lore: '暴走虚的强化形态。更难控制，攻击力更高。',
@@ -221,7 +221,7 @@ const ZONE5_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '叛逆死神', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.40, 恐惧: 0.50, 束缚: 0.40 },
+    statusResist: { 眩晕: 0.40, 恐惧: 0.50, 禁锢: 0.40 },
     skills: [{ name: '鬼道·白伏', power: 1.4, desc: '中级鬼道攻击', damageType: 'magical' }],
     statMult: { HP: 1.2, ATK: 1.1, MATK: 1.2 },
     rewardMult: { exp: 1.3, gold: 1.2 },
@@ -251,7 +251,7 @@ const ZONE6_ENEMIES: NamedEnemyDef[] = [
 const ZONE7_ENEMIES: NamedEnemyDef[] = [
   {
     name: '上级死神', type: '杂妖', element: '无',
-    statusResist: { 眩晕: 0.40, 恐惧: 0.40, 束缚: 0.30 },
+    statusResist: { 眩晕: 0.40, 恐惧: 0.40, 禁锢: 0.30 },
     skills: [{ name: '上级斩术', power: 1.3, desc: '高阶死神斩术', damageType: 'physical' }],
     statMult: { HP: 1.2, ATK: 1.2 },
     drops: [{ item: '浅打碎片', rate: 0.20 }, { item: '灵木枝', rate: 0.10 }],
@@ -259,7 +259,7 @@ const ZONE7_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '叛逆死神·长', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.50, 恐惧: 0.50, 束缚: 0.40 },
+    statusResist: { 眩晕: 0.50, 恐惧: 0.50, 禁锢: 0.40 },
     skills: [
       { name: '鬼道·苍火坠', power: 1.5, desc: '火系鬼道', damageType: 'magical' },
       { name: '连斩·烈', power: 1.3, desc: '强力连续斩击', damageType: 'physical' },
@@ -345,7 +345,7 @@ const ZONE8_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '瓦史托德', type: '恶妖', element: '无',
-    statusResist: { 冻结: 0.70, 眩晕: 0.70, 恐惧: 0.80, 中毒: 0.50, 束缚: 0.50 },
+    statusResist: { 冻结: 0.70, 眩晕: 0.70, 恐惧: 0.80, 中毒: 0.50, 禁锢: 0.50 },
     skills: [
       { name: '虚闪·王', power: 2.0, desc: '大虚之王虚闪', damageType: 'magical' },
       { name: '瞬身连斩', power: 1.7, desc: '瞬移连续斩击', damageType: 'physical' },
@@ -372,7 +372,7 @@ const ZONE9_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '完现者(敌)', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.50, 恐惧: 0.50, 束缚: 0.40, 灵消: 0.30 },
+    statusResist: { 眩晕: 0.50, 恐惧: 0.50, 禁锢: 0.40, 降灵压: 0.30 },
     skills: [
       { name: '完现术·武器', power: 1.5, desc: '完现术具现化武器攻击', damageType: 'physical' },
       { name: '灵压爆发', power: 1.3, desc: '释放灵压冲击', damageType: 'magical' },
@@ -392,7 +392,7 @@ const ZONE9_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '完现者·长', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.60, 恐惧: 0.60, 束缚: 0.50, 灵消: 0.40 },
+    statusResist: { 眩晕: 0.60, 恐惧: 0.60, 禁锢: 0.50, 降灵压: 0.40 },
     skills: [
       { name: '完现术·神兵', power: 1.7, desc: '强力完现武器', damageType: 'physical' },
       { name: '灵压屏障', power: 1.0, desc: '防御型完现术', damageType: 'magical' },
@@ -404,7 +404,7 @@ const ZONE9_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '完现者·精英', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.65, 恐惧: 0.65, 束缚: 0.55, 灵消: 0.50 },
+    statusResist: { 眩晕: 0.65, 恐惧: 0.65, 禁锢: 0.55, 降灵压: 0.50 },
     skills: [
       { name: '完现术·极', power: 1.9, desc: '精英级完现术', damageType: 'physical' },
       { name: '灵压风暴', power: 1.6, desc: '大范围灵压攻击', damageType: 'magical' },
@@ -416,7 +416,7 @@ const ZONE9_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '完现术·暴走', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.80, 恐惧: 0.90, 束缚: 0.60, 灵消: 0.50 },
+    statusResist: { 眩晕: 0.80, 恐惧: 0.90, 禁锢: 0.60, 降灵压: 0.50 },
     skills: [
       { name: '暴走冲击', power: 2.0, desc: '失控的完现术冲击', damageType: 'physical' },
       { name: '灵压失控', power: 1.8, desc: '灵压暴走', damageType: 'magical' },
@@ -442,7 +442,7 @@ const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '星十字骑士', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.50, 恐惧: 0.50, 束缚: 0.40, 灵消: 0.30 },
+    statusResist: { 眩晕: 0.50, 恐惧: 0.50, 禁锢: 0.40, 降灵压: 0.30 },
     skills: [
       { name: '圣文字·击', power: 1.6, desc: '圣文字能力攻击', damageType: 'magical' },
       { name: '灵银弓', power: 1.4, desc: '灵银箭矢射击', damageType: 'physical' },
@@ -462,7 +462,7 @@ const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '圣兵精英', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.50, 恐惧: 0.50, 束缚: 0.40 },
+    statusResist: { 眩晕: 0.50, 恐惧: 0.50, 禁锢: 0.40 },
     skills: [{ name: '圣击·烈', power: 1.5, desc: '强化圣击', damageType: 'physical' }],
     statMult: { HP: 1.4, ATK: 1.3 },
     rewardMult: { exp: 1.6, gold: 1.3 },
@@ -471,7 +471,7 @@ const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '星十字骑士·长', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.60, 恐惧: 0.60, 束缚: 0.50, 灵消: 0.40 },
+    statusResist: { 眩晕: 0.60, 恐惧: 0.60, 禁锢: 0.50, 降灵压: 0.40 },
     skills: [
       { name: '圣文字·烈', power: 1.8, desc: '强化圣文字', damageType: 'magical' },
       { name: '灵银连射', power: 1.5, desc: '灵银箭矢连射', damageType: 'physical' },
@@ -483,7 +483,7 @@ const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '亲卫队', type: '恶妖', element: '无',
-    statusResist: { 眩晕: 0.70, 恐惧: 0.70, 束缚: 0.60, 灵消: 0.50, 中毒: 0.50 },
+    statusResist: { 眩晕: 0.70, 恐惧: 0.70, 禁锢: 0.60, 降灵压: 0.50, 中毒: 0.50 },
     skills: [
       { name: '圣文字·极', power: 2.0, desc: '亲卫队级圣文字', damageType: 'magical' },
       { name: '灵银风暴', power: 1.7, desc: '灵银箭矢风暴', damageType: 'physical' },
@@ -510,7 +510,7 @@ const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
 const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
   {
     name: '咎人', type: '杂妖', element: '无',
-    statusResist: { 灼烧: 0.60, 恐惧: 0.50, 灵消: 0.30 },
+    statusResist: { 灼烧: 0.60, 恐惧: 0.50, 降灵压: 0.30 },
     skills: [{ name: '罪业抓击', power: 1.4, desc: '充满怨念的抓击', damageType: 'physical' }],
     statMult: { HP: 1.3, ATK: 1.2 },
     drops: [{ item: '罪业碎片', rate: 0.20 }, { item: '麻布片', rate: 0.15 }],
@@ -530,7 +530,7 @@ const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '混沌兽', type: '恶妖', element: '无',
-    statusResist: { 灼烧: 0.50, 冻结: 0.50, 眩晕: 0.60, 恐惧: 0.60, 灵消: 0.40 },
+    statusResist: { 灼烧: 0.50, 冻结: 0.50, 眩晕: 0.60, 恐惧: 0.60, 降灵压: 0.40 },
     skills: [
       { name: '混沌冲击', power: 1.7, desc: '混沌之力冲击', damageType: 'magical' },
       { name: '混乱爪击', power: 1.5, desc: '附带混乱效果的爪击', damageType: 'physical' },
@@ -542,7 +542,7 @@ const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '地狱守卫', type: '恶妖', element: '土', weakness: '风',
-    statusResist: { 灼烧: 0.50, 冻结: 0.50, 眩晕: 0.70, 恐惧: 0.70, 束缚: 0.50 },
+    statusResist: { 灼烧: 0.50, 冻结: 0.50, 眩晕: 0.70, 恐惧: 0.70, 禁锢: 0.50 },
     skills: [
       { name: '大地震荡', power: 1.6, desc: '震撼大地的重击', damageType: 'physical' },
       { name: '岩壁守护', power: 1.0, desc: '提升防御', damageType: 'physical' },
@@ -554,7 +554,7 @@ const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '咎人·怨', type: '杂妖', element: '无',
-    statusResist: { 灼烧: 0.70, 恐惧: 0.60, 灵消: 0.40 },
+    statusResist: { 灼烧: 0.70, 恐惧: 0.60, 降灵压: 0.40 },
     skills: [{ name: '怨念爆发', power: 1.5, desc: '释放怨念攻击', damageType: 'magical' }],
     statMult: { HP: 1.4, MATK: 1.3 },
     drops: [{ item: '罪业碎片', rate: 0.25 }, { item: '怨念结晶', rate: 0.10 }],
@@ -562,7 +562,7 @@ const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '终焉之兽', type: '恶妖', element: '无',
-    statusResist: { 灼烧: 0.60, 冻结: 0.60, 眩晕: 0.70, 恐惧: 0.70, 灵消: 0.50, 中毒: 0.50 },
+    statusResist: { 灼烧: 0.60, 冻结: 0.60, 眩晕: 0.70, 恐惧: 0.70, 降灵压: 0.50, 中毒: 0.50 },
     skills: [
       { name: '终焉咆哮', power: 1.9, desc: '终结一切的咆哮', damageType: 'magical' },
       { name: '毁灭爪击', power: 1.7, desc: '毁灭性爪击', damageType: 'physical' },
@@ -574,7 +574,7 @@ const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '混沌兽·极', type: '恶妖', element: '无',
-    statusResist: { 灼烧: 0.60, 冻结: 0.60, 眩晕: 0.70, 恐惧: 0.70, 灵消: 0.50, 中毒: 0.50 },
+    statusResist: { 灼烧: 0.60, 冻结: 0.60, 眩晕: 0.70, 恐惧: 0.70, 降灵压: 0.50, 中毒: 0.50 },
     skills: [
       { name: '混沌·极致', power: 2.0, desc: '混沌之力的极致释放', damageType: 'magical' },
       { name: '虚无爪', power: 1.8, desc: '附带虚无之力的爪击', damageType: 'physical' },
@@ -586,7 +586,7 @@ const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
   },
   {
     name: '地狱之王', type: '妖王', element: '无',
-    statusResist: { 灼烧: 0.90, 冻结: 0.80, 眩晕: 0.90, 恐惧: 1.0, 灵消: 0.60, 中毒: 0.70, 束缚: 0.70 },
+    statusResist: { 灼烧: 0.90, 冻结: 0.80, 眩晕: 0.90, 恐惧: 1.0, 降灵压: 0.60, 中毒: 0.70, 禁锢: 0.70 },
     skills: [
       { name: '地狱审判', power: 2.2, desc: '地狱之王的终极审判', damageType: 'magical' },
       { name: '业火焚烧', power: 2.0, desc: '地狱业火焚烧一切', damageType: 'magical' },

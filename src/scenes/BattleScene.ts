@@ -10,7 +10,9 @@ import {
   createEnemyStatus, createPlayerStatus,
   applyStatusToEnemy, applyStatusToPlayer,
   isEnemyBlocked, doesEnemySkipFromFear,
-  getEnemyAtkMod, getEnemyDefMod, getEnemySpdMod,
+  getEnemyAtkMod, getEnemyDefMod, getEnemySpdMod, getEnemyMatkMod,
+  getPlayerAtkMod, getPlayerMatkMod,
+  isPlayerBlocked, doesPlayerSkipFromFear,
   getEnemyStatusIcons, getPlayerStatusIcons,
   clearAllEnemyStatus, clearAllPlayerStatus,
 } from '../systems/StatusSystem';
@@ -28,9 +30,10 @@ type BattlePhase = 'intro' | 'playerTurn' | 'targetSelect' | 'enemyTurn' | 'exec
 
 /** 鬼道subtype → 图鉴抗性表key (中文状态名) */
 const SUBTYPE_TO_STATUS_NAME: Record<string, string> = {
-  seal: '束缚', slow: '减速', bind: '束缚', freeze: '冻结',
+  seal: '禁锢', slow: '减速', bind: '禁锢', freeze: '冻结',
   stun: '眩晕', poison: '中毒', burn: '灼烧', parasitic: '寄生',
-  fear: '恐惧', atk_down: '攻降', def_down: '防降', spirit_drain: '灵消',
+  fear: '恐惧', atk_down: '攻降', def_down: '防降', spirit_drain: '降灵压',
+  matkDown: '降灵压',
 };
 
 /**
@@ -420,7 +423,7 @@ export class BattleScene extends Phaser.Scene {
     const defVal = hasIgnoreDef([]) ? 0 : this.playerDef; // 敌人暂无视防御
     const { damage, crit } = isPhysical
       ? calcDamage(enemy.atk, defVal, power)
-      : calcMagicDamage(enemy.matk, this.playerMdef, power);
+      : calcMagicDamage(enemy.matk * getEnemyMatkMod(ks), this.playerMdef, power);
     let actualDamage = damage;
 
     // 防御减伤
@@ -448,7 +451,19 @@ export class BattleScene extends Phaser.Scene {
       this.flashEnemySprite(sprite);
     }
 
-    this.logText.setText(`${enemy.name} 使用 ${skill.name}！${crit ? '暴击！' : ''}造成 ${actualDamage} 伤害！${reflectMsg}`);
+    // 敌人技能附带异常状态 (坑①：玩家会被上异常；坑④：玩家statusRes抵抗)
+    let statusMsg = '';
+    if (skill.statusEffect && this.playerHp > 0) {
+      const se = skill.statusEffect;
+      const statusRate = Math.min(0.95, Math.max(0.05, se.rate - GameState.statusRes));
+      if (Math.random() < statusRate) {
+        statusMsg = ` [你陷入${applyStatusToPlayer(this.playerStatus, se.subtype, se.turns, index)}！]`;
+        this.flashPlayer();
+      } else {
+        statusMsg = ' [你抵抗了异常]';
+      }
+    }
+    this.logText.setText(`${enemy.name} 使用 ${skill.name}！${crit ? '暴击！' : ''}造成 ${actualDamage} 伤害！${reflectMsg}${statusMsg}`);
     this.flashPlayer();
     if (sprite) this.tweens.add({ targets: sprite, tint: 0xffffff, duration: 150, yoyo: true });
   }
@@ -668,7 +683,7 @@ export class BattleScene extends Phaser.Scene {
       switch (skill.effect.type) {
         case 'damage': {
           const power = Kido.getNodePower(skill.id);
-          const { damage, crit } = calcMagicDamage(this.playerMatk, enemy.mdef, power);
+          const { damage, crit } = calcMagicDamage(this.playerMatk * getPlayerMatkMod(this.playerStatus), enemy.mdef, power);
           const dmg = this.hellActive ? damage * 2 : damage;
           enemy.hp -= dmg;
           if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(this.selectedEnemyIndex); }
@@ -767,7 +782,7 @@ export class BattleScene extends Phaser.Scene {
     const elemMult = GameState.element
       ? getElementMultiplier(GameState.element, eInfo.element, eInfo.weakness, eInfo.resist)
       : 1.0;
-    const { damage, crit } = calcDamage(this.playerAtk, enemy.def, 1.0, elemMult);
+    const { damage, crit } = calcDamage(this.playerAtk * getPlayerAtkMod(this.playerStatus), enemy.def, 1.0, elemMult);
     const dmg = this.hellActive ? damage * 2 : damage;
     let logMsg = crit ? `暴击！造成 ${dmg} 伤害！` : `攻击 ${enemy.name}！造成 ${dmg} 伤害！`;
     if (elemMult > 1.0) logMsg += ' [克制]';
@@ -988,13 +1003,13 @@ export class BattleScene extends Phaser.Scene {
 
   private doApplyStatus(name: string, subtype: string, turns: number, rate: number): void {
     const enemy = this.enemy;
-    const finalRate = Math.min(0.95, Math.max(0.05, rate + GameState.statusAcc - enemy.statusRes));
+    const finalRate = calcStatusHitRate(rate, subtype, enemy.name, enemy.statusRes);
     const hit = Math.random() < finalRate;
     if (hit) {
       this.applySkillStatus(subtype, turns);
       const effectNames: Record<string, string> = {
         seal: '封印', slow: '减速', bind: '禁锢', freeze: '冻结', stun: '眩晕', poison: '中毒',
-        burn: '灼烧', fear: '恐惧', taunt: '嘲讽', atkDown: '攻击降低', defDown: '防御降低', mpDrain: '灵消',
+        burn: '灼烧', fear: '恐惧', taunt: '嘲讽', atkDown: '攻击降低', defDown: '防御降低', matkDown: '降灵压',
       };
       const ks = this.enemyStatuses[this.selectedEnemyIndex];
       this.logText.setText(`${name}！${enemy.name} ${effectNames[subtype] || subtype} ${turns} 回合！${subtype === 'poison' ? ` (每回合${ks.poisonDmg})` : ''}`);
@@ -1110,7 +1125,7 @@ export class BattleScene extends Phaser.Scene {
     this.phase = 'executing';
     this.clearCommands(); this.clearSubMenu();
     this.hollowActive = true; this.hollowTurnsLeft = 4; this.hollowUsed = true;
-    GameState.statusRes += 0.30;
+    GameState.statusRes += 0.30;  // 坑④：statusRes=玩家异常抗性buff(非可加点属性；抵抗敌人异常攻击，虚化结束后还原)
     this.playerMaxMp = Math.round(this.playerMaxMp * 1.5);
     this.playerMp = this.playerMaxMp;
     this.logText.setText('虚 化！异常抗性+30% · MP上限激增！');
@@ -1140,6 +1155,23 @@ export class BattleScene extends Phaser.Scene {
     this.selectedEnemyIndex = this.getFirstAliveEnemyIndex();
     // ★ 不在此处 tickKidoStatus —— 只在敌人阶段开始时tick一次
     if (this.allEnemiesDead()) { this.victory(); return; }
+
+    // 玩家被控制/恐惧跳过行动 (坑①：异常状态对玩家生效)
+    const ps = this.playerStatus;
+    if (isPlayerBlocked(ps)) {
+      this.playerActed = true;
+      this.phase = 'executing';
+      this.logText.setText(`你被控制无法行动！${getPlayerStatusIcons(ps)}`);
+      this.time.delayedCall(1200, () => this.startEnemyPhase());
+      return;
+    }
+    if (doesPlayerSkipFromFear(ps)) {
+      this.playerActed = true;
+      this.phase = 'executing';
+      this.logText.setText('你陷入恐惧，不敢行动！');
+      this.time.delayedCall(1200, () => this.startEnemyPhase());
+      return;
+    }
 
     this.commandContainer = this.add.container(0, 0).setDepth(50);
     const hasBankaiUnlocked = GameState.hasBankai;
@@ -1229,11 +1261,9 @@ export class BattleScene extends Phaser.Scene {
       this.playerHp = Math.max(0, this.playerHp - dmg);
       ps.parasite--;
     }
-    // 灵消 (玩家MP持续损失)
-    if (ps.mpDrain > 0) {
-      const drain = Math.round(this.playerMaxMp * 0.10);
-      this.playerMp = Math.max(0, this.playerMp - drain);
-      ps.mpDrain--;
+    // 降灵压 (玩家MATK降低，属性修正由getPlayerMatkMod处理；此处只递减)
+    if (ps.matkDown > 0) {
+      ps.matkDown--;
     }
     // 其他玩家状态递减
     if (ps.freeze > 0) ps.freeze--;
@@ -1284,9 +1314,9 @@ export class BattleScene extends Phaser.Scene {
         enemy.hp -= Math.round(enemy.maxHp * 0.05);
         ks.parasite--;
       }
-      // 灵消 (敌人MP损失——简化为伤害)
-      if (ks.mpDrain > 0) {
-        ks.mpDrain--;
+      // 降灵压 (敌人MATK降低，属性修正由getEnemyMatkMod处理；此处只递减)
+      if (ks.matkDown > 0) {
+        ks.matkDown--;
       }
       // 其他状态递减
       if (ks.freeze > 0) { ks.freeze--; ks.frozen = ks.freeze; }
