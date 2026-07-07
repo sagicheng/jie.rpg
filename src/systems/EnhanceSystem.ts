@@ -333,6 +333,18 @@ export function getDecompReturn(item: Item): { materials: Array<{ name: string; 
 
 /** 执行分解 */
 export function doDecompose(item: Item): { success: boolean; message: string; materials: Array<{ name: string; qty: number }>; gold: number } {
+  // 校验来源：背包装备 or 已装备装备，杜绝对不存在物品发奖励
+  const inBag = Inventory.items.includes(item);
+  let equipSlot: EquipSlot | null = null;
+  if (!inBag) {
+    for (const slot of Object.keys(Inventory.equipment) as EquipSlot[]) {
+      if (Inventory.equipment[slot] === item) { equipSlot = slot; break; }
+    }
+  }
+  if (!inBag && !equipSlot) {
+    return { success: false, message: '该装备不存在，无法分解', materials: [], gold: 0 };
+  }
+
   const result = getDecompReturn(item);
 
   // 返还材料
@@ -354,8 +366,12 @@ export function doDecompose(item: Item): { success: boolean; message: string; ma
   // 返还金币
   GameState.gold += result.gold;
 
-  // 从背包移除
-  Inventory.items = Inventory.items.filter(i => i !== item);
+  // 移除装备：来自背包则 filter，来自装备栏则卸下
+  if (inBag) {
+    Inventory.items = Inventory.items.filter(i => i !== item);
+  } else if (equipSlot) {
+    Inventory.equipment[equipSlot] = null;
+  }
 
   const matStr = result.materials.map(m => `${m.name}×${m.qty}`).join(', ');
   return {
