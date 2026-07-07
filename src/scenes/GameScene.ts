@@ -68,6 +68,7 @@ export class GameScene extends Phaser.Scene {
   private enhancePanel: Phaser.GameObjects.Container | null = null;
   private bestiaryPanel: Phaser.GameObjects.Container | null = null;
   private bestiaryDetailContainer: Phaser.GameObjects.Container | null = null;
+  private shopPanel: Phaser.GameObjects.Container | null = null;
   private namingPanelActive = false;
 
   constructor() {
@@ -170,7 +171,7 @@ export class GameScene extends Phaser.Scene {
 
     // 鼠标点击移动
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive) return;
+      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel) return;
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.moveTarget = { x: wp.x, y: wp.y };
     });
@@ -881,7 +882,7 @@ export class GameScene extends Phaser.Scene {
       panel.add(this.add.text(sx + 260, sy + 18, `${item.price} 金币`, { fontSize: '12px', color: '#ffcc44', padding: { y: 2 } }));
       const canBuy = GameState.gold >= item.price;
       const buyBtn = this.add.text(sx + 300, sy + 8, '[购买]', { fontSize: '12px', color: canBuy ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true });
-      if (canBuy) { buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88')); buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44')); buyBtn.on('pointerdown', () => { GameState.gold -= item.price; const boughtItem = { id: item.id, name: item.name, type: 'equipment' as any, desc: item.desc || '', quantity: 1, slot: item.slot, stats: item.stats, quality: item.quality || 'white' }; Inventory.addItem(boughtItem); Inventory.equip(boughtItem); GameState.recalcStats(); this.closeInventory(); this.isInDialogue = false; this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); const bn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '购买了 ' + item.name + '  剩余金币: ' + GameState.gold, { fontSize: '16px', color: '#ffcc44', fontStyle: 'bold', backgroundColor: '#332200cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); this.tweens.add({ targets: bn, alpha: 0, y: GAME_HEIGHT / 2 - 110, duration: 2500, onComplete: () => bn.destroy() }); }); }
+      if (canBuy) { buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88')); buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44')); buyBtn.on('pointerdown', () => { GameState.gold -= item.price; const boughtItem = { id: item.id, name: item.name, type: 'equipment' as any, desc: item.desc || '', quantity: 1, slot: item.slot, stats: item.stats, quality: item.quality || 'white' }; Inventory.equip(boughtItem); GameState.recalcStats(); this.closeInventory(); this.isInDialogue = false; this.scene.get('UIScene').events.emit('updateStats'); const bn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '购买了 ' + item.name + '  剩余金币: ' + GameState.gold, { fontSize: '16px', color: '#ffcc44', fontStyle: 'bold', backgroundColor: '#332200cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); this.tweens.add({ targets: bn, alpha: 0, y: GAME_HEIGHT / 2 - 110, duration: 2500, onComplete: () => bn.destroy() }); }); }
       panel.add(buyBtn);
     });
     const cb3 = this.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cb3.on('pointerover', () => cb3.setColor('#ffaaaa')); cb3.on('pointerout', () => cb3.setColor('#ff6666')); cb3.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cb3);
