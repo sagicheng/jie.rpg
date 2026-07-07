@@ -2,21 +2,21 @@
 import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES, ZANPAKUTO_GROWTH } from '../config';
 import { DialogueBox, DialogueLine } from '../ui/DialogueBox';
 import { GameState } from '../systems/GameState';
-import { createEnemyData, EnemyData, expForLevel, generateLoot } from '../systems/BattleData';
+import { EnemyData, expForLevel, generateLoot } from '../systems/BattleData';
 import { getEnemyData, NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress } from '../systems/BestiaryData';
-import { Inventory, EQUIP_TEMPLATES, Item } from '../systems/Inventory';
+import { Inventory } from '../systems/Inventory';
 import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
 import { createPlayerStatus } from '../systems/StatusSystem';
 import { SaveManager } from '../systems/SaveManager';
-import { ZONE_CONFIGS, ZoneConfig } from '../systems/Zones';
-import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS, QuestDef } from '../systems/QuestData';
-import { SHIKAI_SKILLS, SkillData, ZANPAKUTO_ELEMENT } from '../systems/Skills';
-import { Kido, KIDO_NODES, KidoSchool, TIER_LOCK, getKidoColor, getKidoFullName, calcKidoPoints } from '../systems/Kido';
+import { ZONE_CONFIGS } from '../systems/Zones';
+import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
+import { SHIKAI_SKILLS, ZANPAKUTO_ELEMENT } from '../systems/Skills';
+import { Kido, KIDO_NODES, KidoSchool, TIER_LOCK } from '../systems/Kido';
 import {
   getEnhanceRate, getEnhanceCost, doEnhance,
   getRefineMaxSlots, getRefineCost, doRefine, doRefineReset,
   getDecompReturn, doDecompose,
-  getEnhanceLabel, getRefineDisplay,
+  getEnhanceLabel,
 } from '../systems/EnhanceSystem';
 
 interface NPCData {
@@ -58,7 +58,6 @@ export class GameScene extends Phaser.Scene {
   // Worlds
   private npcList: NPCData[] = [];
   private enemies: Array<{ sprite: Phaser.Physics.Arcade.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; respawnTimer?: Phaser.Time.TimerEvent }> = [];
-  private enemySprites: Phaser.Physics.Arcade.Sprite[] = [];
   private gatherPoints: Array<{ sprite: Phaser.Physics.Arcade.Sprite; type: string; label: Phaser.GameObjects.Text }> = [];
 
   // Panels
@@ -107,7 +106,6 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.npcList = [];
     this.enemies = [];
-    this.enemySprites = [];
     this.gatherPoints = [];
     this.moveTarget = null;
     this.isInDialogue = false;
@@ -322,7 +320,7 @@ export class GameScene extends Phaser.Scene {
     GameState.updateQuestProgress('reach', ZONE_NAMES[tz] || '', 1);
     this.cameras.main.fadeOut(400, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      this.enemies.forEach(e => { e.sprite.destroy(); e.label.destroy(); }); this.enemies = []; this.enemySprites = [];
+      this.enemies.forEach(e => { e.sprite.destroy(); e.label.destroy(); }); this.enemies = [];
       this.npcList.forEach(n => { n.sprite.destroy(); n.nameTag.destroy(); }); this.npcList = [];
       this.children.each((c2: any) => { if (c2.type === 'Graphics' && [0,3,4].includes(c2.depth||-1)) c2.destroy(); if (c2.type === 'Text' && [4,6].includes(c2.depth||-1)) c2.destroy(); });
       this.createMap(); this.createNPCs(); this.createEnemies(); this.createGatheringPoints();
@@ -520,7 +518,6 @@ export class GameScene extends Phaser.Scene {
       else { const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30); this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
       const label = this.add.text(ex, ey - sprite.height / 2 - 10, isBoss ? '\u3010BOSS\u3011' + e.name : e.name, { fontSize: '11px', color: isBoss ? '#ffcc44' : e.type === '\u6076\u5996' ? '#ff8866' : '#aaaabb', fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(6);
       this.enemies.push({ sprite, data, label });
-      this.enemySprites.push(sprite);
     }
   }
 
@@ -584,8 +581,6 @@ export class GameScene extends Phaser.Scene {
       this.miniMap.fillStyle(color, 0.8); this.miniMap.fillCircle(ndx, ndy, 2);
     });
   }
-  private acceptQuest(): void { this.isInDialogue = false; this.tryAutoStartNextQuest(); }
-
   /** 通过NPC对话选项接取任务 */
   private acceptQuestFromNPC(npcName: string): void {
     for (const questId of MAIN_QUEST_ORDER) {
@@ -856,61 +851,6 @@ export class GameScene extends Phaser.Scene {
       fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
   }
 
-  private handleQuestNPC(npc: NPCData): boolean {
-    // 检查是否可以完成当前任务
-    if (GameState.activeQuest) {
-      const activeDef = GameState.getActiveQuestDef();
-      if (activeDef && activeDef.completeAt === npc.name) {
-        if (GameState.questReadyToComplete) {
-          // 完成任务
-          GameState.completeQuest(activeDef.id);
-          // 发奖励
-          let rewardMsg = `任务完成：${activeDef.name}`;
-          if (activeDef.rewards.gold) { GameState.gold += activeDef.rewards.gold; rewardMsg += `\n金币+${activeDef.rewards.gold}`; }
-          if (activeDef.rewards.exp) { const lv = GameState.gainExp(activeDef.rewards.exp); rewardMsg += `\n经验+${activeDef.rewards.exp}`; if (lv) rewardMsg += `\n★升级！Lv.${GameState.level}`; }
-          if (activeDef.rewards.items) { for (const it of activeDef.rewards.items) { Inventory.addItem({ id: it.id, name: it.name, type: 'consumable' as any, desc: '', quantity: it.count }); rewardMsg += `\n${it.name}×${it.count}`; } }
-          if (activeDef.rewards.unlock) { GameState.addUnlock(activeDef.rewards.unlock); rewardMsg += `\n解锁：${activeDef.rewards.unlock}`; }
-          this.scene.get('UIScene').events.emit('updateStats');
-          // 始解试炼完成 → 触发始解选择
-          if (activeDef.id === 'shikai_trial' && !GameState.hasShikai) {
-            this.dialogueBox.show({ speaker: npc.name, text: rewardMsg + '\n\n你的斩魄刀已经觉醒了！选择它的真名吧。' }, () => {
-              this.isInDialogue = false;
-              this.showShikaiSelection();
-            });
-          } else {
-            this.dialogueBox.show({ speaker: npc.name, text: rewardMsg }, () => {
-              this.isInDialogue = false;
-              this.tryAutoStartNextQuest();
-            });
-          }
-          return true;
-        } else {
-          // 任务未完成
-          const track = GameState.getQuestTrackText();
-          this.dialogueBox.show({ speaker: npc.name, text: `任务还未完成。\n${track}` }, () => { this.isInDialogue = false; });
-          return true;
-        }
-      }
-    }
-
-    // 检查是否可以接取新任务
-    for (const questId of MAIN_QUEST_ORDER) {
-      const quest = MAIN_QUESTS[questId];
-      if (!quest) continue;
-      if (quest.acceptFrom !== npc.name) continue;
-      if (GameState.questCompleted.includes(questId)) continue;
-      if (GameState.activeQuest === questId) continue;
-      // 检查前置任务
-      if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) continue;
-      // 接取任务
-      GameState.acceptQuest(quest);
-      this.dialogueBox.show({ speaker: npc.name, text: `${quest.name}\n${quest.desc}\n\n已接取任务。` }, () => { this.isInDialogue = false; });
-      return true;
-    }
-
-    return false;
-  }
-
   private tryAutoStartNextQuest(): void {
     if (GameState.activeQuest) return; // 已有活跃任务
     for (const questId of MAIN_QUEST_ORDER) {
@@ -948,6 +888,7 @@ export class GameScene extends Phaser.Scene {
   }
   private openReturn(): void { this.isInDialogue = false; this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-300, -150, 600, 300, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-300, -150, 600, 300, 12); panel.add(bg); panel.add(this.add.text(0, -110, '传送', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); GameState.discoveredZones.forEach((z, i2) => { const rz = ZONE_NAMES[z] || '???'; const btn = this.add.text(-200 + (i2 % 3) * 200, -60 + Math.floor(i2 / 3) * 50, rz, { fontSize: '14px', color: '#88ccff', padding: { x: 12, y: 6 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true }); btn.on('pointerover', () => btn.setColor('#aaddff')); btn.on('pointerout', () => btn.setColor('#88ccff')); btn.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); GameState.zone = z; this.isInDialogue = false; this.scene.restart({ newGame: false }); }); panel.add(btn); }); const cl4 = this.add.text(280, -130, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl4.on('pointerover', () => cl4.setColor('#ffaaaa')); cl4.on('pointerout', () => cl4.setColor('#ff6666')); cl4.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl4); }
   private openCraft(): void { this.isInDialogue = false; this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-350, -200, 700, 400, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-350, -200, 700, 400, 12); panel.add(bg); panel.add(this.add.text(0, -160, '制造', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); panel.add(this.add.text(0, -120, '收集材料来制造装备', { fontSize: '14px', color: '#888899', padding: { y: 2 } }).setOrigin(0.5)); const recipes = [{ name: '铁剑', cost: { '\u77ff\u8109': 3, '\u7075\u6728\u679d': 1 } }, { name: '铁甲', cost: { '\u77ff\u8109': 5, '\u9ebb\u5e03\u7247': 2 } }, { name: '铁手甲', cost: { '\u77ff\u8109': 2, '\u7075\u6728\u679d': 1 } }]; recipes.forEach((r, i2) => { const ry = -70 + i2 * 60; panel.add(this.add.text(-300, ry, r.name, { fontSize: '16px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } })); const costs = Object.entries(r.cost).map(([k, v]) => { const owned = Inventory.items.find(i2 => i2.id === k)?.quantity || 0; return `${k}: ${owned}/${v}`; }).join('  '); panel.add(this.add.text(-100, ry + 4, costs, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } })); const canCraft = Object.entries(r.cost).every(([k, v]) => (Inventory.items.find(i2 => i2.id === k)?.quantity || 0) >= v); const btn2 = this.add.text(200, ry - 2, '[制造]', { fontSize: '14px', color: canCraft ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 10, y: 6 }, backgroundColor: canCraft ? '#11221188' : '#11111188' }).setInteractive({ useHandCursor: true }); if (canCraft) { btn2.on('pointerover', () => btn2.setColor('#88ff88')); btn2.on('pointerout', () => btn2.setColor('#44cc44')); btn2.on('pointerdown', () => { Object.entries(r.cost).forEach(([k, v]) => { const it = Inventory.items.find(i2 => i2.id === k); if (it) it.quantity = Math.max(0, (it.quantity || 0) - v); }); Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green' }); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); }); } panel.add(btn2); }); const cl5 = this.add.text(330, -180, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl5.on('pointerover', () => cl5.setColor('#ffaaaa')); cl5.on('pointerout', () => cl5.setColor('#ff6666')); cl5.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl5); }
+  // TODO(待实现): 铁匠剧情 — 设计文档规划未实现，此为对话回调入口桩，保留以防入口丢失
   private showBlacksmithLore(): void { this.isInDialogue = false; }
   private toggleInventory(): void { if (this.inventoryPanel) { this.closeInventory(); return; } this.renderInventoryPanel(); }
   private closeInventory(): void { if (this.inventoryPanel) { this.inventoryPanel.destroy(true); this.inventoryPanel = null; this.resumeFromMenu(); } }

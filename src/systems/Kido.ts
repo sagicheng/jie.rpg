@@ -45,17 +45,6 @@ export type KidoEffect =
   | { type: 'mana_eff'; amount: number };
 
 // ═══════════════════════════════════════════
-// 主修加成
-// ═══════════════════════════════════════════
-export const SCHOOL_BONUS: Record<KidoSchool, {
-  name: string; desc: string; dmgBonus?: number; ctrlBonus?: number; healBonus?: number; extraTurn?: number;
-}> = {
-  hado:   { name: '破道', desc: '破道伤害+25%', dmgBonus: 0.25 },
-  bakudo: { name: '缚道', desc: '控制成功率+20%，持续回合+1', ctrlBonus: 0.2, extraTurn: 1 },
-  kaido:  { name: '回道', desc: '治疗效果+30%', healBonus: 0.3 },
-};
-
-// ═══════════════════════════════════════════
 // 层锁：第N层需要该系已投入多少点（仿LOL）
 // ═══════════════════════════════════════════
 export const TIER_LOCK: Record<number, number> = {

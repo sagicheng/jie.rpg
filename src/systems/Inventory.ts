@@ -156,16 +156,3 @@ class InventoryManager {
 }
 
 export const Inventory = InventoryManager.get();
-
-/** 预设装备模板 */
-export const EQUIP_TEMPLATES: Record<string, Item> = {
-  cloth_hat: { id: 'cloth_hat', name: '布头巾', type: 'equipment', desc: '基础防御', quantity: 1, slot: 'head', stats: { def: 8, hp: 2 }, quality: 'white' },
-  cloth_armor: { id: 'cloth_armor', name: '布衣', type: 'equipment', desc: '基础防御', quantity: 1, slot: 'body', stats: { def: 10, mdef: 3 }, quality: 'white' },
-  cloth_bracer: { id: 'cloth_bracer', name: '布护腕', type: 'equipment', desc: '基础攻击', quantity: 1, slot: 'bracer', stats: { atk: 6, spd: 2 }, quality: 'white' },
-  cloth_boots: { id: 'cloth_boots', name: '草鞋', type: 'equipment', desc: '基础速度', quantity: 1, slot: 'boots', stats: { spd: 5, def: 2 }, quality: 'white' },
-  cloth_belt: { id: 'cloth_belt', name: '布腰带', type: 'equipment', desc: '基础生命', quantity: 1, slot: 'belt', stats: { hp: 4, mp: 2 }, quality: 'white' },
-  iron_ring: { id: 'iron_ring', name: '铁戒指', type: 'equipment', desc: '魔法攻击', quantity: 1, slot: 'ring', stats: { matk: 6 }, quality: 'white' },
-  hemp_necklace: { id: 'hemp_necklace', name: '麻绳项链', type: 'equipment', desc: '生命灵力', quantity: 1, slot: 'necklace', stats: { hp: 3, mp: 2 }, quality: 'white' },
-  wood_charm: { id: 'wood_charm', name: '木护符', type: 'equipment', desc: '魔防抗性', quantity: 1, slot: 'charm', stats: { mdef: 6 }, quality: 'white' },
-  cloth_pendant: { id: 'cloth_pendant', name: '布挂饰', type: 'equipment', desc: '速度闪避', quantity: 1, slot: 'pendant', stats: { spd: 4 }, quality: 'white' },
-};

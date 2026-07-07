@@ -11,16 +11,12 @@ export function GameStateQuestMixin<TBase extends Constructor>(Base: TBase) {
     questObjProgress: Record<string, number> = {};
     questCompleted: string[] = [];
     questReadyToComplete = false;
-    collectProgress: Record<string, number> = {};
-    killProgress: Record<string, number> = {};
 
     resetQuest(): void {
       this.activeQuest = null;
       this.questObjProgress = {};
       this.questCompleted = [];
       this.questReadyToComplete = false;
-      this.collectProgress = {};
-      this.killProgress = {};
     }
 
     acceptQuest(quest: QuestDef): void {
@@ -42,16 +38,6 @@ export function GameStateQuestMixin<TBase extends Constructor>(Base: TBase) {
 
     updateQuestProgress(type: string, target: string, amount: number = 1): void {
       if (!this.activeQuest) return;
-
-      if (type === 'kill') {
-        this.killProgress[target] = (this.killProgress[target] || 0) + amount;
-        if (target !== 'any') {
-          this.killProgress['any'] = (this.killProgress['any'] || 0) + amount;
-        }
-      }
-      if (type === 'collect') {
-        this.collectProgress[target] = (this.collectProgress[target] || 0) + amount;
-      }
 
       const questDef = this.getActiveQuestDef();
       if (!questDef) return;

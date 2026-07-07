@@ -9,7 +9,6 @@ type Constructor<T = {}> = new (...args: any[]) => T;
 export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
   return class GameStateCore extends Base {
     playerName = '隐世';
-    playerGender: 'male' | 'female' = 'male';
     zone = 1;
     discoveredZones: number[] = [1];
     level = 1;
