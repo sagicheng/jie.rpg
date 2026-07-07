@@ -19,6 +19,7 @@ export type SkillMechanicType =
   | 'ignoreDef'
   | 'mpSteal'
   | 'shield'
+  | 'absorbMagic'
   | 'regen'
   | 'aoeHeal'
   | 'cleanse'
@@ -45,6 +46,7 @@ export interface SkillMechanic {
   mpStealPct?: number;      // mpSteal: 吸取敌方MP百分比
   shieldPct?: number;       // shield: 护盾值 (基于def的倍率)
   shieldTurns?: number;
+  absorbTurns?: number;     // absorbMagic: 吸收下次魔法伤害的持续回合(触发即消耗)
   regenPct?: number;        // regen: 每回合回复HP百分比 (基于matk)
   regenTurns?: number;
   healPct?: number;         // aoeHeal: 全队回复 (基于matk)
@@ -66,9 +68,6 @@ export interface MarkState {
 
 export const SKILL_MECHANICS: Record<string, SkillMechanic[]> = {
   // ── 火系 ──
-  '焚城': [
-    { type: 'debuffEnemy', debuffType: 'burn', debuffTurns: 3 },
-  ],
   '火种': [
     { type: 'mark', markTurns: 2, markMult: 1.5 },
   ],
@@ -93,9 +92,6 @@ export const SKILL_MECHANICS: Record<string, SkillMechanic[]> = {
   ],
   '天狗烈风': [
     { type: 'debuffEnemy', debuffType: 'atkDown', debuffValue: 0.15, debuffTurns: 3 },
-  ],
-  '蛇咬': [
-    { type: 'debuffEnemy', debuffType: 'burn', debuffTurns: 3 },
   ],
 
   // ── 风系 ──
@@ -142,7 +138,7 @@ export const SKILL_MECHANICS: Record<string, SkillMechanic[]> = {
     { type: 'ignoreDef' },
   ],
   '吸收': [
-    { type: 'shield', shieldPct: 2.0, shieldTurns: 1 },
+    { type: 'absorbMagic', absorbTurns: 3 },
   ],
   '反転': [
     { type: 'buffSelf', buffStat: 'mdef', buffValue: 0.30, buffTurns: 3 },
@@ -352,7 +348,7 @@ export function applyDebuffFromMechanics(
   for (const m of mechanics) {
     if (m.type !== 'debuffEnemy' || !m.debuffType) continue;
     // 抗性检定
-    const baseRate = m.debuffType === 'stun' ? 0.40 : m.debuffType === 'burn' ? 0.50 : 0.60;
+    const baseRate = m.debuffType === 'stun' ? 0.40 : m.debuffType === 'burn' ? 1.0 : 0.60;
     const finalRate = Math.max(0.05, baseRate - enemyStatusRes);
     if (Math.random() > finalRate) continue;
 
@@ -428,4 +424,10 @@ export function getMarkInfo(mechanics: SkillMechanic[]): { turns: number; detona
 export function getMarkDetonateMult(mechanics: SkillMechanic[]): number {
   const d = mechanics.find(m => m.type === 'markDetonate');
   return d?.markMult || 0;
+}
+
+/** 获取吸收魔法持续回合 */
+export function getAbsorbMagicTurns(mechanics: SkillMechanic[]): number {
+  const a = mechanics.find(m => m.type === 'absorbMagic');
+  return a?.absorbTurns || 0;
 }

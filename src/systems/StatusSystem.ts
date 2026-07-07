@@ -311,22 +311,33 @@ export function clearAllPlayerStatus(ps: PlayerStatus): void {
 
 /** 获取敌人当前激活的状态图标列表 */
 export function getEnemyStatusIcons(ks: EnemyStatus): string {
-  const icons: string[] = [];
+  const names: string[] = [];
   for (const [key, info] of Object.entries(STATUS_INFO)) {
     const turns = (ks as any)[key] as number;
-    if (turns > 0) icons.push(info.icon);
+    if (turns > 0) names.push(info.name);
   }
-  // 旧字段兼容
-  if (ks.sealed > 0 && !icons.includes('⛓️')) icons.push('🔒');
-  return icons.join('');
+  if (ks.sealed > 0) names.push('封印');
+  return names.join(' ');
 }
 
 /** 获取玩家当前激活的状态图标列表 */
 export function getPlayerStatusIcons(ps: PlayerStatus): string {
-  const icons: string[] = [];
+  const names: string[] = [];
   for (const [key, info] of Object.entries(STATUS_INFO)) {
     const turns = (ps as any)[key] as number;
-    if (turns > 0) icons.push(info.icon);
+    if (turns > 0) names.push(info.name);
   }
-  return icons.join('');
+  return names.join(' ');
+}
+
+/** 获取状态标签（图标+剩余回合），用于战斗界面即时显示。兼容敌我状态结构 */
+export function getStatusTags(status: EnemyStatus | PlayerStatus): string {
+  const tags: string[] = [];
+  for (const [key, info] of Object.entries(STATUS_INFO)) {
+    const turns = (status as any)[key] as number;
+    if (turns > 0) tags.push(`${info.name}${turns}`);
+  }
+  const ps = status as PlayerStatus;
+  if (ps.playerShield > 0) tags.push(`盾${ps.playerShieldTurns > 0 ? ps.playerShieldTurns : ''}`);
+  return tags.join(' ');
 }

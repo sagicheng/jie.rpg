@@ -25,7 +25,7 @@ import {
 
 export function showNamingInput(scene: GameScene): void {
     scene.namingPanelActive = true;
-    const panel = scene.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60).setDepth(400);
+    const panel = scene.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60).setDepth(400).setScrollFactor(0);
     const bg = scene.add.graphics();
     bg.fillStyle(0x121222, 0.98); bg.fillRoundedRect(-300, -100, 600, 200, 12);
     bg.lineStyle(2, 0x4a5a8a, 0.6); bg.strokeRoundedRect(-300, -100, 600, 200, 12);
@@ -89,7 +89,7 @@ export function showElementSelection(scene: GameScene): void {
     const elements = ['\u706b', '\u98ce', '\u6c34', '\u571f'];
     const colors: Record<string, string> = { '\u706b': '#ff6644', '\u98ce': '#44cc88', '\u6c34': '#4488ff', '\u571f': '#cc9944' };
     const desc: Record<string, string> = { '\u706b': '\u5f3a\u653b\u578b\uff0cATK+10%', '\u98ce': '\u654f\u6377\u578b\uff0cSPD+10%', '\u6c34': '\u5747\u8861\u578b\uff0cHP+5% MP+5%', '\u571f': '\u9632\u5fa1\u578b\uff0cDEF+10%' };
-    const panel = scene.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30).setDepth(400);
+    const panel = scene.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30).setDepth(400).setScrollFactor(0);
     const bg = scene.add.graphics();
     bg.fillStyle(0x1a1a2e, 0.95); bg.fillRoundedRect(-250, -100, 500, 200, 10);
     bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-250, -100, 500, 200, 10);
@@ -134,7 +134,8 @@ export function showShikaiSelection(scene: GameScene): void {
       .map(([name]) => name);
 
     scene.isInDialogue = true;
-    const panel = scene.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(400);
+    const cam = scene.cameras.main;
+    const panel = scene.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2).setDepth(400);
     const bg = scene.add.graphics();
     bg.fillStyle(0x121222, 0.98); bg.fillRoundedRect(-560, -340, 1120, 680, 14);
     bg.lineStyle(2, 0x4a5a8a, 0.6); bg.strokeRoundedRect(-560, -340, 1120, 680, 14);

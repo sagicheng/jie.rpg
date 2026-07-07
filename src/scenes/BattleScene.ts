@@ -4,7 +4,7 @@ import { GAME_WIDTH, GAME_HEIGHT } from '../config';
 import { GameState } from '../systems/GameState';
 import { EnemyData, calcDamage, calcMagicDamage, expForLevel, generateLoot } from '../systems/BattleData';
 import { Inventory } from '../systems/Inventory';
-import { getAvailableSkills } from '../systems/Skills';
+import { getAvailableSkills, getSkillTargetType, SkillData } from '../systems/Skills';
 import { Kido, KIDO_NODES, KidoNode } from '../systems/Kido';
 import {
   EnemyStatus, PlayerStatus, StatusType,
@@ -14,7 +14,7 @@ import {
   getEnemyAtkMod, getEnemyDefMod, getEnemySpdMod, getEnemyMatkMod,
   getPlayerAtkMod, getPlayerMatkMod,
   isPlayerBlocked, doesPlayerSkipFromFear,
-  getEnemyStatusIcons, getPlayerStatusIcons,
+  getEnemyStatusIcons, getPlayerStatusIcons, getStatusTags,
   clearAllEnemyStatus, clearAllPlayerStatus,
 } from '../systems/StatusSystem';
 import { applyConsumable, getConsumableEffect, CONSUMABLES, ConsumableEffect, TempBuff } from '../systems/ConsumableSystem';
@@ -24,7 +24,8 @@ import {
   getMultiHitCount, getLifestealPct, getMpStealPct, getSpeedScaling,
   applyDebuffFromMechanics, getBuffsFromMechanics, getShieldFromMechanics,
   isCleanseSkill, getAoEHealAmount, getReflectInfo, getMarkInfo, getMarkDetonateMult,
-  MarkState,
+  getAbsorbMagicTurns,
+  SkillMechanic, MarkState,
 } from '../systems/SkillMechanics';
 
 type BattlePhase = 'intro' | 'playerTurn' | 'targetSelect' | 'enemyTurn' | 'executing' | 'victory' | 'defeat';
@@ -32,9 +33,9 @@ type BattlePhase = 'intro' | 'playerTurn' | 'targetSelect' | 'enemyTurn' | 'exec
 /** 鬼道subtype → 图鉴抗性表key (中文状态名) */
 const SUBTYPE_TO_STATUS_NAME: Record<string, string> = {
   seal: '禁锢', slow: '减速', bind: '禁锢', freeze: '冻结',
-  stun: '眩晕', poison: '中毒', burn: '灼烧', parasitic: '寄生',
-  fear: '恐惧', atk_down: '攻降', def_down: '防降', spirit_drain: '降灵压',
-  matkDown: '降灵压',
+  stun: '眩晕', poison: '中毒', burn: '灼烧', parasite: '寄生',
+  fear: '恐惧', atkDown: '攻降', defDown: '防降', matkDown: '降灵压',
+  taunt: '嘲讽',
 };
 
 /**
@@ -63,6 +64,7 @@ export class BattleScene extends Phaser.Scene {
   private enemyHpBars: Phaser.GameObjects.Graphics[] = [];
   private enemyNameTexts: Phaser.GameObjects.Text[] = [];
   private enemyTypeTexts: Phaser.GameObjects.Text[] = [];
+  private enemyInfoTexts: Phaser.GameObjects.Text[] = [];   // 每怪的 HP数值+状态标签
   private enemyStatuses: EnemyStatus[] = [];
   private selectedEnemyIndex = 0;
   private enemyActQueue: number[] = [];   // 本轮待行动敌人队列
@@ -76,6 +78,7 @@ export class BattleScene extends Phaser.Scene {
   private logText!: Phaser.GameObjects.Text;
   private playerHpBar!: Phaser.GameObjects.Graphics;
   private playerMpBar!: Phaser.GameObjects.Graphics;
+  private playerInfoText!: Phaser.GameObjects.Text;          // 玩家 HP/MP数值+状态标签
   private commandContainer!: Phaser.GameObjects.Container | null;
   private subMenuContainer!: Phaser.GameObjects.Container | null;
   private enemyRefs: any[] = [];
@@ -87,6 +90,7 @@ export class BattleScene extends Phaser.Scene {
   private marks: MarkState[] = [];         // 每个敌人的标记状态
   private reflectPct = 0;                  // 当前反伤比例
   private reflectTurns = 0;                 // 反伤持续回合
+  private absorbMagicTurns = 0;             // 双鱼理·吸收：吸收下次魔法伤害的剩余回合
 
   // 变身状态
   private bankaiActive = false;
@@ -140,6 +144,7 @@ export class BattleScene extends Phaser.Scene {
     this.enemyHpBars = [];
     this.enemyNameTexts = [];
     this.enemyTypeTexts = [];
+    this.enemyInfoTexts = [];
 
     // 根据区域难度随机生成1-8只敌人
     const zone = typeof data.zone === 'number' ? data.zone : (GameState.zone || 1);
@@ -171,6 +176,7 @@ export class BattleScene extends Phaser.Scene {
     this.tempBuffs = [];
     this.reflectPct = 0;
     this.reflectTurns = 0;
+    this.absorbMagicTurns = 0;
     this.playerMaxHp = GameState.maxHp; this.playerHp = GameState.hp;
     this.playerMaxMp = GameState.maxMp; this.playerMp = GameState.mp;
     this.playerAtk = GameState.atk; this.playerDef = GameState.def;
@@ -220,9 +226,13 @@ export class BattleScene extends Phaser.Scene {
       }).setOrigin(0.5);
       this.enemyTypeTexts.push(typeText);
 
-      // 独立血条
+      // 独立血条 + 即时信息文本(HP数值/状态标签)
       const hpBar = this.add.graphics();
       this.enemyHpBars.push(hpBar);
+      const info = this.add.text(pos.x, pos.y + 47, '', {
+        fontSize: '11px', color: '#ffbbbb', fontFamily: 'monospace', align: 'center',
+      }).setOrigin(0.5, 0).setVisible(false);
+      this.enemyInfoTexts.push(info);
     });
 
     // 我方
@@ -233,6 +243,9 @@ export class BattleScene extends Phaser.Scene {
 
     this.playerHpBar = this.add.graphics();
     this.playerMpBar = this.add.graphics();
+    this.playerInfoText = this.add.text(GAME_WIDTH / 2, 575, '', {
+      fontSize: '12px', color: '#aaccff', fontFamily: 'monospace', align: 'center',
+    }).setOrigin(0.5, 0);
 
     // 战斗日志
     this.logText = this.add.text(GAME_WIDTH / 2, 360, '', {
@@ -264,15 +277,17 @@ export class BattleScene extends Phaser.Scene {
         } });
         this.logText.setText(`⚔ ${names} 出现了！`);
         this.time.delayedCall(2200, () => {
-          this.enemyNameTexts.forEach(t => t.setVisible(true));
-          this.enemyTypeTexts.forEach(t => t.setVisible(true));
+      this.enemyNameTexts.forEach(t => t.setVisible(true));
+      this.enemyTypeTexts.forEach(t => t.setVisible(true));
+      this.enemyInfoTexts.forEach(t => t.setVisible(true));
           this.startTurn();
         });
       } else {
         this.logText.setText(`⚔ ${names} 出现了！  [区域${this.battleZone} · ${this.enemies.length}只]`);
         this.time.delayedCall(1000, () => {
-          this.enemyNameTexts.forEach(t => t.setVisible(true));
-          this.enemyTypeTexts.forEach(t => t.setVisible(true));
+      this.enemyNameTexts.forEach(t => t.setVisible(true));
+      this.enemyTypeTexts.forEach(t => t.setVisible(true));
+      this.enemyInfoTexts.forEach(t => t.setVisible(true));
           this.startTurn();
         });
       }
@@ -364,10 +379,11 @@ export class BattleScene extends Phaser.Scene {
     }
 
     if (this.enemyActQueue.length === 0) {
-      // 全部敌人行动完毕 → 玩家回合
+      // 全部敌人行动完毕 → 进入玩家回合前，递减敌人状态时长
       this.enemyPhaseActive = false;
       this.playerActed = false;
       if (this.allEnemiesDead()) { this.victory(); return; }
+      this.tickEnemyStatusDuration();
       this.logText.setText('Your turn!');
       this.time.delayedCall(300, () => this.showPlayerCommands());
       return;
@@ -421,7 +437,7 @@ export class BattleScene extends Phaser.Scene {
     let power = skill.power * getEnemyAtkMod(ks); // 攻降/减速影响伤害
 
     const isPhysical = skill.damageType !== 'magical';
-    const defVal = hasIgnoreDef([]) ? 0 : this.playerDef; // 敌人暂无视防御
+    const defVal = hasIgnoreDef([]) ? 0 : (isPhysical ? this.getEffectivePlayerDef() : this.getEffectivePlayerMdef()); // 实装防御/魔防buff
     const { damage, crit } = isPhysical
       ? calcDamage(enemy.atk, defVal, power)
       : calcMagicDamage(enemy.matk * getEnemyMatkMod(ks), this.playerMdef, power);
@@ -437,6 +453,16 @@ export class BattleScene extends Phaser.Scene {
       } else {
         actualDamage -= this.playerStatus.playerShield; this.playerStatus.playerShield = 0;
       }
+    }
+
+    // 魔法吸收（双鱼理·吸收）：将受到的魔法伤害转为HP，触发即消耗
+    let absorbMsg = '';
+    if (this.absorbMagicTurns > 0 && !isPhysical && actualDamage > 0) {
+      const healed = Math.min(actualDamage, this.playerMaxHp - this.playerHp);
+      this.playerHp += healed;
+      absorbMsg = ` [吸收${actualDamage}伤转HP${healed}]`;
+      actualDamage = 0;
+      this.absorbMagicTurns = 0;
     }
 
     this.playerHp -= actualDamage;
@@ -464,7 +490,7 @@ export class BattleScene extends Phaser.Scene {
         statusMsg = ' [你抵抗了异常]';
       }
     }
-    this.logText.setText(`${enemy.name} 使用 ${skill.name}！${crit ? '暴击！' : ''}造成 ${actualDamage} 伤害！${reflectMsg}${statusMsg}`);
+    this.logText.setText(`${enemy.name} 使用 ${skill.name}！${crit ? '暴击！' : ''}造成 ${actualDamage} 伤害！${reflectMsg}${absorbMsg}${statusMsg}`);
     this.flashPlayer();
     if (sprite) this.tweens.add({ targets: sprite, tint: 0xffffff, duration: 150, yoyo: true });
   }
@@ -513,7 +539,7 @@ export class BattleScene extends Phaser.Scene {
 
   private executeAction(action: string, extra?: any): void {
     if (action === 'attack') this.playerAttack();
-    else if (action === 'skill') this.executePlayerSkill(extra.name, extra.power, extra.mp, extra.damageType, extra.skillType, extra.statusEffect);
+    else if (action === 'skill') this.executePlayerSkill(extra as SkillData);
     else if (action === 'kido') this.executeKido(extra);
   }
 
@@ -576,8 +602,10 @@ export class BattleScene extends Phaser.Scene {
       this.subMenuContainer!.add(bg);
       const phaseTag = sk.phase === '始解' ? '[始]' : sk.phase === '卍解' ? '[卍]' : '';
       const typeTag = sk.skillType === 'heal' ? '[愈]' : sk.skillType === 'control' ? '[控]' : (sk.damageType === 'physical' ? '[物]' : '[魔]');
+      const tt = getSkillTargetType(sk);
+      const targetTag = (tt === 'enemy' || tt === 'enemy-all') ? '[敌]' : '[我]';
       const txtColor = sk.skillType === 'heal' ? '#88ff88' : sk.skillType === 'control' ? '#88aaff' : '#cce';
-      const txt = this.add.text(GAME_WIDTH / 2, y + 10, `${phaseTag}${typeTag}${sk.name}  MP${sk.mp}`, {
+      const txt = this.add.text(GAME_WIDTH / 2, y + 10, `${phaseTag}${typeTag}${targetTag}${sk.name}  MP${sk.mp}`, {
         fontSize: '14px', color: canUse ? txtColor : '#556', fontStyle: 'bold', padding: { y: 2 },
       }).setOrigin(0.5);
       this.subMenuContainer!.add(txt);
@@ -592,11 +620,7 @@ export class BattleScene extends Phaser.Scene {
         const zone = this.add.zone(GAME_WIDTH / 2, y + btnH / 2, btnW, btnH).setInteractive({ useHandCursor: true });
         zone.on('pointerdown', () => {
           this.clearSubMenu();
-          if (sk.skillType === 'heal') {
-            this.executePlayerSkill(sk.name, sk.power, sk.mp, sk.damageType, sk.skillType, sk.statusEffect);
-          } else {
-            this.startTargetSelect('skill', { name: sk.name, power: sk.power, mp: sk.mp, damageType: sk.damageType, skillType: sk.skillType, statusEffect: sk.statusEffect });
-          }
+          this.castPlayerSkill(sk);
         });
         this.subMenuContainer!.add(zone);
       }
@@ -783,8 +807,9 @@ export class BattleScene extends Phaser.Scene {
     const elemMult = GameState.element
       ? getElementMultiplier(GameState.element, eInfo.element, eInfo.weakness, eInfo.resist)
       : 1.0;
-    const { damage, crit } = calcDamage(this.playerAtk * getPlayerAtkMod(this.playerStatus), enemy.def, 1.0, elemMult);
-    const dmg = this.hellActive ? damage * 2 : damage;
+    const base = calcDamage(this.playerAtk * getPlayerAtkMod(this.playerStatus), enemy.def, 1.0, elemMult);
+    const crit = base.crit || Math.random() < this.getCritBonus();
+    const dmg = this.hellActive ? base.damage * 2 : (crit && !base.crit ? Math.round(base.damage * 1.5) : base.damage);
     let logMsg = crit ? `暴击！造成 ${dmg} 伤害！` : `攻击 ${enemy.name}！造成 ${dmg} 伤害！`;
     if (elemMult > 1.0) logMsg += ' [克制]';
     else if (elemMult < 1.0) logMsg += ' [抵抗]';
@@ -797,196 +822,7 @@ export class BattleScene extends Phaser.Scene {
     else { this.time.delayedCall(1000, () => this.startEnemyPhase()); }
   }
 
-  private executePlayerSkill(
-    name: string, power: number, mpCost: number,
-    damageType: 'physical' | 'magical' = 'physical',
-    skillType?: 'damage' | 'heal' | 'control',
-    statusEffect?: { subtype: string; turns: number; rate: number },
-  ): void {
-    this.playerActed = true;
-    this.phase = 'executing';
-    this.playerMp -= mpCost;
-
-    const mechanics = getSkillMechanics(name);
-
-    // HP消耗 (如斩月·黑牙)
-    const hpCost = getHpCost(mechanics, this.playerHp);
-    if (hpCost) {
-      this.playerHp = Math.max(1, this.playerHp - hpCost.cost);
-    }
-
-    // ── 治疗技能 ──
-    if (skillType === 'heal') {
-      const aoeHeal = getAoEHealAmount(mechanics, this.playerMatk);
-      if (aoeHeal > 0) {
-        // 全队回复 (单人时=自身)
-        const heal = aoeHeal;
-        this.playerHp = Math.min(this.playerHp + heal, this.playerMaxHp);
-        let msg = `${name}！回复 ${heal} HP！`;
-        if (isCleanseSkill(mechanics)) {
-          clearAllPlayerStatus(this.playerStatus);
-          msg += ' 异常状态已清除！';
-        }
-        this.logText.setText(msg);
-        this.time.delayedCall(1000, () => this.startEnemyPhase());
-        return;
-      }
-      // 原始单体治疗逻辑
-      const heal = Math.round(this.playerMatk * power);
-      this.playerHp = Math.min(this.playerHp + heal, this.playerMaxHp);
-      let msg = `${name}！回复 ${heal} HP！`;
-      if (isCleanseSkill(mechanics)) {
-        clearAllPlayerStatus(this.playerStatus);
-        msg += ' 异常状态已清除！';
-      }
-      this.logText.setText(msg);
-      this.time.delayedCall(1000, () => this.startEnemyPhase());
-      return;
-    }
-
-    // ── 控制技能 ──
-    if (skillType === 'control' && statusEffect) {
-      this.doApplyStatus(name, statusEffect.subtype, statusEffect.turns, statusEffect.rate);
-      return;
-    }
-
-    // ── 自身buff/shield/reflect (在伤害前应用) ──
-    const buffs = getBuffsFromMechanics(mechanics);
-    for (const b of buffs) {
-      this.tempBuffs.push({ stat: b.stat, value: b.value, turns: b.turns });
-    }
-    const shieldInfo = getShieldFromMechanics(mechanics, this.playerDef);
-    if (shieldInfo) {
-      this.playerStatus.playerShield = shieldInfo.amount;
-      this.playerStatus.playerShieldTurns = shieldInfo.turns;
-    }
-    const reflectInfo = getReflectInfo(mechanics);
-    if (reflectInfo) {
-      this.reflectPct = reflectInfo.pct;
-      this.reflectTurns = reflectInfo.turns;
-    }
-
-    // ── 伤害技能 ──
-    const enemy = this.enemy;
-    const enemyIdx = this.selectedEnemyIndex;
-    const ks = this.enemyStatuses[enemyIdx];
-    const isPhysical = damageType === 'physical';
-
-    // 多段攻击
-    const hitCount = getMultiHitCount(mechanics);
-    // 条件增伤
-    const condMult = applyConditionalDamage(mechanics, ks);
-    // 速度缩放
-    const spdMult = getSpeedScaling(mechanics, enemy.spd, this.playerSpd);
-    // HP消耗增伤
-    const hpCostMult = hpCost ? hpCost.dmgMult : 1.0;
-    // 无视防御
-    const ignoreDef = hasIgnoreDef(mechanics);
-    // 标记引爆
-    const detonateMult = this.marks[enemyIdx]?.active ? getMarkDetonateMult(mechanics) : 0;
-
-    // 应用临时buff到属性
-    const buffMods = this.getBuffMods();
-
-    let totalDamage = 0;
-    let anyCrit = false;
-    const perHitPower = power; // 每段倍率不变
-    const atkVal = isPhysical
-      ? Math.round(this.playerAtk * buffMods.atk)
-      : Math.round(this.playerMatk * buffMods.matk);
-    const defVal = ignoreDef ? 0 : (isPhysical ? enemy.def : enemy.mdef);
-    const defMod = ignoreDef ? 0.0 : 0.4;
-
-    for (let h = 0; h < hitCount; h++) {
-      let hitDmg = isPhysical
-        ? atkVal * perHitPower - enemy.def * defMod
-        : atkVal * perHitPower - enemy.mdef * defMod;
-      if (hitDmg < atkVal * perHitPower * 0.1) hitDmg = atkVal * perHitPower * 0.1;
-      hitDmg *= condMult * spdMult * hpCostMult;
-      if (detonateMult > 0) hitDmg *= detonateMult;
-      // 元素克制（物理技能用玩家element，魔法技能也用element）
-      const eInfo = getEnemyElementInfo(enemy.name);
-      const elemMult = GameState.element
-        ? getElementMultiplier(GameState.element, eInfo.element, eInfo.weakness, eInfo.resist)
-        : 1.0;
-      hitDmg *= elemMult;
-      const crit = Math.random() < 0.05;
-      if (crit) { hitDmg *= 1.5; anyCrit = true; }
-      hitDmg *= 0.9 + Math.random() * 0.2;
-      totalDamage += Math.round(hitDmg);
-    }
-
-    // 狱解倍率
-    if (this.hellActive) totalDamage = Math.round(totalDamage * 2);
-
-    // 标记消耗
-    if (detonateMult > 0 && this.marks[enemyIdx]) {
-      this.marks[enemyIdx].active = false;
-      this.marks[enemyIdx].turns = 0;
-    }
-
-    enemy.hp -= totalDamage;
-    if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(enemyIdx); }
-
-    // 吸血
-    const lifestealPct = getLifestealPct(mechanics);
-    let lifeMsg = '';
-    if (lifestealPct > 0 && totalDamage > 0) {
-      const heal = Math.round(totalDamage * lifestealPct);
-      this.playerHp = Math.min(this.playerHp + heal, this.playerMaxHp);
-      lifeMsg = ` [吸血${heal}]`;
-    }
-
-    // MP吸取
-    const mpStealPct = getMpStealPct(mechanics);
-    let mpMsg = '';
-    if (mpStealPct > 0) {
-      const stolen = Math.round(enemy.maxHp * mpStealPct * 0.1); // MP量基于敌人HP
-      this.playerMp = Math.min(this.playerMp + stolen, this.playerMaxMp);
-      mpMsg = ` [吸灵${stolen}]`;
-    }
-
-    // 敌人debuff (来自机制)
-    let debuffMsg = '';
-    if (enemy.hp > 0) {
-      const debuffs = applyDebuffFromMechanics(mechanics, ks, enemy.statusRes);
-      if (debuffs.length > 0) debuffMsg = ` [${debuffs.join('·')}]`;
-    }
-
-    // 原始statusEffect (来自SkillData)
-    let statusMsg = '';
-    if (enemy.hp > 0 && statusEffect) {
-      const finalRate = calcStatusHitRate(statusEffect.rate, statusEffect.subtype, enemy.name, enemy.statusRes);
-      if (Math.random() < finalRate) {
-        this.applySkillStatus(statusEffect.subtype, statusEffect.turns);
-        const effectNames: Record<string, string> = {
-          seal: '封印', slow: '减速', bind: '禁锢', freeze: '冻结',
-          stun: '眩晕', poison: '中毒',
-        };
-        statusMsg = ` [${effectNames[statusEffect.subtype] || statusEffect.subtype}]`;
-      }
-    }
-
-    // 标记施加
-    const markInfo = getMarkInfo(mechanics);
-    let markMsg = '';
-    if (markInfo && enemy.hp > 0) {
-      this.marks[enemyIdx] = { active: true, turns: markInfo.turns, detonateMult: markInfo.detonateMult };
-      markMsg = ` [标记${markInfo.turns}T]`;
-    }
-
-    let msg = `${name}！${hitCount > 1 ? `${hitCount}连击！` : ''}${anyCrit ? '暴击！' : ''}造成 ${totalDamage} 伤害！`;
-    if (hpCost) msg += ` [消耗HP${hpCost.cost}]`;
-    if (this.hellActive) msg += ' (狱解×2)';
-    msg += lifeMsg + mpMsg + debuffMsg + statusMsg + markMsg;
-    this.logText.setText(msg);
-
-    this.flashEnemySprite(this.enemySprites[enemyIdx]);
-    if (this.allEnemiesDead()) { this.time.delayedCall(800, () => this.victory()); }
-    else { this.time.delayedCall(1000, () => this.startEnemyPhase()); }
-  }
-
-  /** 获取临时buff对属性的修正倍率 */
+  /** 获取临时buff对属性的修正倍率（含防御/魔防/暴击） */
   private getBuffMods(): { atk: number; def: number; matk: number; mdef: number; spd: number } {
     let atk = 1, def = 1, matk = 1, mdef = 1, spd = 1;
     for (const b of this.tempBuffs) {
@@ -996,30 +832,253 @@ export class BattleScene extends Phaser.Scene {
         case 'matk': matk += b.value; break;
         case 'mdef': mdef += b.value; break;
         case 'spd':  spd += b.value; break;
-        case 'crit': /* 暴击暂不在此处理 */ break;
       }
     }
     return { atk, def, matk, mdef, spd };
   }
 
-  private doApplyStatus(name: string, subtype: string, turns: number, rate: number): void {
-    const enemy = this.enemy;
-    const finalRate = calcStatusHitRate(rate, subtype, enemy.name, enemy.statusRes);
-    const hit = Math.random() < finalRate;
-    if (hit) {
-      this.applySkillStatus(subtype, turns);
-      const effectNames: Record<string, string> = {
-        seal: '封印', slow: '减速', bind: '禁锢', freeze: '冻结', stun: '眩晕', poison: '中毒',
-        burn: '灼烧', fear: '恐惧', taunt: '嘲讽', atkDown: '攻击降低', defDown: '防御降低', matkDown: '降灵压',
-      };
-      const ks = this.enemyStatuses[this.selectedEnemyIndex];
-      this.logText.setText(`${name}！${enemy.name} ${effectNames[subtype] || subtype} ${turns} 回合！${subtype === 'poison' ? ` (每回合${ks.poisonDmg})` : ''}`);
-    } else { this.logText.setText(`${name}！但 ${enemy.name} 抵抗了...`); }
-    this.time.delayedCall(1200, () => this.startEnemyPhase());
+  /** 临时buff累加的暴击率加成 */
+  private getCritBonus(): number {
+    let c = 0;
+    for (const b of this.tempBuffs) if (b.stat === 'crit') c += b.value;
+    return c;
   }
 
-  private applySkillStatus(subtype: string, turns: number): void {
-    const ks = this.enemyStatuses[this.selectedEnemyIndex];
+  /** 玩家有效防御（含buff，敌人打玩家时用） */
+  private getEffectivePlayerDef(): number {
+    return Math.round(this.playerDef * this.getBuffMods().def);
+  }
+  /** 玩家有效魔防（含buff） */
+  private getEffectivePlayerMdef(): number {
+    return Math.round(this.playerMdef * this.getBuffMods().mdef);
+  }
+
+  /** 技能菜单点击入口：按目标类型分流（参考《飘流幻境》四向模型） */
+  private castPlayerSkill(sk: SkillData): void {
+    const tt = getSkillTargetType(sk);
+    if (tt === 'enemy') {
+      // 敌方单体 → 进入选敌流程
+      this.startTargetSelect('skill', sk);
+    } else {
+      // 敌方全体 / 自身 / 友方单体 / 全队 → 直接释放（群体免选目标）
+      this.executePlayerSkill(sk);
+    }
+  }
+
+  private executePlayerSkill(sk: SkillData): void {
+    this.playerActed = true;
+    this.phase = 'executing';
+    this.playerMp -= sk.mp;
+
+    const tt = getSkillTargetType(sk);
+    const mechanics = getSkillMechanics(sk.name);
+
+    // HP消耗 (如斩月·黑牙)
+    const hpCost = getHpCost(mechanics, this.playerHp);
+    if (hpCost) {
+      this.playerHp = Math.max(1, this.playerHp - hpCost.cost);
+    }
+
+    // ── 治疗 / 净化（作用玩家；solo 下友方=自身）──
+    if (sk.skillType === 'heal') {
+      const aoeHeal = getAoEHealAmount(mechanics, this.playerMatk);
+      const heal = aoeHeal > 0 ? aoeHeal : Math.round(this.playerMatk * sk.power);
+      this.playerHp = Math.min(this.playerHp + heal, this.playerMaxHp);
+      let msg = `${sk.name}！回复 ${heal} HP！`;
+      if (isCleanseSkill(mechanics)) {
+        clearAllPlayerStatus(this.playerStatus);
+        msg += ' 异常状态已清除！';
+      }
+      this.logText.setText(msg);
+      this.time.delayedCall(1000, () => this.startEnemyPhase());
+      return;
+    }
+
+    // ── 自身 / 全队 buff / 护盾 / 反伤（先应用，作用于玩家）──
+    const buffs = getBuffsFromMechanics(mechanics);
+    for (const b of buffs) {
+      this.tempBuffs.push({ stat: b.stat, value: b.value, turns: b.turns });
+    }
+    const shieldInfo = getShieldFromMechanics(mechanics, this.getEffectivePlayerDef());
+    if (shieldInfo) {
+      this.playerStatus.playerShield = shieldInfo.amount;
+      this.playerStatus.playerShieldTurns = shieldInfo.turns;
+    }
+    const reflectInfo = getReflectInfo(mechanics);
+    if (reflectInfo) {
+      this.reflectPct = reflectInfo.pct;
+      this.reflectTurns = reflectInfo.turns;
+    }
+    // 吸收魔法（双鱼理·吸收）：仅吸收下一次受到的魔法伤害并转为HP
+    const absorbTurns = getAbsorbMagicTurns(mechanics);
+    if (absorbTurns > 0) {
+      this.absorbMagicTurns = absorbTurns;
+    }
+
+    // ── 控制技能 ──
+    if (sk.skillType === 'control' && sk.statusEffect) {
+      if (tt === 'enemy-all') {
+        this.getAliveEnemyIndices().forEach(i => this.applyControlToEnemy(i, sk.statusEffect!));
+        this.logText.setText(`${sk.name}！对全场敌人施加控制！`);
+      } else {
+        this.applyControlToEnemy(this.selectedEnemyIndex, sk.statusEffect);
+      }
+      this.time.delayedCall(1000, () => this.startEnemyPhase());
+      return;
+    }
+
+    // ── 伤害技能：单体 / 群体 ──
+    const targetIndices = tt === 'enemy-all' ? this.getAliveEnemyIndices() : [this.selectedEnemyIndex];
+    const hitCount = getMultiHitCount(mechanics);
+    const hpCostMult = hpCost ? hpCost.dmgMult : 1.0;
+    const buffMods = this.getBuffMods();
+    const critBonus = this.getCritBonus();
+
+    let totalDamage = 0;
+    let anyCrit = false;
+    let lifeHp = 0, lifeMp = 0;
+    const debuffAgg: string[] = [];
+    let markMsg = '';
+
+    for (const idx of targetIndices) {
+      if (this.enemies[idx].hp <= 0) continue;
+      const r = this.skillHitEnemy(sk, mechanics, idx, hitCount, hpCostMult, buffMods, critBonus);
+      totalDamage += r.dmg;
+      if (r.crit) anyCrit = true;
+      lifeHp += r.life; lifeMp += r.mp;
+      if (r.debuffs.length) debuffAgg.push(...r.debuffs);
+      if (r.mark) markMsg = r.mark;
+    }
+
+    if (this.hellActive) totalDamage = Math.round(totalDamage * 2);
+    if (lifeHp > 0) this.playerHp = Math.min(this.playerHp + lifeHp, this.playerMaxHp);
+    if (lifeMp > 0) this.playerMp = Math.min(this.playerMp + lifeMp, this.playerMaxMp);
+
+    let msg = `${sk.name}！${hitCount > 1 ? `${hitCount}连击！` : ''}${anyCrit ? '暴击！' : ''}造成 ${totalDamage} 伤害！`;
+    if (hpCost) msg += ` [消耗HP${hpCost.cost}]`;
+    if (this.hellActive) msg += ' (狱解×2)';
+    if (lifeHp > 0) msg += ` [吸血${lifeHp}]`;
+    if (lifeMp > 0) msg += ` [吸灵${lifeMp}]`;
+    const uniqDebuff = Array.from(new Set(debuffAgg));
+    if (uniqDebuff.length) msg += ` [${uniqDebuff.join('·')}]`;
+    msg += markMsg;
+    this.logText.setText(msg);
+
+    const flashIdx = targetIndices.find(i => this.enemies[i] && this.enemies[i].hp >= 0) ?? this.selectedEnemyIndex;
+    if (this.enemySprites[flashIdx]) this.flashEnemySprite(this.enemySprites[flashIdx]);
+    if (this.allEnemiesDead()) { this.time.delayedCall(800, () => this.victory()); }
+    else { this.time.delayedCall(1000, () => this.startEnemyPhase()); }
+  }
+
+  /** 对单个敌人结算技能的一次完整命中（伤害/debuff/异常/标记/吸血/吸灵） */
+  private skillHitEnemy(
+    sk: SkillData, mechanics: SkillMechanic[], idx: number,
+    hitCount: number, hpCostMult: number,
+    buffMods: { atk: number; def: number; matk: number; mdef: number; spd: number },
+    critBonus: number,
+  ): { dmg: number; crit: boolean; life: number; mp: number; debuffs: string[]; mark: string } {
+    const enemy = this.enemies[idx];
+    const ks = this.enemyStatuses[idx];
+    const isPhysical = sk.damageType === 'physical';
+
+    const condMult = applyConditionalDamage(mechanics, ks);
+    const spdMult = getSpeedScaling(mechanics, enemy.spd, this.playerSpd);
+    const detonateMult = this.marks[idx]?.active ? this.marks[idx].detonateMult : 0;
+    const ignoreDef = hasIgnoreDef(mechanics);
+
+    const atkVal = isPhysical
+      ? Math.round(this.playerAtk * buffMods.atk)
+      : Math.round(this.playerMatk * buffMods.matk);
+    const defVal = ignoreDef ? 0 : (isPhysical ? enemy.def : enemy.mdef);
+    const defMod = ignoreDef ? 0.0 : 0.4;
+
+    let total = 0, crit = false;
+    for (let h = 0; h < hitCount; h++) {
+      let hitDmg = isPhysical
+        ? atkVal * sk.power - enemy.def * defMod
+        : atkVal * sk.power - enemy.mdef * defMod;
+      if (hitDmg < atkVal * sk.power * 0.1) hitDmg = atkVal * sk.power * 0.1;
+      hitDmg *= condMult * spdMult * hpCostMult;
+      if (detonateMult > 0) hitDmg *= detonateMult;
+      const eInfo = getEnemyElementInfo(enemy.name);
+      const elemMult = GameState.element
+        ? getElementMultiplier(GameState.element, eInfo.element, eInfo.weakness, eInfo.resist)
+        : 1.0;
+      hitDmg *= elemMult;
+      const isCrit = Math.random() < (0.05 + critBonus);
+      if (isCrit) { hitDmg *= 1.5; crit = true; }
+      hitDmg *= 0.9 + Math.random() * 0.2;
+      total += Math.round(hitDmg);
+    }
+
+    enemy.hp -= total;
+    if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(idx); }
+
+    // 吸血
+    let life = 0;
+    const lifestealPct = getLifestealPct(mechanics);
+    if (lifestealPct > 0 && total > 0) life = Math.round(total * lifestealPct);
+
+    // MP吸取
+    let mp = 0;
+    const mpStealPct = getMpStealPct(mechanics);
+    if (mpStealPct > 0) mp = Math.round(enemy.maxHp * mpStealPct * 0.1);
+
+    // debuff（来自机制）
+    const debuffs: string[] = [];
+    if (enemy.hp > 0) {
+      const d = applyDebuffFromMechanics(mechanics, ks, enemy.statusRes);
+      if (d.length) debuffs.push(...d);
+    }
+
+    // 原始 statusEffect（来自 SkillData，如冰牢/缚之歌）
+    if (enemy.hp > 0 && sk.statusEffect) {
+      const finalRate = calcStatusHitRate(sk.statusEffect.rate, sk.statusEffect.subtype, enemy.name, enemy.statusRes);
+      if (Math.random() < finalRate) {
+        this.applySkillStatus(sk.statusEffect.subtype, sk.statusEffect.turns, idx);
+        const effectNames: Record<string, string> = {
+          seal: '封印', slow: '减速', bind: '禁锢', freeze: '冻结', stun: '眩晕', poison: '中毒',
+          burn: '灼烧', parasite: '寄生', taunt: '嘲讽', fear: '恐惧', atkDown: '攻降', defDown: '防降', matkDown: '降灵压',
+        };
+        debuffs.push(effectNames[sk.statusEffect.subtype] || sk.statusEffect.subtype);
+      }
+    }
+
+    // 标记
+    let mark = '';
+    const markInfo = getMarkInfo(mechanics);
+    if (this.marks[idx]?.active) {
+      // 目标已被标记 → 引爆（用标记自身存储的倍率），消耗标记
+      this.marks[idx].active = false; this.marks[idx].turns = 0; this.marks[idx].detonateMult = 0;
+      mark = ' [引爆!]';
+    } else if (markInfo && enemy.hp > 0) {
+      // 目标未被标记 → 本次技能负责上标记（如二击必杀/火种）
+      this.marks[idx] = { active: true, turns: markInfo.turns, detonateMult: markInfo.detonateMult };
+      mark = ` [标记${markInfo.turns}T]`;
+    }
+
+    return { dmg: total, crit, life, mp, debuffs, mark };
+  }
+
+  /** 对单个敌人施加控制状态（含命中检定+日志，不调度回合） */
+  private applyControlToEnemy(idx: number, se: { subtype: string; turns: number; rate: number }): void {
+    const enemy = this.enemies[idx];
+    if (enemy.hp <= 0) return;
+    const finalRate = calcStatusHitRate(se.rate, se.subtype, enemy.name, enemy.statusRes);
+    if (Math.random() < finalRate) {
+      this.applySkillStatus(se.subtype, se.turns, idx);
+      const effectNames: Record<string, string> = {
+        seal: '封印', slow: '减速', bind: '禁锢', freeze: '冻结', stun: '眩晕', poison: '中毒',
+        burn: '灼烧', parasite: '寄生', taunt: '嘲讽', fear: '恐惧', atkDown: '攻降', defDown: '防降', matkDown: '降灵压',
+      };
+      this.logText.setText(`${enemy.name} ${effectNames[se.subtype] || se.subtype} ${se.turns} 回合！`);
+    } else {
+      this.logText.setText(`${enemy.name} 抵抗了控制...`);
+    }
+  }
+
+  private applySkillStatus(subtype: string, turns: number, idx: number = this.selectedEnemyIndex): void {
+    const ks = this.enemyStatuses[idx];
     applyStatusToEnemy(ks, subtype, turns, this.enemy.maxHp);
   }
 
@@ -1099,6 +1158,32 @@ export class BattleScene extends Phaser.Scene {
     this.isDefending = true;
     this.logText.setText('防御！受到的伤害减少80%。');
     this.time.delayedCall(1000, () => this.startEnemyPhase());
+  }
+
+  /** 逃跑：按速度差计算成功率（《飘流幻境》式），成功返回据点，失败进入敌人回合 */
+  private escapeBattle(): void {
+    this.playerActed = true;
+    this.phase = 'executing';
+    this.clearCommands(); this.clearSubMenu();
+    const alive = this.getAliveEnemyIndices();
+    const avgEnemySpd = alive.length
+      ? alive.reduce((s, i) => s + this.enemies[i].spd, 0) / alive.length
+      : 0;
+    let escapeRate = 0.5 + (this.playerSpd - avgEnemySpd) * 0.03;
+    escapeRate = Math.max(0.1, Math.min(0.95, escapeRate));
+    if (Math.random() < escapeRate) {
+      this.logText.setText('成功逃脱！');
+      this.time.delayedCall(900, () => {
+        GameState.hp = this.playerHp;
+        GameState.mp = this.playerMp;
+        this.notifyGameScene('escape', 0);
+        this.scene.stop(); this.scene.resume('GameScene');
+        this.scene.get('UIScene').events.emit('updateStats');
+      });
+    } else {
+      this.logText.setText('逃跑失败！敌人包围了上来！');
+      this.time.delayedCall(1000, () => this.startEnemyPhase());
+    }
   }
 
   // ════════════════════ 变身系统 ════════════════════
@@ -1190,15 +1275,16 @@ export class BattleScene extends Phaser.Scene {
     const canHell = hasHellUnlocked && !this.hellUsed && !this.hellActive;
 
     const cmds: { label: string; action: () => void; disabled?: boolean }[] = [
-      { label: '[1]Atk', action: () => this.startTargetSelect('attack') },
-      { label: '[2]Skill', action: () => this.showSkillMenu() },
-      { label: '[3]Kido', action: () => this.showKidoMenu(), disabled: !hasKido },
-      { label: '[4]Item', action: () => this.useItem() },
-      { label: '[5]Def', action: () => this.playerDefend() },
+      { label: '攻击', action: () => this.startTargetSelect('attack') },
+      { label: '技能', action: () => this.showSkillMenu() },
+      { label: '鬼道', action: () => this.showKidoMenu(), disabled: !hasKido },
+      { label: '道具', action: () => this.useItem() },
+      { label: '防御', action: () => this.playerDefend() },
+      { label: '逃跑', action: () => this.escapeBattle() },
     ];
-    if (hasBankaiUnlocked) cmds.push({ label: this.bankaiActive ? 'Bankai(' + this.bankaiTurnsLeft + ')' : (this.bankaiUsed ? 'Bankai-' : 'Bankai'), action: () => this.activateBankai(), disabled: !canBankai });
-    if (hasHollowUnlocked) cmds.push({ label: this.hollowActive ? 'Hollow(' + this.hollowTurnsLeft + ')' : (this.hollowUsed ? 'Hollow-' : 'Hollow'), action: () => this.activateHollow(), disabled: !canHollow });
-    if (hasHellUnlocked) cmds.push({ label: this.hellActive ? 'Hell(' + this.hellTurnsLeft + ')' : (this.hellUsed ? 'Hell-' : 'Hell'), action: () => this.activateHell(), disabled: !canHell });
+    if (hasBankaiUnlocked) cmds.push({ label: this.bankaiActive ? '万解(' + this.bankaiTurnsLeft + ')' : (this.bankaiUsed ? '万解-' : '万解'), action: () => this.activateBankai(), disabled: !canBankai });
+    if (hasHollowUnlocked) cmds.push({ label: this.hollowActive ? '虚化(' + this.hollowTurnsLeft + ')' : (this.hollowUsed ? '虚化-' : '虚化'), action: () => this.activateHollow(), disabled: !canHollow });
+    if (hasHellUnlocked) cmds.push({ label: this.hellActive ? '狱解(' + this.hellTurnsLeft + ')' : (this.hellUsed ? '狱解-' : '狱解'), action: () => this.activateHell(), disabled: !canHell });
 
     const shortcuts = [Phaser.Input.Keyboard.KeyCodes.ONE, Phaser.Input.Keyboard.KeyCodes.TWO,
       Phaser.Input.Keyboard.KeyCodes.THREE, Phaser.Input.Keyboard.KeyCodes.FOUR,
@@ -1286,6 +1372,9 @@ export class BattleScene extends Phaser.Scene {
       if (this.reflectTurns <= 0) this.reflectPct = 0;
     }
 
+    // ── 魔法吸收 tick（未被触发则到期）──
+    if (this.absorbMagicTurns > 0) this.absorbMagicTurns--;
+
     // ── 标记 tick ──
     this.marks.forEach(m => {
       if (m.active) {
@@ -1294,43 +1383,15 @@ export class BattleScene extends Phaser.Scene {
       }
     });
 
-    // ── 敌人状态tick ──
+    // ── 敌人持续伤害（DoT）：在敌人阶段开始时结算 ──
+    // 注意：状态时长递减不在此处，改在敌人全部行动结束后（tickEnemyStatusDuration），
+    // 否则当回合施加的控制/异常会被提前递减，导致1回合控制失效、多回合少算一回合。
     this.enemies.forEach((enemy, i) => {
       const ks = this.enemyStatuses[i];
       if (enemy.hp <= 0) return;
-
-      // 灼烧
-      if (ks.burn > 0) {
-        enemy.hp -= Math.round(enemy.maxHp * 0.05);
-        ks.burn--;
-      }
-      // 中毒
-      if (ks.poison > 0) {
-        enemy.hp -= ks.poisonDmg;
-        ks.poison--;
-        if (ks.poison <= 0) ks.poisonDmg = 0;
-      }
-      // 寄生
-      if (ks.parasite > 0) {
-        enemy.hp -= Math.round(enemy.maxHp * 0.05);
-        ks.parasite--;
-      }
-      // 降灵压 (敌人MATK降低，属性修正由getEnemyMatkMod处理；此处只递减)
-      if (ks.matkDown > 0) {
-        ks.matkDown--;
-      }
-      // 其他状态递减
-      if (ks.freeze > 0) { ks.freeze--; ks.frozen = ks.freeze; }
-      if (ks.slow > 0) { ks.slow--; ks.slowed = ks.slow; }
-      if (ks.stun > 0) ks.stun--;
-      if (ks.bind > 0) { ks.bind--; ks.bound = ks.bind; }
-      if (ks.sealed > 0) ks.sealed--;
-      if (ks.taunt > 0) ks.taunt--;
-      if (ks.fear > 0) ks.fear--;
-      if (ks.atkDown > 0) ks.atkDown--;
-      if (ks.defDown > 0) ks.defDown--;
-
-      // 死亡检定（可能被毒/灼烧/寄生杀死）
+      if (ks.burn > 0) enemy.hp -= Math.round(enemy.maxHp * 0.05);
+      if (ks.poison > 0) enemy.hp -= ks.poisonDmg;
+      if (ks.parasite > 0) enemy.hp -= Math.round(enemy.maxHp * 0.05);
       if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(i); }
     });
 
@@ -1374,6 +1435,26 @@ export class BattleScene extends Phaser.Scene {
         this.logText.setText('狱解解除... 业火熄灭');
       }
     }
+  }
+
+  /** 敌人状态时长递减：在本轮敌人全部行动结束后结算，确保当回合施加的控制/异常仍能生效 */
+  private tickEnemyStatusDuration(): void {
+    this.enemies.forEach((enemy, i) => {
+      const ks = this.enemyStatuses[i];
+      if (ks.burn > 0) ks.burn--;
+      if (ks.poison > 0) { ks.poison--; if (ks.poison <= 0) ks.poisonDmg = 0; }
+      if (ks.parasite > 0) ks.parasite--;
+      if (ks.freeze > 0) { ks.freeze--; ks.frozen = ks.freeze; }
+      if (ks.slow > 0) { ks.slow--; ks.slowed = ks.slow; }
+      if (ks.stun > 0) ks.stun--;
+      if (ks.bind > 0) { ks.bind--; ks.bound = ks.bind; }
+      if (ks.sealed > 0) ks.sealed--;
+      if (ks.taunt > 0) ks.taunt--;
+      if (ks.fear > 0) ks.fear--;
+      if (ks.atkDown > 0) ks.atkDown--;
+      if (ks.defDown > 0) ks.defDown--;
+      if (ks.matkDown > 0) ks.matkDown--;
+    });
   }
 
   private victory(): void {
@@ -1536,16 +1617,21 @@ export class BattleScene extends Phaser.Scene {
     const count = this.enemies.length;
     this.enemyHpBars.forEach((bar, i) => {
       bar.clear();
+      const info = this.enemyInfoTexts[i];
       const enemy = this.enemies[i];
-      if (!enemy || enemy.hp <= 0) return;
+      if (!enemy || enemy.hp <= 0) { if (info) info.setText(''); return; }
       const pos = positions[i];
-      const bw = count <= 4 ? 100 : 70, bh = 6;
-      const byOffset = count <= 4 ? -45 : -32;
-      const bx = pos.x - bw / 2, by = pos.y + byOffset;
+      const bw = count <= 4 ? 100 : 70, bh = 7;
+      const bx = pos.x - bw / 2, by = pos.y + 40;   // 血条置于精灵下方，避免遮挡
       const ratio = Math.max(0, enemy.hp / enemy.maxHp);
       bar.fillStyle(0x331111, 1); bar.fillRect(bx, by, bw, bh);
       const color = ratio > 0.5 ? 0xcc4444 : ratio > 0.25 ? 0xcc8844 : 0xcc2222;
       bar.fillStyle(color, 1); bar.fillRect(bx, by, bw * ratio, bh);
+      if (info) {
+        const tags = getStatusTags(this.enemyStatuses[i]);
+        info.setPosition(pos.x, by + bh + 3);
+        info.setText(`${enemy.hp}/${enemy.maxHp}${tags ? '\n' + tags : ''}`);
+      }
     });
   }
 
@@ -1560,6 +1646,12 @@ export class BattleScene extends Phaser.Scene {
     const mpRatio = this.playerMp / this.playerMaxMp;
     this.playerMpBar.fillStyle(0x111133, 1); this.playerMpBar.fillRect(bx, by + 14, bw, 6);
     this.playerMpBar.fillStyle(0x4444cc, 1); this.playerMpBar.fillRect(bx, by + 14, bw * mpRatio, 6);
+
+    const tags = getStatusTags(this.playerStatus);
+    this.playerInfoText.setText(
+      `HP ${Math.ceil(this.playerHp)}/${this.playerMaxHp}   MP ${Math.ceil(this.playerMp)}/${this.playerMaxMp}` +
+      (tags ? '\n' + tags : '')
+    );
   }
 
   /** 获取敌人类型的中文名 */
