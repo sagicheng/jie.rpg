@@ -36,11 +36,15 @@ class GameStateManager extends GameStateMixed {
 
   /** 完全重置（调用所有子模块的 reset） */
   reset(): void {
-    (this as any).resetCore();
-    (this as any).resetStats();
-    (this as any).resetQuest();
-    (this as any).resetBestiary();
-    (this as any).resetUnlock();
+    const self = this as GameStateManager & {
+      resetCore(): void; resetStats(): void; resetQuest(): void;
+      resetBestiary(): void; resetUnlock(): void;
+    };
+    self.resetCore();
+    self.resetStats();
+    self.resetQuest();
+    self.resetBestiary();
+    self.resetUnlock();
   }
 }
 

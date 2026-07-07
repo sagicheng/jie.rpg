@@ -2,8 +2,7 @@
  * GameState 妖魔图鉴模块
  */
 import { getBestiaryTierReached, BESTIARY_TIERS } from './BestiaryData';
-
-type Constructor<T = {}> = new (...args: any[]) => T;
+import { Constructor } from '../types';
 
 export function GameStateBestiaryMixin<TBase extends Constructor>(Base: TBase) {
   return class GameStateBestiary extends Base {

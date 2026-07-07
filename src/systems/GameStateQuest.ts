@@ -2,8 +2,7 @@
  * GameState 任务系统模块
  */
 import { QuestDef, MAIN_QUESTS } from './QuestData';
-
-type Constructor<T = {}> = new (...args: any[]) => T;
+import { Constructor } from '../types';
 
 export function GameStateQuestMixin<TBase extends Constructor>(Base: TBase) {
   return class GameStateQuest extends Base {

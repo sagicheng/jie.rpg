@@ -3,8 +3,7 @@
  */
 import { Inventory } from './Inventory';
 import { Kido } from './Kido';
-
-type Constructor<T = {}> = new (...args: any[]) => T;
+import { Constructor } from '../types';
 
 export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
   return class GameStateCore extends Base {

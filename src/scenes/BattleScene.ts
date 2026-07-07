@@ -1405,10 +1405,10 @@ export class BattleScene extends Phaser.Scene {
 
     allLoot.forEach(item => {
       Inventory.addItem({
-        id: item.id, name: item.name, type: item.type as any,
+        id: item.id, name: item.name, type: item.type,
         desc: item.desc, quantity: item.quantity,
-        slot: item.slot as any, stats: item.stats, quality: item.quality,
-      } as any);
+        slot: item.slot, stats: item.stats, quality: item.quality,
+      });
     });
 
     const panelH = 280 + allLoot.length * 30;

@@ -1,8 +1,7 @@
 /**
  * GameState 解锁系统模块 — 六大力量体系：始解/卍解/虚化/完现术/圣文字/狱解
  */
-
-type Constructor<T = {}> = new (...args: any[]) => T;
+import { Constructor } from '../types';
 
 export function GameStateUnlockMixin<TBase extends Constructor>(Base: TBase) {
   return class GameStateUnlock extends Base {

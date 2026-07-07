@@ -6,7 +6,7 @@ import { GameState } from '../systems/GameState';
 import { expForLevel } from '../systems/BattleData';
 import { SaveManager } from '../systems/SaveManager';
 import { getEnemyData, NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress } from '../systems/BestiaryData';
-import { Inventory } from '../systems/Inventory';
+import { Inventory, EquipSlot } from '../systems/Inventory';
 import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
 import { createPlayerStatus } from '../systems/StatusSystem';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
@@ -280,15 +280,15 @@ export function renderInventoryPanel(scene: GameScene): void {
     // Equipment grid (2 rows x 5 cols)
     const eqY = oy + th + 48; const eW = 180, eH = 64, eGap = 10;
     const eq = Inventory.equipment; const sn: Record<string, string> = { weapon: '武器', head: '头部', body: '身体', bracer: '手甲', boots: '战靴', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
-    const eqs = ['weapon', 'head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
+    const eqs: EquipSlot[] = ['head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
     const qc: Record<string, string> = { white: '#aaaaaa', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
     eqs.forEach((s, i) => {
       const c2 = i % 5, r2 = Math.floor(i / 5); const sx = ox + 20 + c2 * (eW + eGap), sy = eqY + r2 * (eH + eGap);
       const er = scene.add.graphics(); er.fillStyle(0x0d0d1d, 0.7); er.fillRoundedRect(sx, sy, eW, eH, 6); er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, eW, eH, 6); p.add(er);
       p.add(scene.add.text(sx + 8, sy + 4, sn[s], { fontSize: '10px', color: '#556688', padding: { y: 1 } }));
-      const it = (eq as any)[s];
+      const it = eq[s];
       if (it) {
-        const elv = (it as any).enhanceLevel || 0; const q = (it as any).quality || 'white'; const lvTxt = elv > 0 ? ` +${elv}` : '';
+        const elv = it.enhanceLevel || 0; const q = it.quality || 'white'; const lvTxt = elv > 0 ? ` +${elv}` : '';
         p.add(scene.add.text(sx + 8, sy + 20, `${it.name}${lvTxt}`, { fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ');
         p.add(scene.add.text(sx + 8, sy + 40, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
@@ -297,7 +297,7 @@ export function renderInventoryPanel(scene: GameScene): void {
         // 点击卸下装备
         const slotZone = scene.add.zone(sx, sy, eW, eH).setOrigin(0, 0).setInteractive({ useHandCursor: true });
         slotZone.on('pointerdown', () => {
-          Inventory.unequip(s as any);
+          Inventory.unequip(s);
           GameState.recalcStats();
           closeInventory(scene); renderInventoryPanel(scene);
           scene.scene.get('UIScene').events.emit('updateStats');
@@ -314,9 +314,9 @@ export function renderInventoryPanel(scene: GameScene): void {
       const ec = 6, ecardW = (ow - 50) / ec - 8;
       equipItems.forEach((item, i) => {
         const col = i % ec, row = Math.floor(i / ec); const ex = ox + 20 + col * (ecardW + 8), ey = eiY + 28 + row * 56;
-        const q = (item as any).quality || 'white';
+        const q = item.quality || 'white';
         const cd2 = scene.add.graphics(); cd2.fillStyle(0x0a0a1a, 0.7); cd2.fillRoundedRect(ex, ey, ecardW, 48, 5); cd2.lineStyle(1, parseInt((qc[q] || '#666666').replace('#', ''), 16), 0.4); cd2.strokeRoundedRect(ex, ey, ecardW, 48, 5); p.add(cd2);
-        const elv = (item as any).enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
+        const elv = item.enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
         p.add(scene.add.text(ex + 6, ey + 4, `${item.name}${lvTxt}`, { fontSize: '11px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const sts = item.stats ? Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ') : '';
         p.add(scene.add.text(ex + 6, ey + 24, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
@@ -495,33 +495,36 @@ export function renderStatPanel(scene: GameScene): void {
     p.add(scene.add.text(rx + 80, hdrY + 4, '（点击装备可卸下）', { fontSize: '11px', color: '#556688', padding: { y: 1 } }));
     const eq = Inventory.equipment;
     const sn: Record<string, string> = { weapon: '斩魄刀', head: '头部', body: '身体', bracer: '手甲', boots: '战靴', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
-    const eqs = ['weapon', 'head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
+    const eqs: EquipSlot[] = ['head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
     const eqY = hdrY + 36;
     const eqColW = (colW - 10) / 2;
     const eqRowH = 76;
+    // 斩魄刀（固定头部，独立于装备槽渲染）
+    {
+      const zkW = 2 * eqColW + 10, zkH = 66;
+      const zer = scene.add.graphics(); zer.fillStyle(0x0d0d1d, 0.6); zer.fillRoundedRect(rx, eqY, zkW, zkH, 6);
+      zer.lineStyle(1, 0x334466, 0.4); zer.strokeRoundedRect(rx, eqY, zkW, zkH, 6); p.add(zer);
+      p.add(scene.add.text(rx + 10, eqY + 6, '斩魄刀', { fontSize: '11px', color: '#667799', fontStyle: 'bold', padding: { y: 1 } }));
+      const zk = GameState.zanpakuto;
+      if (zk) {
+        p.add(scene.add.text(rx + 10, eqY + 24, zk, { fontSize: '13px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 1 } }));
+        p.add(scene.add.text(rx + 10, eqY + 46, `元素: ${GameState.element || '无'}  (始解${GameState.hasShikai ? '✓' : '✗'})`, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
+      } else {
+        p.add(scene.add.text(rx + 10, eqY + 28, '— 未觉醒 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
+      }
+    }
     eqs.forEach((s, i) => {
       const c2 = i % 2, r2 = Math.floor(i / 2);
-      const sx = rx + c2 * (eqColW + 10), sy = eqY + r2 * eqRowH;
+      const sx = rx + c2 * (eqColW + 10), sy = eqY + eqRowH + r2 * eqRowH;
       const er = scene.add.graphics(); er.fillStyle(0x0d0d1d, 0.6); er.fillRoundedRect(sx, sy, eqColW, 66, 6);
       er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, eqColW, 66, 6); p.add(er);
       // Slot name label
       p.add(scene.add.text(sx + 10, sy + 6, sn[s], { fontSize: '11px', color: '#667799', fontStyle: 'bold', padding: { y: 1 } }));
-      if (s === 'weapon') {
-        // 斩魄刀槽位 - 展示用，不可卸下
-        const zk = GameState.zanpakuto;
-        if (zk) {
-          p.add(scene.add.text(sx + 10, sy + 24, zk, { fontSize: '13px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 1 } }));
-          p.add(scene.add.text(sx + 10, sy + 46, `元素: ${GameState.element || '无'}  (始解${GameState.hasShikai ? '✓' : '✗'})`, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
-        } else {
-          p.add(scene.add.text(sx + 10, sy + 28, '— 未觉醒 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
-        }
-        return;
-      }
-      const it = (eq as any)[s];
+      const it = eq[s];
       if (it) {
-        const elv = (it as any).enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
+        const elv = it.enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
         const qc: Record<string, string> = { white: '#cccccc', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
-        const q = (it as any).quality || 'white';
+        const q = it.quality || 'white';
         const itemTxt = scene.add.text(sx + 10, sy + 24, `${it.name}${lvTxt}`, {
           fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 }
         });
@@ -535,7 +538,7 @@ export function renderStatPanel(scene: GameScene): void {
         // Click to unequip
         er.setInteractive(new Phaser.Geom.Rectangle(sx, sy, eqColW, 66), Phaser.Geom.Rectangle.Contains);
         er.on('pointerdown', () => {
-          Inventory.unequip(s as any);
+          Inventory.unequip(s);
           GameState.recalcStats();
           closeStatPanel(scene); renderStatPanel(scene); scene.scene.get('UIScene').events.emit('updateStats');
         });
@@ -545,7 +548,7 @@ export function renderStatPanel(scene: GameScene): void {
     });
 
     // ═══ Right column: Derived combat stats summary (below equipment) ═══
-    const sumY = eqY + 5 * eqRowH + 8;
+    const sumY = eqY + 6 * eqRowH + 8;
     if (sumY + 142 < oy + oh) {
       const sumBg = scene.add.graphics(); sumBg.fillStyle(0x1a1a36, 0.5); sumBg.fillRoundedRect(rx, sumY, colW, 132, 6); sumBg.lineStyle(1, 0x334466, 0.3); sumBg.strokeRoundedRect(rx, sumY, colW, 132, 6); p.add(sumBg);
       p.add(scene.add.text(rx + 16, sumY + 8, '战斗属性', { fontSize: '13px', color: '#aaccdd', fontStyle: 'bold', padding: { y: 1 } }));
@@ -793,7 +796,7 @@ export function toggleEnhancePanel(scene: GameScene): void {
       if (item) {
         const elv = (item as any).enhanceLevel || 0; const enhLabel = getEnhanceLabel(item);
         const qc: Record<string, string> = { white: '#aaaaaa', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
-        const q = (item as any).quality || 'white';
+        const q = item.quality || 'white';
         p.add(scene.add.text(sx + 10, sy + 20, `${enhLabel} ${item.name}`, { fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const stats = Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join('  ');
         p.add(scene.add.text(sx + 10, sy + 40, stats, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));

@@ -1,6 +1,7 @@
 import { matId } from '../data/materials';
 import { QUALITY_MULT } from '../constants';
 import { ZONE_PL } from '../config';
+import { Item, EquipSlot } from './Inventory';
 
 /** 敌人类型 */
 export type EnemyType = '杂妖' | '恶妖' | '妖将' | '妖王';
@@ -96,10 +97,7 @@ const ZONE_EQUIP_NAMES: Record<number, { prefix: string; baseDef: number; baseAt
 };
 
 /** 根据区域和品质随机生成一件装备 */
-export function generateEquipmentDrop(zone: number, quality: Quality): {
-  id: string; name: string; type: string; desc: string; quantity: number;
-  slot: string; stats: Record<string, number>; quality: Quality;
-} | null {
+export function generateEquipmentDrop(zone: number, quality: Quality): Item | null {
   const z = ZONE_EQUIP_NAMES[zone] || ZONE_EQUIP_NAMES[1];
   const eq = EQUIP_SLOTS[Math.floor(Math.random() * EQUIP_SLOTS.length)];
   const mult = QUALITY_MULT[quality];
@@ -137,7 +135,7 @@ export function generateEquipmentDrop(zone: number, quality: Quality): {
     type: 'equipment',
     desc: `${qualityCN[quality]}·${eq.label}`,
     quantity: 1,
-    slot: eq.slot,
+    slot: eq.slot as EquipSlot,
     stats,
     quality,
   };
@@ -162,11 +160,8 @@ function rollQuality(type: EnemyType): Quality | null {
 }
 
 /** 生成敌人战利品 */
-export function generateLoot(type: EnemyType, zone: number): Array<{
-  id: string; name: string; type: string; desc: string; quantity: number;
-  slot?: string; stats?: Record<string, number>; quality?: Quality;
-}> {
-  const loot: Array<any> = [];
+export function generateLoot(type: EnemyType, zone: number): Item[] {
+  const loot: Item[] = [];
 
   // 装备掉落
   const quality = rollQuality(type);

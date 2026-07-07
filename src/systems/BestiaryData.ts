@@ -5,6 +5,7 @@
  */
 
 import { matId } from '../data/materials';
+import { Item } from './Inventory';
 import { EnemyData, EnemyType, createEnemyData } from './BattleData';
 import { ZONE1_ENEMIES, ZONE2_ENEMIES, ZONE3_ENEMIES, ZONE4_ENEMIES,
   ZONE5_ENEMIES, ZONE6_ENEMIES, ZONE7_ENEMIES, ZONE8_ENEMIES,
@@ -227,11 +228,8 @@ export interface NamedEquipDrop {
  * 生成具名敌人的专属掉落
  * 返回null表示该敌人无专属掉落定义，应fallback到generateLoot
  */
-export function generateNamedLoot(enemyName: string, enemyDrops: { item: string; rate: number; quality?: string }[]): Array<{
-  id: string; name: string; type: string; desc: string; quantity: number;
-  slot?: string; stats?: Record<string, number>; quality?: string;
-}> {
-  const loot: Array<any> = [];
+export function generateNamedLoot(enemyName: string, enemyDrops: { item: string; rate: number; quality?: string }[]): Item[] {
+  const loot: Item[] = [];
   for (const drop of enemyDrops) {
     if (Math.random() >= drop.rate) continue;
 

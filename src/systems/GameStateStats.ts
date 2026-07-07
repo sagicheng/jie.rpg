@@ -5,8 +5,7 @@ import { BASE_STATS, STAT_PER_POINT, POINTS_PER_LEVEL, ZANPAKUTO_GROWTH } from '
 import { Inventory } from './Inventory';
 import { Kido, calcKidoPoints } from './Kido';
 import { expForLevel } from './BattleData';
-
-type Constructor<T = {}> = new (...args: any[]) => T;
+import { Constructor } from '../types';
 
 export function GameStateStatsMixin<TBase extends Constructor>(Base: TBase) {
   return class GameStateStats extends Base {
