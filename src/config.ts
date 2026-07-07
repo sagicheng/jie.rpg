@@ -17,14 +17,6 @@ export const ZONE_PL: Record<number, number> = {
   19: 54, 20: 56, 21: 60,// 地狱·表/深/地狱之门
 };
 
-/** 品质倍率 */
-export const QUALITY_MULTIPLIER: Record<string, number> = {
-  white: 1.0,
-  green: 1.3,
-  blue: 1.6,
-  purple: 2.0,
-  gold: 2.5,
-};
 
 /** 基础属性初始值 */
 export const BASE_STATS = {

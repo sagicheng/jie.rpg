@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { QUALITY_COLOR, QUALITY_CN } from '../constants';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config';
 import { GameState } from '../systems/GameState';
 import { EnemyData, calcDamage, calcMagicDamage, expForLevel, generateLoot } from '../systems/BattleData';
@@ -1434,12 +1435,10 @@ export class BattleScene extends Phaser.Scene {
       container.add(this.add.text(GAME_WIDTH / 2, looTitleY, '─ 战利品 ─', {
         fontSize: '14px', color: '#c9a96e', padding: { y: 2 },
       }).setOrigin(0.5));
-      const qualityCol: Record<string, string> = { white: '#cccccc', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
-      const qualityPre: Record<string, string> = { white: '白', green: '绿', blue: '蓝', purple: '紫', gold: '金' };
       allLoot.forEach((item, i) => {
         const iy = (levelUp ? 365 : 340) + i * 30;
         let color = '#88cc88', label = item.name;
-        if (item.quality) { color = qualityCol[item.quality] || '#cccccc'; label = `[${qualityPre[item.quality]}] ${item.name}`; }
+        if (item.quality) { color = QUALITY_COLOR[item.quality] || '#cccccc'; label = `[${QUALITY_CN[item.quality]}] ${item.name}`; }
         else if (item.type === 'material') color = '#aaaacc';
         container.add(this.add.text(GAME_WIDTH / 2, iy, label, { fontSize: '14px', color, padding: { y: 2 } }).setOrigin(0.5));
       });

@@ -71,7 +71,7 @@ export const MAIN_QUESTS: Record<string, QuestDef> = {
     chapter: 1,
     desc: '浦原喜助要测试你的基本能力。去收集材料并击败几只虚。',
     objectives: [
-      { type: 'collect', target: '任意采集', count: 3, desc: '采集药草' },
+      { type: 'collect', target: 'any', count: 3, desc: '采集药草' },
       { type: 'kill', target: '低级虚', count: 2, desc: '击败低级虚' },
     ],
     rewards: { gold: 300, exp: 150, items: [{ id: 'potion_small', name: '回复药', count: 3 }] },
@@ -497,7 +497,7 @@ export const SIDE_QUESTS: Record<string, QuestDef> = {
   'side_1_shop_herb': {
     id: 'side_1_shop_herb', name: '紬屋雨的请求', type: 'side', chapter: 1,
     desc: '紬屋雨需要采集药草补充浦原商店的库存。',
-    objectives: [{ type: 'collect', target: '任意采集', count: 5, desc: '采集药草' }],
+    objectives: [{ type: 'collect', target: 'any', count: 5, desc: '采集药草' }],
     rewards: { gold: 300, exp: 100, items: [{ id: 'potion_small', name: '回复药', count: 3 }] },
     acceptFrom: '紬屋雨', completeAt: '紬屋雨', zoneRequired: 1,
   },
@@ -517,33 +517,33 @@ export const SIDE_QUESTS: Record<string, QuestDef> = {
   },
 
   // ② 流魂街
-  'side_4_beauty': { id: 'side_4_beauty', name: '弓亲的审美', type: 'side', chapter: 4, desc: '绫濑川弓亲需要灵木制作武器配饰。', objectives: [{ type: 'collect', target: '任意采集', count: 5, desc: '采集灵木' }], rewards: { gold: 400, exp: 180 }, acceptFrom: '绫濑川弓亲', completeAt: '绫濑川弓亲', zoneRequired: 4 },
+  'side_4_beauty': { id: 'side_4_beauty', name: '弓亲的审美', type: 'side', chapter: 4, desc: '绫濑川弓亲需要灵木制作武器配饰。', objectives: [{ type: 'collect', target: 'any', count: 5, desc: '采集灵木' }], rewards: { gold: 400, exp: 180 }, acceptFrom: '绫濑川弓亲', completeAt: '绫濑川弓亲', zoneRequired: 4 },
   'side_4_bandits': { id: 'side_4_bandits', name: '流魂街治安', type: 'side', chapter: 4, desc: '桧佐木修兵请你清理流魂街的强盗。', objectives: [{ type: 'kill', target: '流魂街强盗', count: 5, desc: '击败强盗' }], rewards: { gold: 500, exp: 450 }, acceptFrom: '桧佐木修兵', completeAt: '桧佐木修兵', zoneRequired: 4 },
-  'side_4_healing': { id: 'side_4_healing', name: '吉良的伤势', type: 'side', chapter: 4, desc: '吉良井鹤需要药草治伤。', objectives: [{ type: 'collect', target: '任意采集', count: 5, desc: '采集药草' }], rewards: { gold: 350, exp: 150, items: [{ id: 'antidote', name: '解毒草', count: 4 }] }, acceptFrom: '吉良井鹤', completeAt: '吉良井鹤', zoneRequired: 4 },
+  'side_4_healing': { id: 'side_4_healing', name: '吉良的伤势', type: 'side', chapter: 4, desc: '吉良井鹤需要药草治伤。', objectives: [{ type: 'collect', target: 'any', count: 5, desc: '采集药草' }], rewards: { gold: 350, exp: 150, items: [{ id: 'antidote', name: '解毒草', count: 4 }] }, acceptFrom: '吉良井鹤', completeAt: '吉良井鹤', zoneRequired: 4 },
 
   // ③ 静灵庭
-  'side_7_rangiku': { id: 'side_7_rangiku', name: '松本的休息', type: 'side', chapter: 7, desc: '松本乱菊想要药草和灵木。', objectives: [{ type: 'collect', target: '任意采集', count: 7, desc: '采集补给' }], rewards: { gold: 500, exp: 250, items: [{ id: 'potion_medium', name: '强效回复药', count: 2 }] }, acceptFrom: '松本乱菊', completeAt: '松本乱菊', zoneRequired: 7 },
+  'side_7_rangiku': { id: 'side_7_rangiku', name: '松本的休息', type: 'side', chapter: 7, desc: '松本乱菊想要药草和灵木。', objectives: [{ type: 'collect', target: 'any', count: 7, desc: '采集补给' }], rewards: { gold: 500, exp: 250, items: [{ id: 'potion_medium', name: '强效回复药', count: 2 }] }, acceptFrom: '松本乱菊', completeAt: '松本乱菊', zoneRequired: 7 },
   'side_7_zaraki': { id: 'side_7_zaraki', name: '剑八的热身', type: 'side', chapter: 7, desc: '更木剑八让你找强敌热身。', objectives: [{ type: 'kill', target: '叛逆死神', count: 6, desc: '击败叛逆死神' }], rewards: { gold: 700, exp: 750, items: [{ id: 'bronze_bracer', name: '护廷手甲', count: 1 }] }, acceptFrom: '更木剑八', completeAt: '更木剑八', zoneRequired: 7 },
-  'side_7_unohana': { id: 'side_7_unohana', name: '卯之花的药剂', type: 'side', chapter: 7, desc: '卯之花烈需要灵脉样本。', objectives: [{ type: 'collect', target: '任意采集', count: 6, desc: '收集灵脉' }], rewards: { gold: 600, exp: 700 }, acceptFrom: '卯之花烈', completeAt: '卯之花烈', zoneRequired: 7 },
+  'side_7_unohana': { id: 'side_7_unohana', name: '卯之花的药剂', type: 'side', chapter: 7, desc: '卯之花烈需要灵脉样本。', objectives: [{ type: 'collect', target: 'any', count: 6, desc: '收集灵脉' }], rewards: { gold: 600, exp: 700 }, acceptFrom: '卯之花烈', completeAt: '卯之花烈', zoneRequired: 7 },
 
   // ④ 虚圈
   'side_10_yammy': { id: 'side_10_yammy', name: '牙密的练习', type: 'side', chapter: 10, desc: '牙密拿亚丘卡斯练手。', objectives: [{ type: 'kill', target: '亚丘卡斯', count: 10, desc: '击败亚丘卡斯' }], rewards: { gold: 700, exp: 350 }, acceptFrom: '牙密', completeAt: '牙密', zoneRequired: 10 },
   'side_10_ruby': { id: 'side_10_ruby', name: '露比的触手', type: 'side', chapter: 10, desc: '露比的触手被虚群缠住了。', objectives: [{ type: 'kill', target: '基利安', count: 5, desc: '清理基利安' }], rewards: { gold: 600, exp: 300, items: [{ id: 'potion_medium', name: '强效回复药', count: 3 }] }, acceptFrom: '露比', completeAt: '露比', zoneRequired: 10 },
-  'side_10shawlong': { id: 'side_10shawlong', name: '萧隆的教导', type: 'side', chapter: 10, desc: '萧隆库方需要灵脉研究。', objectives: [{ type: 'collect', target: '任意采集', count: 6, desc: '收集灵脉' }], rewards: { gold: 500, exp: 280, items: [{ id: 'jade_ring', name: '虚闪戒指', count: 1 }] }, acceptFrom: '萧隆库方', completeAt: '萧隆库方', zoneRequired: 10 },
+  'side_10shawlong': { id: 'side_10shawlong', name: '萧隆的教导', type: 'side', chapter: 10, desc: '萧隆库方需要灵脉研究。', objectives: [{ type: 'collect', target: 'any', count: 6, desc: '收集灵脉' }], rewards: { gold: 500, exp: 280, items: [{ id: 'jade_ring', name: '虚闪戒指', count: 1 }] }, acceptFrom: '萧隆库方', completeAt: '萧隆库方', zoneRequired: 10 },
 
   // ⑤ 空座町·归
-  'side_13_jackie': { id: 'side_13_jackie', name: '贾姬的靴子', type: 'side', chapter: 13, desc: '贾姬需要矿脉做新靴子。', objectives: [{ type: 'collect', target: '任意采集', count: 6, desc: '采集矿脉' }], rewards: { gold: 600, exp: 300 }, acceptFrom: '贾姬', completeAt: '贾姬', zoneRequired: 13 },
+  'side_13_jackie': { id: 'side_13_jackie', name: '贾姬的靴子', type: 'side', chapter: 13, desc: '贾姬需要矿脉做新靴子。', objectives: [{ type: 'collect', target: 'any', count: 6, desc: '采集矿脉' }], rewards: { gold: 600, exp: 300 }, acceptFrom: '贾姬', completeAt: '贾姬', zoneRequired: 13 },
   'side_13_yukio': { id: 'side_13_yukio', name: '雪绪的数据', type: 'side', chapter: 13, desc: '雪绪需要战斗数据。', objectives: [{ type: 'kill', target: '完现虚', count: 13, desc: '击败完现虚' }], rewards: { gold: 700, exp: 3130, items: [{ id: 'potion_large', name: '高级回复药', count: 2 }] }, acceptFrom: '雪绪', completeAt: '雪绪', zoneRequired: 13 },
-  'side_13_chad': { id: 'side_13_chad', name: '茶渡的调整', type: 'side', chapter: 13, desc: '茶渡泰虎需要灵木稳定右臂。', objectives: [{ type: 'collect', target: '任意采集', count: 13, desc: '采集灵木' }], rewards: { gold: 1300, exp: 300, items: [{ id: 'royal_ring', name: '显灵戒指', count: 1 }] }, acceptFrom: '茶渡泰虎', completeAt: '茶渡泰虎', zoneRequired: 13 },
+  'side_13_chad': { id: 'side_13_chad', name: '茶渡的调整', type: 'side', chapter: 13, desc: '茶渡泰虎需要灵木稳定右臂。', objectives: [{ type: 'collect', target: 'any', count: 13, desc: '采集灵木' }], rewards: { gold: 1300, exp: 300, items: [{ id: 'royal_ring', name: '显灵戒指', count: 1 }] }, acceptFrom: '茶渡泰虎', completeAt: '茶渡泰虎', zoneRequired: 13 },
 
   // ⑥ 无形帝国
-  'side_16_as': { id: 'side_16_as', name: '艾斯的恐惧', type: 'side', chapter: 16, desc: '艾斯·诺特让你采集灵脉对抗恐惧。', objectives: [{ type: 'collect', target: '任意采集', count: 7, desc: '采集灵脉' }], rewards: { gold: 800, exp: 400 }, acceptFrom: '艾斯·诺特', completeAt: '艾斯·诺特', zoneRequired: 16 },
+  'side_16_as': { id: 'side_16_as', name: '艾斯的恐惧', type: 'side', chapter: 16, desc: '艾斯·诺特让你采集灵脉对抗恐惧。', objectives: [{ type: 'collect', target: 'any', count: 7, desc: '采集灵脉' }], rewards: { gold: 800, exp: 400 }, acceptFrom: '艾斯·诺特', completeAt: '艾斯·诺特', zoneRequired: 16 },
   'side_16_bambi': { id: 'side_16_bambi', name: '邦比爱塔的爆炸', type: 'side', chapter: 16, desc: '邦比爱塔让你炸圣兵。', objectives: [{ type: 'kill', target: '圣兵', count: 16, desc: '击败圣兵' }], rewards: { gold: 900, exp: 450 }, acceptFrom: '邦比爱塔', completeAt: '邦比爱塔', zoneRequired: 16 },
-  'side_16_liltotto': { id: 'side_16_liltotto', name: '莉托托的食物', type: 'side', chapter: 16, desc: '莉托托饿了，需要药草和灵木。', objectives: [{ type: 'collect', target: '任意采集', count: 8, desc: '收集食物' }], rewards: { gold: 1000, exp: 500, items: [{ id: 'ruby_ring', name: '星十字戒指', count: 1 }] }, acceptFrom: '莉托托', completeAt: '莉托托', zoneRequired: 16 },
+  'side_16_liltotto': { id: 'side_16_liltotto', name: '莉托托的食物', type: 'side', chapter: 16, desc: '莉托托饿了，需要药草和灵木。', objectives: [{ type: 'collect', target: 'any', count: 8, desc: '收集食物' }], rewards: { gold: 1000, exp: 500, items: [{ id: 'ruby_ring', name: '星十字戒指', count: 1 }] }, acceptFrom: '莉托托', completeAt: '莉托托', zoneRequired: 16 },
 
   // ⑦ 地狱
   'side_19_jailer': { id: 'side_19_jailer', name: '越狱的咎人', type: 'side', chapter: 19, desc: '地狱狱卒让你抓回越狱的咎人。', objectives: [{ type: 'kill', target: '咎人', count: 19, desc: '击败咎人' }], rewards: { gold: 1200, exp: 600, items: [{ id: 'dark_ring', name: '狱戒指', count: 1 }] }, acceptFrom: '地狱狱卒', completeAt: '地狱狱卒', zoneRequired: 19 },
-  'side_19_soul': { id: 'side_19_soul', name: '墓碑', type: 'side', chapter: 19, desc: '被囚的灵魂想刻一块墓碑。', objectives: [{ type: 'collect', target: '任意采集', count: 6, desc: '收集矿脉' }], rewards: { gold: 1000, exp: 500 }, acceptFrom: '被囚的灵魂', completeAt: '被囚的灵魂', zoneRequired: 19 },
+  'side_19_soul': { id: 'side_19_soul', name: '墓碑', type: 'side', chapter: 19, desc: '被囚的灵魂想刻一块墓碑。', objectives: [{ type: 'collect', target: 'any', count: 6, desc: '收集矿脉' }], rewards: { gold: 1000, exp: 500 }, acceptFrom: '被囚的灵魂', completeAt: '被囚的灵魂', zoneRequired: 19 },
   'side_19_gatekeeper': { id: 'side_19_gatekeeper', name: '守门人的请求', type: 'side', chapter: 19, desc: '守门人让你清理混沌兽。', objectives: [{ type: 'kill', target: '混沌兽', count: 4, desc: '击败混沌兽' }], rewards: { gold: 1500, exp: 1950, items: [{ id: 'abyss_necklace', name: '狱魂项链', count: 1 }] }, acceptFrom: '守门人', completeAt: '守门人', zoneRequired: 19 },
 };
 

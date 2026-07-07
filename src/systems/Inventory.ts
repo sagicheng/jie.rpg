@@ -1,3 +1,5 @@
+import { enhanceMult } from '../constants';
+
 /** 物品类型 */
 export type ItemType = 'equipment' | 'material' | 'consumable' | 'key';
 
@@ -88,7 +90,7 @@ class InventoryManager {
   private getItemStats(item: Item): Partial<Record<string, number>> {
     if (!item.stats) return {};
     const enhanceLv = item.enhanceLevel || 0;
-    const mult = 1 + enhanceLv * 0.05;
+    const mult = enhanceMult(enhanceLv);
     const stats: Record<string, number> = {};
     for (const [k, v] of Object.entries(item.stats)) {
       stats[k] = Math.round((v || 0) * mult);

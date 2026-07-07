@@ -2,16 +2,11 @@
  * 装备强化 / 属性精炼 / 装备分解 系统
  * DNF式精炼三件套
  */
+import { matId } from '../data/materials';
+import { enhanceMult, QUALITY_MULT } from '../constants';
 import { Item, EquipSlot, Inventory } from './Inventory';
 import { GameState } from './GameState';
 
-// ═══════════════════════════════════════════
-// 品质常量
-// ═══════════════════════════════════════════
-
-const QUALITY_MULT: Record<string, number> = { white: 1.0, green: 1.3, blue: 1.6, purple: 2.0, gold: 2.5 };
-const QUALITY_CN: Record<string, string> = { white: '白', green: '绿', blue: '蓝', purple: '紫', gold: '金' };
-const QUALITY_COLOR: Record<string, string> = { white: '#cccccc', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
 
 // ═══════════════════════════════════════════
 // 强化系统 (Enhancement +1 ~ +10)
@@ -50,7 +45,7 @@ export function getEnhanceCost(currentLevel: number, quality: string): { gold: n
 /** 获取强化属性倍率 — 每级+5% */
 export function getEnhanceMult(item: Item): number {
   const lv = item.enhanceLevel || 0;
-  return 1 + lv * 0.05;
+  return enhanceMult(lv);
 }
 
 /** 强化结果 */
@@ -74,7 +69,7 @@ export function doEnhance(item: Item): EnhanceResult {
   }
 
   // 检查灵晶碎片
-  const crystals = Inventory.items.find(i => i.id === 'mat_灵晶碎片' || i.name === '灵晶碎片');
+  const crystals = Inventory.items.find(i => i.id === matId('灵晶碎片'));
   const crystalCount = crystals ? crystals.quantity : 0;
   if (crystalCount < cost.crystals) {
     return { success: false, destroyed: false, newLevel: currentLevel, message: `灵晶碎片不足 (需要${cost.crystals})` };
@@ -354,7 +349,7 @@ export function doDecompose(item: Item): { success: boolean; message: string; ma
       existing.quantity += mat.qty;
     } else {
       Inventory.items.push({
-        id: `mat_${mat.name}`,
+        id: matId(mat.name),
         name: mat.name,
         type: 'material',
         desc: '分解所得',

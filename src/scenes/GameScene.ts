@@ -1,4 +1,5 @@
 ﻿import Phaser from 'phaser';
+import { matId, NODE_TO_MATERIAL } from '../data/materials';
 import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES, ZANPAKUTO_GROWTH } from '../config';
 import { DialogueBox, DialogueLine } from '../ui/DialogueBox';
 import { GameState } from '../systems/GameState';
@@ -217,6 +218,13 @@ export class GameScene extends Phaser.Scene {
     });
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.J).on('down', () => {
       if (ctrl.isDown) { GameState.recordKill('大虚·亚丘卡斯'); showDevNotif('Boss击杀+1', '#ff4444'); }
+    });
+    // 测试辅助：Ctrl+Z 触发完整始解选刀流程（与正式 shikai_trial 任务一致）
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z).on('down', () => {
+      if (ctrl.isDown) {
+        if (GameState.hasShikai) showDevNotif('始解已解锁（再选刀可更换真名）', '#ffcc44');
+        showShikaiSelection(this);
+      }
     });
 
     this.zoneText = this.add.text(16, 12, `${GameState.playerName} · ${ZONE_NAMES[GameState.zone]}`, {
@@ -543,10 +551,9 @@ export class GameScene extends Phaser.Scene {
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, pt.sprite.x, pt.sprite.y);
       if (dist < 55 && Phaser.Input.Keyboard.JustDown(this.interactKey)) {
         this.isInDialogue = true;
-        const matNames: Record<string, string> = { '\u77ff\u8109': '\u94c1\u77ff\u77f3', '\u836f\u8349': '\u6b62\u8840\u8349', '\u7075\u6728': '\u7075\u6728\u679d', '\u7075\u8109': '\u7075\u529b\u6c34' };
-        const matName = matNames[pt.type] || pt.type;
+        const matName = NODE_TO_MATERIAL[pt.type] || pt.type;
         GameState.updateQuestProgress('collect', pt.type, 1);
-        Inventory.addItem({ id: `mat_${matName}`, name: matName, type: 'material', desc: '\u91ce\u5916\u91c7\u96c6\u83b7\u5f97', quantity: 1 });
+        Inventory.addItem({ id: matId(matName), name: matName, type: 'material', desc: '\u91ce\u5916\u91c7\u96c6\u83b7\u5f97', quantity: 1 });
         pt.sprite.setVisible(false); pt.label.setVisible(false);
         this.time.delayedCall(30000, () => { pt.sprite.setVisible(true); pt.label.setVisible(true); });
         const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, `\u83b7\u5f97\uff1a${matName}`, { fontSize: '18px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 16, y: 8 } }).setOrigin(0.5).setScrollFactor(0).setDepth(300);

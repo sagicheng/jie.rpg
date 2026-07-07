@@ -1,3 +1,5 @@
+import { matId } from '../data/materials';
+import { QUALITY_MULT } from '../constants';
 import { ZONE_PL } from '../config';
 
 /** 敌人类型 */
@@ -15,7 +17,6 @@ const ENEMY_STAT_MULT: Record<EnemyType, { HP: number; ATK: number; DEF: number;
 };
 
 /** 品质倍率 */
-const QUALITY_MULT: Record<Quality, number> = { white: 1.0, green: 1.3, blue: 1.6, purple: 2.0, gold: 2.5 };
 
 export interface EnemyData {
   name: string;
@@ -185,7 +186,7 @@ export function generateLoot(type: EnemyType, zone: number): Array<{
   for (const mat of matRates[type]) {
     if (Math.random() < mat.rate) {
       loot.push({
-        id: `mat_${mat.name}`, name: mat.name, type: 'material',
+        id: matId(mat.name), name: mat.name, type: 'material',
         desc: '制造材料', quantity: 1,
       });
     }
