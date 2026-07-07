@@ -14,7 +14,7 @@ import { SHIKAI_SKILLS, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { Kido, KIDO_NODES, KidoSchool, TIER_LOCK } from '../systems/Kido';
 import {
   getEnhanceRate, getEnhanceCost, doEnhance,
-  getRefineMaxSlots, getRefineCost, doRefine, doRefineReset,
+  getRefineMaxSlots, getRefineCost, doRefine, doRefineReset, getRefineDisplay,
   getDecompReturn, doDecompose,
   getEnhanceLabel,
 } from '../systems/EnhanceSystem';
@@ -920,6 +920,8 @@ export class GameScene extends Phaser.Scene {
         p.add(this.add.text(sx + 8, sy + 20, `${it.name}${lvTxt}`, { fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ');
         p.add(this.add.text(sx + 8, sy + 40, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
+        const eqRef = getRefineDisplay(it);
+        if (eqRef) p.add(this.add.text(sx + 8, sy + 51, eqRef, { fontSize: '8px', color: '#F5A623', padding: { y: 1 } }));
         // 点击卸下装备
         const slotZone = this.add.zone(sx, sy, eW, eH).setOrigin(0, 0).setInteractive({ useHandCursor: true });
         slotZone.on('pointerdown', () => {
@@ -946,6 +948,8 @@ export class GameScene extends Phaser.Scene {
         p.add(this.add.text(ex + 6, ey + 4, `${item.name}${lvTxt}`, { fontSize: '11px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const sts = item.stats ? Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ') : '';
         p.add(this.add.text(ex + 6, ey + 24, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
+        const bagRef = getRefineDisplay(item);
+        if (bagRef) p.add(this.add.text(ex + 6, ey + 36, bagRef, { fontSize: '8px', color: '#F5A623', padding: { y: 1 } }));
         const ez = this.add.zone(ex, ey, ecardW, 48).setOrigin(0, 0).setInteractive({ useHandCursor: true });
         ez.on('pointerover', () => { cd2.clear(); cd2.fillStyle(0x1a2a3a, 0.8); cd2.fillRoundedRect(ex, ey, ecardW, 48, 5); cd2.lineStyle(1, parseInt((qc[q] || '#666666').replace('#', ''), 16), 0.6); cd2.strokeRoundedRect(ex, ey, ecardW, 48, 5); });
         ez.on('pointerout', () => { cd2.clear(); cd2.fillStyle(0x0a0a1a, 0.7); cd2.fillRoundedRect(ex, ey, ecardW, 48, 5); cd2.lineStyle(1, parseInt((qc[q] || '#666666').replace('#', ''), 16), 0.4); cd2.strokeRoundedRect(ex, ey, ecardW, 48, 5); });
@@ -1152,6 +1156,8 @@ export class GameScene extends Phaser.Scene {
         p.add(itemTxt);
         const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join('  ');
         p.add(this.add.text(sx + 10, sy + 46, sts, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
+        const refineStr = getRefineDisplay(it);
+        if (refineStr) p.add(this.add.text(sx + 10, sy + 58, `精炼: ${refineStr}`, { fontSize: '9px', color: '#F5A623', padding: { y: 1 } }));
         // Click to unequip
         er.setInteractive(new Phaser.Geom.Rectangle(sx, sy, eqColW, 66), Phaser.Geom.Rectangle.Contains);
         er.on('pointerdown', () => {
@@ -1417,6 +1423,8 @@ export class GameScene extends Phaser.Scene {
         p.add(this.add.text(sx + 10, sy + 20, `${enhLabel} ${item.name}`, { fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const stats = Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join('  ');
         p.add(this.add.text(sx + 10, sy + 40, stats, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
+        const eqRef2 = getRefineDisplay(item);
+        if (eqRef2) p.add(this.add.text(sx + 10, sy + 52, eqRef2, { fontSize: '8px', color: '#F5A623', padding: { y: 1 } }));
 
         if (activeTab === 0) {
           // 强化
@@ -1493,6 +1501,8 @@ export class GameScene extends Phaser.Scene {
         p.add(this.add.text(sx + 10, sy + 4, `${item.name}${elv > 0 ? ' +' + elv : ''}`, { fontSize: '12px', color: qc2[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const stats = item.stats ? Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ') : '';
         p.add(this.add.text(sx + 10, sy + 24, stats, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
+        const bagRef2 = getRefineDisplay(item);
+        if (bagRef2) p.add(this.add.text(sx + 10, sy + 36, bagRef2, { fontSize: '8px', color: '#F5A623', padding: { y: 1 } }));
 
         if (this.enhanceTab === 0 && elv < 10) {
           const cost = getEnhanceCost(elv + 1, q); const rate = getEnhanceRate(elv + 1);
