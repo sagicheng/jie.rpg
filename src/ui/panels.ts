@@ -1096,7 +1096,7 @@ export function renderTitlePanel(scene: GameScene): void {
         const btnLabel=isActive?'卸下':'装备';
         const ab=scene.add.text(listX+mw-48-72,ry+rowH/2-12,`[ ${btnLabel} ]`,{fontSize:'12px',color:isActive?'#ffcc66':'#88ccff',fontStyle:'bold',backgroundColor:isActive?'#3a2e00aa':'#002233aa',padding:{x:10,y:5}}).setOrigin(0,0.5).setInteractive({useHandCursor:true});
         ab.on('pointerover',()=>ab.setColor('#ffffff'));ab.on('pointerout',()=>ab.setColor(isActive?'#ffcc66':'#88ccff'));
-        ab.on('pointerdown',()=>{(GameState as any).setActiveTitle(def.id);closeTitlePanel(scene);renderBestiaryPanel(scene);});
+        ab.on('pointerdown',()=>{(GameState as any).setActiveTitle(def.id);scene.broadcastTitle();closeTitlePanel(scene);renderBestiaryPanel(scene);});
         c.add(ab);
       }else{
         c.add(scene.add.text(listX+mw-48-130,ry+rowH/2,st.progress,{fontSize:'11px',color:'#7788aa',padding:{y:1}}).setOrigin(0,0.5));
@@ -1106,7 +1106,7 @@ export function renderTitlePanel(scene: GameScene): void {
     const noneBtn=scene.add.text(mx+mw/2,ny+6,(GameState as any).activeTitle?'[ 卸下当前称号 ]':'（当前未装备称号）',{fontSize:'12px',color:(GameState as any).activeTitle?'#cc8888':'#556688',padding:{y:2}}).setOrigin(0.5).setInteractive({useHandCursor:(GameState as any).activeTitle?true:false});
     if((GameState as any).activeTitle){
       noneBtn.on('pointerover',()=>noneBtn.setColor('#ffaaaa'));noneBtn.on('pointerout',()=>noneBtn.setColor('#cc8888'));
-      noneBtn.on('pointerdown',()=>{(GameState as any).setActiveTitle(null);closeTitlePanel(scene);renderBestiaryPanel(scene);});
+      noneBtn.on('pointerdown',()=>{(GameState as any).setActiveTitle(null);scene.broadcastTitle();closeTitlePanel(scene);renderBestiaryPanel(scene);});
     }
     c.add(noneBtn);
   }

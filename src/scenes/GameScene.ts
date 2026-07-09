@@ -11,6 +11,7 @@ import { ZONE_CONFIGS } from '../systems/Zones';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
+import { getClient } from '../net/Net';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -38,6 +39,13 @@ export class GameScene extends Phaser.Scene {
   private battleCooldown = 0;
   private menuPauseDepth = 0;
 
+  // ——— 联机（共享地图房间）———
+  private gameRoom: any = null;
+  private mySessionId = '';
+  private remotePlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; tag: Phaser.GameObjects.Text; tx: number; ty: number; name: string; title: string }> = new Map();
+  private lastSent = { x: -9999, y: -9999, t: 0 };
+  private netHint!: Phaser.GameObjects.Text;
+
   // HUD
   private zoneText!: Phaser.GameObjects.Text;
   private coordText!: Phaser.GameObjects.Text;
@@ -46,7 +54,7 @@ export class GameScene extends Phaser.Scene {
 
   // Worlds
   private npcList: NPCData[] = [];
-  private enemies: Array<{ sprite: Phaser.Physics.Arcade.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; respawnTimer?: Phaser.Time.TimerEvent }> = [];
+  private enemies: Array<{ sprite: Phaser.Physics.Arcade.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; id: string; dead?: boolean; respawnTimer?: Phaser.Time.TimerEvent }> = [];
   private gatherPoints: Array<{ sprite: Phaser.Physics.Arcade.Sprite; type: string; label: Phaser.GameObjects.Text }> = [];
 
   // Panels
@@ -67,13 +75,19 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' });
   }
 
-  init(data?: { newGame?: boolean }): void {
+  init(data?: { newGame?: boolean; name?: string; element?: string }): void {
     if (data?.newGame) {
       GameState.reset();
       GameState.x = 400;
       GameState.y = 500;
       GameState.zone = 1;
       GameState.newGame = true;
+      // 恢复建角信息（来自 CreateCharacterScene，reset() 已清空 playerName/element/hasCreated）
+      if (data.name) {
+        GameState.playerName = data.name;
+        if (data.element) GameState.element = data.element;
+        GameState.hasCreated = true;
+      }
       Inventory.addItem({ id: 'stop_blood_grass', name: '止血草', type: 'consumable', desc: '回复50HP', quantity: 5 });
       Inventory.addItem({ id: 'medicine_pill_s', name: '伤药(小)', type: 'consumable', desc: '回复150HP', quantity: 3 });
       Inventory.addItem({ id: 'spirit_water_s', name: '灵力水(小)', type: 'consumable', desc: '回复30MP', quantity: 3 });
@@ -124,6 +138,7 @@ export class GameScene extends Phaser.Scene {
       backgroundColor: '#00000066', padding: { x: 4, y: 1 },
     }).setOrigin(0.5, 1).setDepth(11);
     this.syncPlayerTags();
+    this.connectGameRoom();
 
     // 相机跟随玩家
     this.cameras.main.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT * 2);
@@ -183,6 +198,15 @@ export class GameScene extends Phaser.Scene {
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.moveTarget = { x: wp.x, y: wp.y };
     });
+
+    // 联机：进入组队战斗房间（两个窗口都按 V 即同房间组队打怪）
+    this.input.keyboard!.addKey('V').on('down', () => {
+      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel) return;
+      this.launchMultiBattle();
+    });
+
+    // 战斗结束（scene resume）时清除「战斗中」标记，便于其他玩家看到战斗状态（组队系统前置）
+    this.events.on(Phaser.Scenes.Events.RESUME, () => this.setBattling(false));
 
     // Dev cheats
     const ctrl = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
@@ -246,7 +270,15 @@ export class GameScene extends Phaser.Scene {
       backgroundColor: '#1a1a2ecc', padding: { x: 8, y: 2 },
     }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
     this.miniMap = this.add.graphics().setScrollFactor(0).setDepth(100);
+    this.netHint = this.add.text(16, GAME_HEIGHT - 24, 'V：进入联机组队战', {
+      fontSize: '12px', color: '#6688aa', backgroundColor: '#1a1a2eaa', padding: { x: 6, y: 2 },
+    }).setScrollFactor(0).setDepth(100);
     this.scene.launch('UIScene');
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this.gameRoom) { this.gameRoom.leave(); this.gameRoom = null; }
+      this.clearRemotePlayers();
+    });
 
     this.time.delayedCall(100, () => {
       this.scene.get('UIScene').events.emit('updateStats');
@@ -303,6 +335,16 @@ export class GameScene extends Phaser.Scene {
     if (this.battleCooldown > 0) this.battleCooldown--;
     this.coordText.setText(`X:${Math.round(this.player.x)}  Y:${Math.round(this.player.y)}`);
     this.syncPlayerTags();
+    this.sendMoveThrottled();
+    // 联机：每帧拉取服务端状态并平滑插值远程玩家（含名字）
+    this.syncRemotePlayers();
+    this.remotePlayers.forEach(rp => {
+      rp.sprite.x = Phaser.Math.Linear(rp.sprite.x, rp.tx, 0.2);
+      rp.sprite.y = Phaser.Math.Linear(rp.sprite.y, rp.ty, 0.2);
+      rp.tag.setPosition(rp.sprite.x, rp.sprite.y - 46);
+    });
+    // 联机：每帧按服务端怪物状态机同步显示（防重入战斗）
+    this.pruneSharedMonsters();
   }
 
   /** 玩家头顶：角色名 + 称号，跟随移动，文本变化时才重绘 */
@@ -367,13 +409,42 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ═══ Enemies ═══
-  private checkEnemyCollision(): void { if (this.battleCooldown > 0 || this.isInDialogue) return; for (const en of this.enemies) { if (en.data.hp<=0) continue; if (Phaser.Math.Distance.Between(this.player.x,this.player.y,en.sprite.x,en.sprite.y)<31){this.battleCooldown=180;this.scene.pause();this.scene.launch('BattleScene',{template:en.data,enemyRef:en,zone:GameState.zone});return;} } }
+  private checkEnemyCollision(): void {
+    if (this.battleCooldown > 0 || this.isInDialogue) return;
+    for (const en of this.enemies) {
+      if (en.dead) continue;
+      if (en.data.hp <= 0) continue;
+      // 联机：怪物被他人锁定/已死→跳过（不可抢怪、不可打已死的）
+      if (this.gameRoom && !this.isMonsterAvailable(en.id)) continue;
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y) < 31) {
+        // 联机：进入战斗即锁定该怪，对其余玩家消失（防抢怪/卡刷新时间）
+        if (this.gameRoom) { this.gameRoom.send('enterBattle', { id: en.id }); this.setBattling(true); }
+        this.battleCooldown = 180;
+        this.scene.pause();
+        this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
+        return;
+      }
+    }
+  }
+
+  /** 联机：怪物在服务端是否可打（无记录=默认可用）。 */
+  private isMonsterAvailable(id: string): boolean {
+    const m = this.gameRoom?.state?.monsters?.get(id);
+    return !m || m.state === 'available';
+  }
   onBattleEnd(result: string, er: any): void {
     this.input.keyboard!.resetKeys(); this.physics.resume(); this.menuPauseDepth = 0;
-    if (result === 'defeat') { this.player.x=400;this.player.y=500;GameState.hp=GameState.maxHp;GameState.mp=GameState.maxMp;return; }
-    const a=Phaser.Math.Angle.Between(er.sprite.x,er.sprite.y,this.player.x,this.player.y);this.player.x+=Math.cos(a)*80;this.player.y+=Math.sin(a)*80;
+    if (result === 'defeat') {
+      this.player.x = 400; this.player.y = 500;
+      GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
+      // 联机：失败=怪物立即复原（对所有人可见），玩家回城
+      if (this.gameRoom) this.gameRoom.send('unlockMonster', { id: er.id });
+      return;
+    }
+    const a = Phaser.Math.Angle.Between(er.sprite.x, er.sprite.y, this.player.x, this.player.y);
+    this.player.x += Math.cos(a) * 80; this.player.y += Math.sin(a) * 80;
     if (result === 'victory') {
-      const ib=er.data.type==='妖将'||er.data.type==='妖王';
+      const ib = er.data.type === '妖将' || er.data.type === '妖王';
       // 战斗奖励
       const expGain = er.data.expReward || 0;
       const goldGain = er.data.goldReward || 0;
@@ -398,10 +469,56 @@ export class GameScene extends Phaser.Scene {
       this.tweens.add({ targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 120, duration: 2500, onComplete: () => notif.destroy() });
       this.scene.get('UIScene').events.emit('updateStats');
 
-      er.data.hp=0;er.sprite.setVisible(false);er.sprite.setActive(false).setPosition(-9999,-9999);er.label.setVisible(false);
-      if (er.respawnTimer) er.respawnTimer.destroy();
-      const d=ib?7200000:er.data.type==='恶妖'?300000:30000;
-      er.respawnTimer=this.time.delayedCall(d,()=>{er.data.hp=er.data.maxHp;er.sprite.setVisible(true);er.sprite.setActive(true).setPosition(er.sprite.x,er.sprite.y);er.label.setVisible(true);if(ib){this.tweens.add({targets:er.sprite,scaleX:1.65,scaleY:1.55,duration:1500,yoyo:true,repeat:-1,ease:'Sine.easeInOut'});}});
+      // 隐藏怪物（联机/单机通用），复活由服务端(联机)或本地计时(单机)驱动
+      this.removeMonster(er);
+      if (this.gameRoom) {
+        // 联机：通知服务端本怪物被击杀，按刷新时长从战斗结束计时后重新出现（共享怪物·玩家间争夺）
+        this.gameRoom.send('killMonster', { id: er.id, respawnMs: this.monsterRespawnMs(er) });
+      } else {
+        // 单机：本地重生
+        if (er.respawnTimer) er.respawnTimer.destroy();
+        const d = ib ? 7200000 : er.data.type === '恶妖' ? 300000 : 30000;
+        er.respawnTimer = this.time.delayedCall(d, () => this.restoreMonster(er));
+      }
+    }
+  }
+
+  /** 怪物刷新时长（ms）：Boss 2h / 恶妖 5min / 其余 30s。 */
+  private monsterRespawnMs(er: { data: EnemyData }): number {
+    const isBoss = er.data.type === '妖将' || er.data.type === '妖王';
+    return isBoss ? 7200000 : er.data.type === '恶妖' ? 300000 : 30000;
+  }
+
+  /** 隐藏一只地图怪物（不再碰撞），幂等。保持原位与 idle 动画，便于刷新时原位恢复。 */
+  private removeMonster(en: { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text; dead?: boolean; respawnTimer?: Phaser.Time.TimerEvent }): void {
+    if (en.dead) return;
+    en.dead = true;
+    en.sprite.setVisible(false);
+    en.label.setVisible(false);
+    if (en.respawnTimer) { en.respawnTimer.destroy(); en.respawnTimer = undefined; }
+  }
+
+  /** 恢复一只被隐藏的地图怪物（刷新/复原），幂等。重置 HP 并重新显示。 */
+  private restoreMonster(en: { sprite: Phaser.GameObjects.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; dead?: boolean }): void {
+    if (!en.dead) return;
+    en.dead = false;
+    en.data.hp = en.data.maxHp;
+    en.sprite.setVisible(true);
+    en.label.setVisible(true);
+  }
+
+  /** 每帧按服务端怪物状态机同步本地显示：busy/dead→隐藏；available 且本地已隐藏→恢复。 */
+  private pruneSharedMonsters(): void {
+    if (!this.gameRoom) return;
+    const ms = this.gameRoom.state.monsters;
+    if (!ms) return;
+    for (const en of this.enemies) {
+      const m = ms.get(en.id);
+      if (!m || m.state === 'available') {
+        if (en.dead) this.restoreMonster(en);
+      } else if (!en.dead) {
+        this.removeMonster(en);
+      }
     }
   }
 
@@ -539,7 +656,7 @@ export class GameScene extends Phaser.Scene {
   private createEnemies(): void {
     const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
     const occupied: { x: number; y: number }[] = this.npcList.map(n => ({ x: n.x, y: n.y }));
-    for (const e of cfg.enemies) {
+    cfg.enemies.forEach((e, idx) => {
       const normX = Math.min(0.95, Math.max(0.05, e.x > 1.0 ? e.x / 3.0 : e.x));
       const normY = Math.min(0.95, Math.max(0.05, e.y > 1.0 ? e.y / 2.0 : e.y));
       let ex = normX * GAME_WIDTH * 3, ey = normY * GAME_HEIGHT * 2;
@@ -551,8 +668,9 @@ export class GameScene extends Phaser.Scene {
       if (isBoss) { sprite.setScale(1.6).setTint(0xffcc44); this.tweens.add({ targets: sprite, scaleX: 1.65, scaleY: 1.55, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
       else { const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30); this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
       const label = this.add.text(ex, ey - sprite.height / 2 - 10, isBoss ? '\u3010BOSS\u3011' + e.name : e.name, { fontSize: '11px', color: isBoss ? '#ffcc44' : e.type === '\u6076\u5996' ? '#ff8866' : '#aaaabb', fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(6);
-      this.enemies.push({ sprite, data, label });
-    }
+      const id = `${GameState.zone}:${idx}`;
+      this.enemies.push({ sprite, data, label, id });
+    });
   }
 
   private createGatheringPoints(): void {
@@ -736,6 +854,99 @@ export class GameScene extends Phaser.Scene {
 
 
   // ═══ Bestiary ═══
+
+  // ════════════════ 联机：共享地图房间 ════════════════
+  private connectGameRoom(): void {
+    if (this.gameRoom) return;
+    getClient().joinOrCreate('game', {
+      name: GameState.playerName || '玩家',
+      title: GameState.getActiveTitleDef()?.name ?? '',
+    })
+      .then((room: any) => {
+        this.gameRoom = room;
+        this.mySessionId = room.sessionId;
+        // 进房即上报一次当前坐标，让其他客户端立刻看到自己
+        room.send('move', { x: Math.round(this.player.x), y: Math.round(this.player.y) });
+        room.onStateChange(() => this.syncRemotePlayers());
+        // 共享怪物隐藏/恢复由每帧 pruneSharedMonsters 依据服务端状态机同步，无需 onAdd 钩子。
+        room.onLeave(() => this.clearRemotePlayers());
+        // 服务端 broadcast('system', ...) 的系统提示（进入地图等），客户端暂无需特殊处理，注册空处理器消除告警。
+        room.onMessage('system', () => {});
+        room.onError((code: number, msg: string) => console.warn('[game] 房间错误', code, msg));
+      })
+      .catch((e: any) => console.warn('[game] 联机房间连接失败，单机模式继续', e));
+  }
+
+  /** 装备/卸下称号时，把最新称号广播给同房间的其他玩家（实时同步）。 */
+  broadcastTitle(): void {
+    if (this.gameRoom) {
+      this.gameRoom.send('setTitle', { title: GameState.getActiveTitleDef()?.name ?? '' });
+    }
+  }
+
+  /** 按服务端状态维护其他玩家（跳过自己）。名字+称号每帧刷新，位置由 update() 平滑插值。 */
+  private syncRemotePlayers(): void {
+    if (!this.gameRoom) return;
+    const state = this.gameRoom.state;
+    if (!state || !state.players) return;
+    const players = state.players as Map<string, any>;
+    players.forEach((p: any, sid: string) => {
+      if (sid === this.mySessionId) return;
+      let rp = this.remotePlayers.get(sid);
+      if (!rp) {
+        const sprite = this.add.sprite(p.x, p.y, 'player').setDepth(8).setAlpha(0.9);
+        sprite.setTint(Phaser.Display.Color.HexStringToColor(p.color || '#ffffff').color);
+        const tag = this.add.text(p.x, p.y - 46, '', {
+          fontSize: '13px', color: '#ffffff', fontStyle: 'bold',
+          stroke: '#000000', strokeThickness: 3,
+          backgroundColor: '#00000066', padding: { x: 5, y: 2 },
+          align: 'center',
+        }).setOrigin(0.5, 1).setDepth(900);
+        rp = { sprite, tag, tx: p.x, ty: p.y, name: '', title: '' };
+        this.remotePlayers.set(sid, rp);
+      }
+      rp.tx = p.x; rp.ty = p.y;                 // 目标坐标（避免每帧硬跳）
+      rp.name = p.name || '玩家';
+      rp.title = p.title || '';
+      const battling = p.battling ? '（战斗中）' : '';
+      // 称号 + 名字；双行显示，称号为空则只显示名字。战斗中追加「（战斗中）」标签，便于玩家间识别状态（组队前置）
+      const txt = rp.title ? `【${rp.title}】\n${rp.name}${battling}` : `${rp.name}${battling}`;
+      if (rp.tag.text !== txt) rp.tag.setText(txt);
+    });
+    for (const [sid, rp] of this.remotePlayers) {
+      if (!players.has(sid)) { rp.sprite.destroy(); rp.tag.destroy(); this.remotePlayers.delete(sid); }
+    }
+  }
+
+  private clearRemotePlayers(): void {
+    this.remotePlayers.forEach((rp) => { rp.sprite.destroy(); rp.tag.destroy(); });
+    this.remotePlayers.clear();
+  }
+
+  /** 联机：上报自己是否处于战斗中（供远端名牌显示「战斗中」标签）。 */
+  private setBattling(v: boolean): void {
+    if (this.gameRoom) this.gameRoom.send('setBattling', { v });
+  }
+
+  /** 节流上报移动（~10Hz，仅在确实移动时发）。 */
+  private sendMoveThrottled(): void {
+    if (!this.gameRoom) return;
+    const now = this.time.now;
+    const dx = this.player.x - this.lastSent.x;
+    const dy = this.player.y - this.lastSent.y;
+    if (now - this.lastSent.t >= 100 && dx * dx + dy * dy > 4) {
+      this.gameRoom.send('move', { x: Math.round(this.player.x), y: Math.round(this.player.y) });
+      this.lastSent = { x: this.player.x, y: this.player.y, t: now };
+    }
+  }
+
+  /** 进入联机权威战斗（暂停当前地图，启动 MultiBattleScene）。 */
+  private launchMultiBattle(): void {
+    this.battleCooldown = 120;
+    if (this.gameRoom) this.setBattling(true);
+    this.scene.launch('MultiBattleScene', { playerName: GameState.playerName || '勇者' });
+    this.scene.pause();
+  }
   
 
   

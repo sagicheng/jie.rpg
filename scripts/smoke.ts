@@ -67,11 +67,74 @@ async function main() {
   await battleA.leave();
   await battleB.leave();
 
+  // ——— 3) 怪物锁定 / 复原 / 刷新（服务端状态机）———
+  const roomC = await clientA.joinOrCreate('game', { name: '甲' });
+  const roomD = await clientB.joinOrCreate('game', { name: '乙' }); // 同一 game 房间
+  await wait(200);
+
+  // 安全读取怪物状态（colyseus.js 在 map 无条目时该字段为 undefined）
+  const mon = (room: any, id: string) => (room.state.monsters ? room.state.monsters.get(id) : undefined);
+
+  // 进入战斗即锁定
+  await roomC.send('enterBattle', { id: 'z1:0' });
+  await wait(200);
+  const m0 = mon(roomC, 'z1:0');
+  const lockOk = !!m0 && m0.state === 'busy' && m0.owner === roomC.sessionId;
+
+  // 他人不可误杀自己锁定的怪（应仍 busy）
+  await roomD.send('killMonster', { id: 'z1:0', respawnMs: 1000 });
+  await wait(200);
+  const m1 = mon(roomC, 'z1:0');
+  const noMisKill = !!m1 && m1.state === 'busy';
+
+  // 失败立即复原（available）
+  await roomC.send('unlockMonster', { id: 'z1:0' });
+  await wait(200);
+  const m2 = mon(roomC, 'z1:0');
+  const restoreOk = !!m2 && m2.state === 'available';
+
+  // 击杀 → dead，并按 respawnMs 刷新回 available
+  await roomC.send('killMonster', { id: 'z1:1', respawnMs: 1000 });
+  await wait(200);
+  const m3 = mon(roomC, 'z1:1');
+  const killOk = !!m3 && m3.state === 'dead';
+  await wait(1300);
+  const m4 = mon(roomC, 'z1:1');
+  const respawnOk = !!m4 && m4.state === 'available';
+
+  await roomC.leave();
+  await roomD.leave();
+
+  console.log(`\n[怪物] 进入战斗即锁定(busy)   : ${lockOk ? 'OK' : 'BAD'}`);
+  console.log(`[怪物] 他人不可误杀锁定怪     : ${noMisKill ? 'OK' : 'BAD'}`);
+  console.log(`[怪物] 失败立即复原           : ${restoreOk ? 'OK' : 'BAD'}`);
+  console.log(`[怪物] 击杀后按时刷新         : ${killOk && respawnOk ? 'OK' : 'BAD'}`);
+
+  // ——— 4) 战斗中标记（远端名牌「战斗中」标签，组队前置）———
+  const roomE = await clientA.joinOrCreate('game', { name: '丙' });
+  const roomF = await clientB.joinOrCreate('game', { name: '丁' });
+  await wait(200);
+  await roomE.send('setBattling', { v: true });
+  await wait(200);
+  const pE = (roomF.state as any).players.get(roomE.sessionId);
+  const battlingOn = !!pE && pE.battling === true;
+  await roomE.send('setBattling', { v: false });
+  await wait(200);
+  const pE2 = (roomF.state as any).players.get(roomE.sessionId);
+  const battlingOff = !!pE2 && pE2.battling === false;
+  await roomE.leave();
+  await roomF.leave();
+  console.log(`[战斗] 进入战斗广播 battling : ${battlingOn ? 'OK' : 'BAD'}`);
+  console.log(`[战斗] 退出战斗清除 battling : ${battlingOff ? 'OK' : 'BAD'}`);
+
   const mapOk = moved && chatted;
   const battleOk = phase === 'victory';
-  console.log(`\n==== 联机切片验证 ${mapOk && battleOk ? 'PASS ✅' : 'FAIL ❌'} ====`);
-  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'}`);
-  process.exit(mapOk && battleOk ? 0 : 1);
+  const monsterOk = lockOk && noMisKill && restoreOk && killOk && respawnOk;
+  const battlingOk = battlingOn && battlingOff;
+  const allOk = mapOk && battleOk && monsterOk && battlingOk;
+  console.log(`\n==== 联机切片验证 ${allOk ? 'PASS ✅' : 'FAIL ❌'} ====`);
+  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'}`);
+  process.exit(allOk ? 0 : 1);
 }
 
 main().catch((e) => {

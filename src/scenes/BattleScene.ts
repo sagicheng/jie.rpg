@@ -75,6 +75,13 @@ export class BattleScene extends Phaser.Scene {
   private battleZone = 1;  // 当前战斗所在区域(调试用)
 
   private phase: BattlePhase = 'intro';
+  // ——— 回合决策超时（防恶意卡刷新时间）———
+  private turnTimer?: Phaser.Time.TimerEvent;
+  private turnCountdownEvent?: Phaser.Time.TimerEvent;
+  private turnCountdownText?: Phaser.GameObjects.Text;
+  private _cmdRetry = false;
+  private escKeyRef?: Phaser.Input.Keyboard.Key;
+  private readonly TURN_SECONDS = 20;
   private logText!: Phaser.GameObjects.Text;
   private playerHpBar!: Phaser.GameObjects.Graphics;
   private playerMpBar!: Phaser.GameObjects.Graphics;
@@ -136,6 +143,12 @@ export class BattleScene extends Phaser.Scene {
     this.subMenuContainer = null;
     this.isDefending = false;
     this.shortcutKeys = [];
+    this._cmdRetry = false;
+    // 场景复用（重开/再进战）后必须清空回合计时字段，否则会指向上一场已销毁的 Text/Timer 对象导致崩溃
+    this.turnTimer = undefined;
+    this.turnCountdownEvent = undefined;
+    this.turnCountdownText = undefined;
+    this.escKeyRef = undefined;
     this.bankaiActive = false; this.bankaiTurnsLeft = 0; this.bankaiUsed = false;
     this.hollowActive = false; this.hollowTurnsLeft = 0; this.hollowUsed = false;
     this.hellActive = false; this.hellTurnsLeft = 0; this.hellUsed = false;
@@ -353,7 +366,7 @@ export class BattleScene extends Phaser.Scene {
     this.phase = playerGoesFirst ? 'playerTurn' : 'enemyTurn';
     if (playerGoesFirst) {
       this.logText.setText('You act first!');
-      this.time.delayedCall(500, () => this.showPlayerCommands());
+      this.time.delayedCall(500, () => this.safeShowCommands());
     } else {
       const fastest = this.enemies.find(e => e.spd === fastestEnemySpd && e.hp > 0);
       this.logText.setText((fastest?.name || 'Enemy') + ' acts first!');
@@ -387,7 +400,7 @@ export class BattleScene extends Phaser.Scene {
       if (this.allEnemiesDead()) { this.victory(); return; }
       this.tickEnemyStatusDuration();
       this.logText.setText('Your turn!');
-      this.time.delayedCall(300, () => this.showPlayerCommands());
+      this.time.delayedCall(300, () => this.safeShowCommands());
       return;
     }
 
@@ -396,7 +409,12 @@ export class BattleScene extends Phaser.Scene {
       if (this.playerHp <= 0) { this.enemyPhaseActive = false; this.defeat(); return; }
       // 再次确认敌人存活（可能被毒杀死）
       if (this.enemies[idx].hp > 0) {
-        this.processEnemyAction(idx);
+        // 容错：敌人行动抛异常时跳过该行动，但【必须】继续调度下一回合，否则整场卡死
+        try { this.processEnemyAction(idx); }
+        catch (err) {
+          console.error(`[BattleScene] 敌人[${idx}]行动异常，已跳过：`, err);
+          this.logText.setText('⚠ 敌人行动异常，已跳过');
+        }
       }
       this.time.delayedCall(1200, () => {
         if (this.playerHp <= 0) { this.enemyPhaseActive = false; this.defeat(); return; }
@@ -512,9 +530,11 @@ export class BattleScene extends Phaser.Scene {
       sprite.setTint(0xcccccc);
     });
 
-    const escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.escKeyRef = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    const escKey = this.escKeyRef;
     const cancel = () => {
       escKey.removeAllListeners();
+      this.escKeyRef = undefined;
       this.enemySprites.forEach(s => { s.clearTint(); s.disableInteractive(); });
       this.showPlayerCommands();
     };
@@ -788,6 +808,7 @@ export class BattleScene extends Phaser.Scene {
   // ════════════════════ 鬼道执行 ════════════════════
 
   private executeKido(skill: KidoNode): void {
+    this.clearTurnTimer();
     this.phase = 'executing';
     const mp = Kido.getNodeMp(skill.id);
     this.playerMp -= mp;
@@ -798,7 +819,7 @@ export class BattleScene extends Phaser.Scene {
       let msg = '';
       const pts = Kido.getPoints(skill.id);
       const scalePerPoint = (skill.effect as any).scalePerPoint || 0.20;
-      const enemy = this.enemy;
+      const enemy = this.enemies[this.selectedEnemyIndex];
       const ks = this.enemyStatuses[this.selectedEnemyIndex];
 
       switch (skill.effect.type) {
@@ -898,9 +919,10 @@ export class BattleScene extends Phaser.Scene {
   // ════════════════════ 玩家行动 ════════════════════
 
   private playerAttack(): void {
+    this.clearTurnTimer();
     this.phase = 'executing';
     this.clearCommands();
-    const enemy = this.enemy;
+    const enemy = this.enemies[this.selectedEnemyIndex];
     // 元素克制：玩家element vs 敌人弱点/抗性
     const eInfo = getEnemyElementInfo(enemy.name);
     const elemMult = GameState.element
@@ -966,6 +988,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private executePlayerSkill(sk: SkillData): void {
+    this.clearTurnTimer();
     this.phase = 'executing';
     this.playerMp -= sk.mp;
 
@@ -1176,7 +1199,7 @@ export class BattleScene extends Phaser.Scene {
 
   private applySkillStatus(subtype: string, turns: number, idx: number = this.selectedEnemyIndex): void {
     const ks = this.enemyStatuses[idx];
-    if (!this.bossImmuneTo(idx)) applyStatusToEnemy(ks, subtype, turns, this.enemy.maxHp);
+    if (!this.bossImmuneTo(idx)) applyStatusToEnemy(ks, subtype, turns, this.enemies[idx].maxHp);
   }
 
   private useItem(): void {
@@ -1210,6 +1233,7 @@ export class BattleScene extends Phaser.Scene {
       const zone = this.add.zone(GAME_WIDTH / 2, y + btnH / 2, btnW, btnH).setInteractive({ useHandCursor: true });
       zone.on('pointerdown', () => {
         this.clearSubMenu();
+        this.clearTurnTimer();
         this.phase = 'executing';
 
         // 应用消耗品效果
@@ -1248,6 +1272,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private playerDefend(): void {
+    this.clearTurnTimer();
     this.phase = 'executing';
     this.clearCommands();
     this.isDefending = true;
@@ -1257,6 +1282,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** 逃跑：按速度差计算成功率（《飘流幻境》式），成功返回据点，失败进入敌人回合 */
   private escapeBattle(): void {
+    this.clearTurnTimer();
     this.phase = 'executing';
     this.clearCommands(); this.clearSubMenu();
     const alive = this.getAliveEnemyIndices();
@@ -1284,6 +1310,7 @@ export class BattleScene extends Phaser.Scene {
 
   private activateBankai(): void {
     if (this.bankaiUsed || this.bankaiActive) return;
+    this.clearTurnTimer();
     this.phase = 'executing';
     this.clearCommands(); this.clearSubMenu();
     this.bankaiActive = true; this.bankaiTurnsLeft = 5; this.bankaiUsed = true;
@@ -1300,6 +1327,7 @@ export class BattleScene extends Phaser.Scene {
 
   private activateHollow(): void {
     if (this.hollowUsed || this.hollowActive) return;
+    this.clearTurnTimer();
     this.phase = 'executing';
     this.clearCommands(); this.clearSubMenu();
     this.hollowActive = true; this.hollowTurnsLeft = 4; this.hollowUsed = true;
@@ -1313,6 +1341,7 @@ export class BattleScene extends Phaser.Scene {
 
   private activateHell(): void {
     if (this.hellUsed || this.hellActive) return;
+    this.clearTurnTimer();
     this.phase = 'executing';
     this.clearCommands(); this.clearSubMenu();
     this.hellActive = true; this.hellTurnsLeft = 3; this.hellUsed = true;
@@ -1323,6 +1352,86 @@ export class BattleScene extends Phaser.Scene {
   }
 
 
+
+  // ——— 回合决策超时 ———
+  private startTurnTimer(): void {
+    this.clearTurnTimer();
+    let remain = this.TURN_SECONDS;
+    this.showTurnCountdown(remain);
+    this.turnTimer = this.time.delayedCall(this.TURN_SECONDS * 1000, () => this.onTurnTimeout());
+    this.turnCountdownEvent = this.time.addEvent({
+      delay: 1000, repeat: this.TURN_SECONDS - 1,
+      callback: () => { remain = Math.max(0, remain - 1); this.showTurnCountdown(remain); },
+    });
+  }
+
+  private showTurnCountdown(remain: number): void {
+    // 场景复用后若旧 Text 已被销毁（悬空引用），重新创建，避免 setText 撞 null 贴图崩溃
+    if (!this.turnCountdownText || !this.turnCountdownText.scene || !this.turnCountdownText.active) {
+      this.turnCountdownText = this.add.text(GAME_WIDTH - 92, 36, '', {
+        fontSize: '15px', color: '#ffcc44', fontStyle: 'bold',
+        backgroundColor: '#00000088', padding: { x: 6, y: 2 },
+      }).setScrollFactor(0).setDepth(120);
+    }
+    this.turnCountdownText.setText(`决策 ${remain}s`).setVisible(true);
+  }
+
+  private clearTurnTimer(): void {
+    if (this.turnTimer) { this.turnTimer.remove(false); this.turnTimer = undefined; }
+    if (this.turnCountdownEvent) { this.turnCountdownEvent.remove(false); this.turnCountdownEvent = undefined; }
+    if (this.turnCountdownText) this.turnCountdownText.setVisible(false);
+  }
+
+  /**
+   * 安全执行玩家指令：任意行动步骤抛异常时捕获、向控制台暴露真实错误，
+   * 并自动推进到敌人阶段，避免单步失败导致整场战斗卡死（无选项/无计时）。
+   */
+  private runPlayerCmd(cmd: { label: string; action: () => void }): void {
+    try { cmd.action(); }
+    catch (err) {
+      console.error(`[BattleScene] 玩家指令[${cmd.label}]异常，已自动跳过：`, err);
+      this.logText.setText(`⚠ ${cmd.label} 执行异常，已自动跳过`);
+      this.clearCommands(); this.clearTurnTimer();
+      this.phase = 'executing';
+      this.time.delayedCall(700, () => this.startEnemyPhase());
+    }
+  }
+
+  /**
+   * 安全进入玩家指令界面：异常时记录并最多重试一次，避免指令界面崩溃导致永久无选项。
+   */
+  private safeShowCommands(): void {
+    try { this.showPlayerCommands(); }
+    catch (err) {
+      console.error('[BattleScene] showPlayerCommands 异常：', err);
+      this.logText.setText('⚠ 指令界面异常，重试中');
+      if (!this._cmdRetry) { this._cmdRetry = true; this.time.delayedCall(300, () => this.safeShowCommands()); }
+    }
+  }
+
+  private onTurnTimeout(): void {
+    this.clearTurnTimer();
+    if (this.phase !== 'playerTurn' && this.phase !== 'targetSelect') return;
+    this.clearCommands();
+    this.clearSubMenu();
+    if (this.phase === 'targetSelect') {
+      // 清理选敌 UI 后自动普攻第一只存活怪
+      if (this.escKeyRef) { this.escKeyRef.removeAllListeners(); this.escKeyRef = undefined; }
+      this.enemySprites.forEach((s) => { s.clearTint(); s.disableInteractive(); });
+    }
+    const idx = this.getFirstAliveEnemyIndex();
+    if (idx < 0) return;
+    this.logText.setText('决策超时！自动普通攻击');
+    this.selectedEnemyIndex = idx;
+    try { this.playerAttack(); }
+    catch (err) {
+      console.error('[BattleScene] 超时普攻异常，已跳过：', err);
+      this.logText.setText('⚠ 超时普攻异常，已跳过');
+      this.clearCommands(); this.clearTurnTimer();
+      this.phase = 'executing';
+      this.time.delayedCall(700, () => this.startEnemyPhase());
+    }
+  }
 
   private showPlayerCommands(): void {
     this.phase = 'playerTurn';
@@ -1379,7 +1488,7 @@ export class BattleScene extends Phaser.Scene {
       Phaser.Input.Keyboard.KeyCodes.FIVE, Phaser.Input.Keyboard.KeyCodes.SIX];
     shortcuts.forEach((keyCode, i) => {
       const key = this.input.keyboard!.addKey(keyCode);
-      key.once('down', () => { if (this.phase !== 'playerTurn') return; const cmd = cmds[i]; if (cmd && !cmd.disabled) { cmd.action(); } });
+      key.once('down', () => { if (this.phase !== 'playerTurn') return; const cmd = cmds[i]; if (cmd && !cmd.disabled) { this.runPlayerCmd(cmd); } });
       this.shortcutKeys.push(key);
     });
 
@@ -1398,9 +1507,10 @@ export class BattleScene extends Phaser.Scene {
       const zone = this.add.zone(bx + btnW / 2, btnY + btnH / 2, btnW, btnH).setInteractive({ useHandCursor: true });
       zone.on('pointerover', () => { bg.clear(); bg.fillStyle(0x3a3a6e, 1); bg.fillRoundedRect(bx, btnY, btnW, btnH, 8); bg.lineStyle(2, 0x7799cc, 1); bg.strokeRoundedRect(bx, btnY, btnW, btnH, 8); });
       zone.on('pointerout', () => { bg.clear(); bg.fillStyle(0x2a2a4e, 0.9); bg.fillRoundedRect(bx, btnY, btnW, btnH, 8); bg.lineStyle(1, 0x556688, 0.5); bg.strokeRoundedRect(bx, btnY, btnW, btnH, 8); });
-      zone.on('pointerdown', cmd.action);
+      zone.on('pointerdown', () => this.runPlayerCmd(cmd));
       this.commandContainer!.add(zone);
     });
+    this.startTurnTimer();
   }
 
   private tickKidoStatus(): void {
@@ -1546,6 +1656,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private victory(): void {
+    this.clearTurnTimer();
     this.phase = 'victory';
     this.clearCommands();
     this.clearSubMenu();
@@ -1641,6 +1752,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private defeat(): void {
+    this.clearTurnTimer();
     this.phase = 'defeat';
     this.clearCommands();
     this.logText.setText('战斗不能...');

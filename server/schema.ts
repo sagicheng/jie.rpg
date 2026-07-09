@@ -8,9 +8,11 @@ import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema';
 export class GamePlayer extends Schema {
   @type('string') sessionId = '';
   @type('string') name = '';
+  @type('string') title = '';
   @type('string') color = '';
   @type('number') x = 0;
   @type('number') y = 0;
+  @type('boolean') battling = false;   // 是否处于战斗中（用于远端名牌显示「战斗中」标签）
 }
 
 export class ChatMessage extends Schema {
@@ -19,9 +21,19 @@ export class ChatMessage extends Schema {
   @type('number') t = 0;
 }
 
+/** 共享怪物状态机：available 可打 | busy 被某玩家锁定中(对其余玩家消失) | dead 已死(按 respawnAt 刷新)。 */
+export class MonsterState extends Schema {
+  @type('string') id = '';
+  @type('string') state = 'available'; // available | busy | dead
+  @type('string') owner = '';           // busy 时的锁定者 sessionId
+  @type('number') respawnAt = 0;        // 何时重新 available（epoch ms，0=无需）
+}
+
 export class GameRoomState extends Schema {
   @type({ map: GamePlayer }) players = new MapSchema<GamePlayer>();
   @type([ChatMessage]) messages = new ArraySchema<ChatMessage>();
+  /** 共享怪物权威状态：key = `${zone}:${序号}`。服务端驱动锁定/死亡/刷新，自动广播给同房所有客户端。 */
+  @type({ map: MonsterState }) monsters = new MapSchema<MonsterState>();
 }
 
 /** 战斗房间：战斗员（玩家） */

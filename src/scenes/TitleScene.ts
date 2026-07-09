@@ -72,7 +72,7 @@ export class TitleScene extends Phaser.Scene {
     // 菜单按钮
     const hasSave = SaveManager.hasSave();
     const menuItems = [
-      { text: '新 游 戏', scene: 'GameScene', data: { newGame: true } },
+      { text: '新 游 戏', scene: 'CreateCharacterScene', data: {} },
       { text: '继  续', scene: 'GameScene', data: { newGame: false }, disabled: !hasSave },
       { text: '设  置', scene: null },
       { text: '退  出', scene: null },
