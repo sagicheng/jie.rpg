@@ -272,3 +272,36 @@ export function generateNamedLoot(enemyName: string, enemyDrops: { item: string;
   }
   return loot;
 }
+
+//  称号系统（07-妖魔图鉴 §7.3，待实现 → 已实现）
+
+/** 称号定义 */
+export interface TitleDef {
+  /** 唯一id */
+  id: string;
+  /** 称号名 */
+  name: string;
+  /** 解锁条件描述（UI展示） */
+  conditionDesc: string;
+  /** 效果描述（UI展示） */
+  effectDesc: string;
+  /** 收集种类数要求（= 已遭遇妖魔种类数） */
+  requiredCollected: number;
+  /** 额外要求：击败全部妖将 */
+  requireAllGenerals?: boolean;
+  /** 额外要求：全收集（击败全部具名妖魔） */
+  requireFull?: boolean;
+  /** 对特定敌人类型伤害加成（乘算） */
+  enemyTypeDamage?: { type: EnemyType; mult: number };
+  /** 全属性加成（百分比，0.05 = +5%） */
+  allStatsPct?: number;
+}
+
+/** 称号表（按解锁难度从低到高） */
+export const BESTIARY_TITLES: TitleDef[] = [
+  { id: 'recruit',        name: '新兵',         conditionDesc: '收集 5 种妖魔',            effectDesc: '无特殊效果',               requiredCollected: 5 },
+  { id: 'hunter',         name: '猎妖人',       conditionDesc: '收集 15 种妖魔',           effectDesc: '对杂妖伤害 +5%',           requiredCollected: 15, enemyTypeDamage: { type: '杂妖', mult: 1.05 } },
+  { id: 'general_slayer', name: '妖将杀手',     conditionDesc: '收集 25 种 + 击败全部妖将', effectDesc: '对妖将伤害 +10%',          requiredCollected: 25, requireAllGenerals: true, enemyTypeDamage: { type: '妖将', mult: 1.10 } },
+  { id: 'abyss_walker',   name: '深渊行者',     conditionDesc: '收集 35 种妖魔',           effectDesc: '对妖王伤害 +10%',          requiredCollected: 35, enemyTypeDamage: { type: '妖王', mult: 1.10 } },
+  { id: 'awakened',       name: '斩魄刀觉醒者', conditionDesc: '全收集（击败全部妖魔）',    effectDesc: '全属性 +5%',              requiredCollected: 0, requireFull: true, allStatsPct: 0.05 },
+];

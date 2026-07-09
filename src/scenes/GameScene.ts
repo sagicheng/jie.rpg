@@ -15,11 +15,11 @@ import { SHIKAI_SKILLS, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { Kido, KIDO_NODES, KidoSchool, TIER_LOCK } from '../systems/Kido';
 import {
   getEnhanceRate, getEnhanceCost, doEnhance,
-  getRefineMaxSlots, getRefineCost, doRefine, doRefineReset, getRefineDisplay,
+  getRefineMaxSlots, getRefineCost, doRefine, doRefineReset,
   getDecompReturn, doDecompose,
   getEnhanceLabel,
 } from '../systems/EnhanceSystem';
-import { openShop, showBlacksmithLore, toggleInventory, closeInventory, renderInventoryPanel, toggleStatPanel, closeStatPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, renderQuestLogPanel, toggleBestiaryPanel, closeBestiaryPanel, renderBestiaryPanel, showBestiaryDetail, showNamingInput, showElementSelection, showShikaiSelection } from '../ui/panels';
+import { openShop, toggleInventory, closeInventory, renderInventoryPanel, toggleStatPanel, closeStatPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, renderQuestLogPanel, toggleBestiaryPanel, closeBestiaryPanel, renderBestiaryPanel, showBestiaryDetail, showNamingInput, showElementSelection, showShikaiSelection, renderTitlePanel, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -69,6 +69,9 @@ export class GameScene extends Phaser.Scene {
   public kidoTooltip: Phaser.GameObjects.Container | null = null;
   public enhancePanel: Phaser.GameObjects.Container | null = null;
   public bestiaryPanel: Phaser.GameObjects.Container | null = null;
+  public titlePanel: Phaser.GameObjects.Container | null = null;
+  private titleTag: Phaser.GameObjects.Text | null = null;
+  private nameTag: Phaser.GameObjects.Text | null = null;
   public bestiaryDetailContainer: Phaser.GameObjects.Container | null = null;
   private shopPanel: Phaser.GameObjects.Container | null = null;
   public namingPanelActive = false;
@@ -124,6 +127,17 @@ export class GameScene extends Phaser.Scene {
     this.player.body!.setSize(24, 32);
     this.player.body!.setOffset(4, 0);
 
+    // 玩家头顶：角色名 + 称号（跟随人物移动）
+    this.nameTag = this.add.text(this.player.x, this.player.y - this.player.height / 2 - 22, GameState.playerName, {
+      fontSize: '12px', color: '#bfe8ff', fontStyle: 'bold',
+      backgroundColor: '#00000066', padding: { x: 4, y: 1 },
+    }).setOrigin(0.5, 1).setDepth(11);
+    this.titleTag = this.add.text(this.player.x, this.player.y - this.player.height / 2 - 8, '', {
+      fontSize: '11px', color: '#ffd9a0', fontStyle: 'bold',
+      backgroundColor: '#00000066', padding: { x: 4, y: 1 },
+    }).setOrigin(0.5, 1).setDepth(11);
+    this.syncPlayerTags();
+
     // 相机跟随玩家
     this.cameras.main.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT * 2);
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
@@ -152,11 +166,16 @@ export class GameScene extends Phaser.Scene {
       if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel && !this.bestiaryPanel)
         toggleQuestLog(this);
     });
+    this.input.keyboard!.addKey('T').on('down', () => {
+      if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel && !this.bestiaryPanel)
+        toggleTitlePanel(this);
+    });
     this.input.keyboard!.addKey('ESC').on('down', () => {
       if (this.inventoryPanel) { closeInventory(this); return; }
       if (this.statPanel) { closeStatPanel(this); return; }
       if (this.kidoPanel) { closeKidoPanel(this); return; }
       if (this.enhancePanel) { closeEnhancePanel(this); return; }
+      if (this.titlePanel) { closeTitlePanel(this); return; }
       if (this.bestiaryPanel) { closeBestiaryPanel(this); return; }
       if (this.questLogPanel) { this.questLogPanel.destroy(true); this.questLogPanel = null; this.resumeFromMenu(); return; }
       if (this.isInDialogue) return;
@@ -227,7 +246,7 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    this.zoneText = this.add.text(16, 12, `${GameState.playerName} · ${ZONE_NAMES[GameState.zone]}`, {
+    this.zoneText = this.add.text(16, 12, `${ZONE_NAMES[GameState.zone]}`, {
       fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
       backgroundColor: '#000000aa', padding: { x: 8, y: 2 },
     }).setScrollFactor(0).setDepth(100);
@@ -296,6 +315,24 @@ export class GameScene extends Phaser.Scene {
     GameState.x = this.player.x; GameState.y = this.player.y;
     if (this.battleCooldown > 0) this.battleCooldown--;
     this.coordText.setText(`X:${Math.round(this.player.x)}  Y:${Math.round(this.player.y)}`);
+    this.syncPlayerTags();
+  }
+
+  /** 玩家头顶：角色名 + 称号，跟随移动，文本变化时才重绘 */
+  private syncPlayerTags(): void {
+    const ph = this.player.height / 2;
+    if (this.nameTag) {
+      if (this.nameTag.text !== GameState.playerName) this.nameTag.setText(GameState.playerName);
+      this.nameTag.setPosition(this.player.x, this.player.y - ph - 22);
+    }
+    if (this.titleTag) {
+      const tn = GameState.getActiveTitleDef()?.name ?? '';
+      if (this.titleTag.text !== tn) {
+        this.titleTag.setText(tn);
+        this.titleTag.setVisible(tn.length > 0);
+      }
+      this.titleTag.setPosition(this.player.x, this.player.y - ph - 8);
+    }
   }
 
   public pauseForMenu(): void { this.menuPauseDepth++; if (this.menuPauseDepth === 1) this.physics.pause(); }
@@ -335,7 +372,7 @@ export class GameScene extends Phaser.Scene {
       const stale = this.children.list.filter((c2: any) => (c2.type === 'Graphics' && [0,3,4].includes(c2.depth||-1)) || (c2.type === 'Text' && [4,6].includes(c2.depth||-1)));
       stale.forEach((c2: any) => c2.destroy());
       this.createMap(); this.createNPCs(); this.createEnemies(); this.createGatheringPoints();
-      this.zoneText.setText(`${GameState.playerName} · ${ZONE_NAMES[GameState.zone]}`);
+      this.zoneText.setText(`${ZONE_NAMES[GameState.zone]}`);
       this.player.setPosition(tx, ty); this.isInDialogue = false; this.cameras.main.fadeIn(400,0,0,0); SaveManager.save();
       const b = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2-40, ZONE_NAMES[tz], {fontSize:'28px',color:'#ffe8b0',fontStyle:'bold',backgroundColor:'#000000aa',padding:{x:24,y:12}}).setOrigin(0.5).setScrollFactor(0).setDepth(250).setAlpha(0);
       this.tweens.add({targets:b,alpha:1,duration:500,onComplete:()=>{this.tweens.add({targets:b,alpha:0,duration:1200,delay:1000,onComplete:()=>b.destroy()});}});
@@ -453,7 +490,6 @@ export class GameScene extends Phaser.Scene {
             text: ch.text,
             callback: () => {
               if (ch.callback === 'openShop') openShop(this, c.shop || []);
-              else if (ch.callback === 'showBlacksmithLore') showBlacksmithLore(this);
               else if (ch.callback === 'acceptQuest') this.acceptQuestFromNPC(c.name);
               else if (ch.callback === 'completeQuest') this.completeQuestFromNPC(c.name);
               else if (ch.callback === 'closeDialogue') this.isInDialogue = false;

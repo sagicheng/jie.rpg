@@ -5,8 +5,8 @@ import { DialogueBox, DialogueLine } from './DialogueBox';
 import { GameState } from '../systems/GameState';
 import { expForLevel } from '../systems/BattleData';
 import { SaveManager } from '../systems/SaveManager';
-import { getEnemyData, NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress } from '../systems/BestiaryData';
-import { Inventory, EquipSlot } from '../systems/Inventory';
+import { getEnemyData, NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../systems/BestiaryData';
+import { Inventory, EquipSlot, Item } from '../systems/Inventory';
 import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
 import { createPlayerStatus } from '../systems/StatusSystem';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
@@ -16,12 +16,42 @@ import {
   getEnhanceRate, getEnhanceCost, doEnhance,
   getRefineMaxSlots, getRefineCost, doRefine, doRefineReset, getRefineDisplay,
   getDecompReturn, doDecompose,
-  getEnhanceLabel,
+  getEnhanceLabel, getEnhanceGlow,
 } from '../systems/EnhanceSystem';
 
 // ═══════════════════════════════════════════
 // UI 面板（从 GameScene 抽取，scene 为 GameScene 实例）
 // ═══════════════════════════════════════════
+
+/**
+ * 装备强化光效（+8 冰蓝 / +9 橙 / +10 金）。
+ * 在卡片描边外侧叠加独立发光层并轻微呼吸脉冲；发光层与卡片本体分离，
+ * 不被 hover 重绘清掉；面板容器销毁时自动清理 tween，避免泄漏。
+ */
+function addEnhanceGlow(
+  scene: GameScene,
+  container: Phaser.GameObjects.Container,
+  base: Phaser.GameObjects.Graphics,
+  x: number, y: number, w: number, h: number,
+  item: Item, radius = 6,
+): void {
+  const glow = getEnhanceGlow(item);
+  if (!glow) return;
+  const g = scene.add.graphics();
+  // 外柔光：宽描边低透明
+  g.lineStyle(7, glow.color, glow.intensity * 0.22);
+  g.strokeRoundedRect(x - 2, y - 2, w + 4, h + 4, radius + 2);
+  // 内高亮：细描边
+  g.lineStyle(2, glow.color, Math.min(1, glow.intensity * 0.9));
+  g.strokeRoundedRect(x, y, w, h, radius);
+  // 插到卡片本体之后、文字之前，保证发光在文字下方
+  container.addAt(g, container.list.indexOf(base) + 1);
+  const tw = scene.tweens.add({
+    targets: g, alpha: { from: 0.5, to: 1 },
+    duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+  });
+  container.once('destroy', () => { scene.tweens.remove(tw); });
+}
 
 export function showNamingInput(scene: GameScene): void {
     scene.namingPanelActive = true;
@@ -261,8 +291,6 @@ export function openShop(scene: GameScene, _s: any[]): void {
     const cb3 = scene.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cb3.on('pointerover', () => cb3.setColor('#ffaaaa')); cb3.on('pointerout', () => cb3.setColor('#ff6666')); cb3.on('pointerdown', () => { panel.destroy(true); scene.resumeFromMenu(); }); panel.add(cb3);
   }
 
-export function showBlacksmithLore(scene: GameScene): void { scene.isInDialogue = false; }
-
 export function toggleInventory(scene: GameScene): void { if (scene.inventoryPanel) { closeInventory(scene); return; } renderInventoryPanel(scene); }
 
 export function closeInventory(scene: GameScene): void { if (scene.inventoryPanel) { scene.inventoryPanel.destroy(true); scene.inventoryPanel = null; scene.resumeFromMenu(); } }
@@ -286,6 +314,7 @@ export function renderInventoryPanel(scene: GameScene): void {
     eqs.forEach((s, i) => {
       const c2 = i % 5, r2 = Math.floor(i / 5); const sx = ox + 20 + c2 * (eW + eGap), sy = eqY + r2 * (eH + eGap);
       const er = scene.add.graphics(); er.fillStyle(0x0d0d1d, 0.7); er.fillRoundedRect(sx, sy, eW, eH, 6); er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, eW, eH, 6); p.add(er);
+      if (eq[s]) addEnhanceGlow(scene, p, er, sx, sy, eW, eH, eq[s]!, 6);
       p.add(scene.add.text(sx + 8, sy + 4, sn[s], { fontSize: '10px', color: '#556688', padding: { y: 1 } }));
       const it = eq[s];
       if (it) {
@@ -317,6 +346,7 @@ export function renderInventoryPanel(scene: GameScene): void {
         const col = i % ec, row = Math.floor(i / ec); const ex = ox + 20 + col * (ecardW + 8), ey = eiY + 28 + row * 56;
         const q = item.quality || 'white';
         const cd2 = scene.add.graphics(); cd2.fillStyle(0x0a0a1a, 0.7); cd2.fillRoundedRect(ex, ey, ecardW, 48, 5); cd2.lineStyle(1, parseInt((qc[q] || '#666666').replace('#', ''), 16), 0.4); cd2.strokeRoundedRect(ex, ey, ecardW, 48, 5); p.add(cd2);
+        addEnhanceGlow(scene, p, cd2, ex, ey, ecardW, 48, item, 5);
         const elv = item.enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
         p.add(scene.add.text(ex + 6, ey + 4, `${item.name}${lvTxt}`, { fontSize: '11px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const sts = item.stats ? Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ') : '';
@@ -519,6 +549,7 @@ export function renderStatPanel(scene: GameScene): void {
       const sx = rx + c2 * (eqColW + 10), sy = eqY + eqRowH + r2 * eqRowH;
       const er = scene.add.graphics(); er.fillStyle(0x0d0d1d, 0.6); er.fillRoundedRect(sx, sy, eqColW, 66, 6);
       er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, eqColW, 66, 6); p.add(er);
+      if (eq[s]) addEnhanceGlow(scene, p, er, sx, sy, eqColW, 66, eq[s]!, 6);
       // Slot name label
       p.add(scene.add.text(sx + 10, sy + 6, sn[s], { fontSize: '11px', color: '#667799', fontStyle: 'bold', padding: { y: 1 } }));
       const it = eq[s];
@@ -793,6 +824,7 @@ export function toggleEnhancePanel(scene: GameScene): void {
       const item = (eq as any)[s];
       const er = scene.add.graphics(); er.fillStyle(0x0d0d1d, 0.7); er.fillRoundedRect(sx, sy, 500, 62, 6);
       er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, 500, 62, 6); p.add(er);
+      if (item) addEnhanceGlow(scene, p, er, sx, sy, 500, 62, item as Item, 6);
       p.add(scene.add.text(sx + 10, sy + 4, sn[s] || s, { fontSize: '10px', color: '#556688', padding: { y: 1 } }));
       if (item) {
         const elv = (item as any).enhanceLevel || 0; const enhLabel = getEnhanceLabel(item);
@@ -875,6 +907,7 @@ export function toggleEnhancePanel(scene: GameScene): void {
         const col = bi % 2, row = Math.floor(bi / 2); const sx = ox + 30 + col * 520, sy = bagY + 28 + row * 68;
         const er2 = scene.add.graphics(); er2.fillStyle(0x0d0d1d, 0.7); er2.fillRoundedRect(sx, sy, 500, 58, 6);
         er2.lineStyle(1, 0x334466, 0.4); er2.strokeRoundedRect(sx, sy, 500, 58, 6); p.add(er2);
+        addEnhanceGlow(scene, p, er2, sx, sy, 500, 58, item, 6);
         const elv = (item as any).enhanceLevel || 0; const q = (item as any).quality || 'white';
         p.add(scene.add.text(sx + 10, sy + 4, `${item.name}${elv > 0 ? ' +' + elv : ''}`, { fontSize: '12px', color: qc2[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const stats = item.stats ? Object.entries(item.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ') : '';
@@ -1038,9 +1071,53 @@ export function renderQuestLogPanel(scene: GameScene): void {
 
 export function toggleBestiaryPanel(scene: GameScene): void { if (scene.bestiaryPanel) { closeBestiaryPanel(scene); return; } scene.pauseForMenu(); renderBestiaryPanel(scene); }
 
-export function closeBestiaryPanel(scene: GameScene): void { if (scene.bestiaryPanel) { scene.bestiaryPanel.destroy(true); scene.bestiaryPanel = null; scene.resumeFromMenu(); } }
+export function closeBestiaryPanel(scene: GameScene): void { if (scene.titlePanel) { scene.titlePanel.destroy(true); scene.titlePanel = null; } if (scene.bestiaryPanel) { scene.bestiaryPanel.destroy(true); scene.bestiaryPanel = null; scene.resumeFromMenu(); } }
+
+export function closeTitlePanel(scene: GameScene): void { if (scene.titlePanel) { scene.titlePanel.destroy(true); scene.titlePanel = null; } }
+
+export function toggleTitlePanel(scene: GameScene): void { if (scene.titlePanel) { closeTitlePanel(scene); } else { renderTitlePanel(scene); } }
+
+export function renderTitlePanel(scene: GameScene): void {
+    closeTitlePanel(scene);
+    const cam=scene.cameras.main;
+    const c=scene.add.container(Math.round(cam.scrollX),Math.round(cam.scrollY)).setDepth(320);scene.titlePanel=c;
+    const vw=GAME_WIDTH,vh=GAME_HEIGHT,mw=560,mh=470,mx=(vw-mw)/2,my=(vh-mh)/2;
+    const ov=scene.add.graphics();ov.fillStyle(0,0.55);ov.fillRect(0,0,vw,vh);ov.setInteractive(new Phaser.Geom.Rectangle(0,0,vw,vh),Phaser.Geom.Rectangle.Contains);c.add(ov);
+    const bg=scene.add.graphics();bg.fillStyle(0x121222,0.985);bg.fillRoundedRect(mx,my,mw,mh,12);bg.lineStyle(2,0x6a5a3a,0.7);bg.strokeRoundedRect(mx,my,mw,mh,12);c.add(bg);
+    c.add(scene.add.text(mx+mw/2,my+26,'◆  称  号  ◆',{fontSize:'20px',color:'#e8d5a3',fontStyle:'bold',padding:{y:3}}).setOrigin(0.5));
+    const closeT=scene.add.text(mx+mw-30,my+26,'✕',{fontSize:'20px',color:'#cc6666',padding:{x:6,y:4}}).setOrigin(0.5).setInteractive({useHandCursor:true});
+    closeT.on('pointerover',function(this:any){this.setColor('#ff8888');});closeT.on('pointerout',function(this:any){this.setColor('#cc6666');});
+    closeT.on('pointerdown',()=>closeTitlePanel(scene));c.add(closeT);
+    c.add(scene.add.text(mx+mw/2,my+50,'装备称号可获得对应加成（同时仅生效一个）',{fontSize:'11px',color:'#6677aa',padding:{y:2}}).setOrigin(0.5));
+    const listX=mx+24,listY=my+70,rowH=72;
+    BESTIARY_TITLES.forEach((def,i)=>{
+      const ry=listY+i*rowH;const st=(GameState as any).getTitleStatus(def);const isActive=(GameState as any).activeTitle===def.id;
+      const rowBg=scene.add.graphics();rowBg.fillStyle(st.unlocked?(isActive?0x2a2410:0x152028):0x12121e,0.85);rowBg.fillRoundedRect(listX,ry,mw-48,rowH-8,8);rowBg.lineStyle(1,st.unlocked?(isActive?0xc9a96e:0x3a5a6a):0x2a2a3a,0.7);rowBg.strokeRoundedRect(listX,ry,mw-48,rowH-8,8);c.add(rowBg);
+      const nc=st.unlocked?(isActive?'#ffcc44':'#cfe8ff'):'#556688';
+      c.add(scene.add.text(listX+14,ry+10,def.name,{fontSize:'15px',color:nc,fontStyle:'bold',padding:{y:1}}));
+      c.add(scene.add.text(listX+14,ry+32,`条件：${def.conditionDesc}`,{fontSize:'11px',color:'#8899bb',padding:{y:1}}));
+      c.add(scene.add.text(listX+14,ry+50,`效果：${def.effectDesc}`,{fontSize:'11px',color:def.effectDesc==='无特殊效果'?'#667788':'#aadd88',padding:{y:1}}));
+      if(st.unlocked){
+        const btnLabel=isActive?'卸下':'装备';
+        const ab=scene.add.text(listX+mw-48-72,ry+rowH/2-12,`[ ${btnLabel} ]`,{fontSize:'12px',color:isActive?'#ffcc66':'#88ccff',fontStyle:'bold',backgroundColor:isActive?'#3a2e00aa':'#002233aa',padding:{x:10,y:5}}).setOrigin(0,0.5).setInteractive({useHandCursor:true});
+        ab.on('pointerover',()=>ab.setColor('#ffffff'));ab.on('pointerout',()=>ab.setColor(isActive?'#ffcc66':'#88ccff'));
+        ab.on('pointerdown',()=>{(GameState as any).setActiveTitle(def.id);closeTitlePanel(scene);renderBestiaryPanel(scene);});
+        c.add(ab);
+      }else{
+        c.add(scene.add.text(listX+mw-48-130,ry+rowH/2,st.progress,{fontSize:'11px',color:'#7788aa',padding:{y:1}}).setOrigin(0,0.5));
+      }
+    });
+    const ny=listY+BESTIARY_TITLES.length*rowH;
+    const noneBtn=scene.add.text(mx+mw/2,ny+6,(GameState as any).activeTitle?'[ 卸下当前称号 ]':'（当前未装备称号）',{fontSize:'12px',color:(GameState as any).activeTitle?'#cc8888':'#556688',padding:{y:2}}).setOrigin(0.5).setInteractive({useHandCursor:(GameState as any).activeTitle?true:false});
+    if((GameState as any).activeTitle){
+      noneBtn.on('pointerover',()=>noneBtn.setColor('#ffaaaa'));noneBtn.on('pointerout',()=>noneBtn.setColor('#cc8888'));
+      noneBtn.on('pointerdown',()=>{(GameState as any).setActiveTitle(null);closeTitlePanel(scene);renderBestiaryPanel(scene);});
+    }
+    c.add(noneBtn);
+  }
 
 export function renderBestiaryPanel(scene: GameScene): void {
+    if (scene.bestiaryPanel) { scene.bestiaryPanel.destroy(true); scene.bestiaryPanel = null; }
     const cam=scene.cameras.main;const c=scene.add.container(Math.round(cam.scrollX),Math.round(cam.scrollY)).setDepth(300);scene.bestiaryPanel=c;
     const ov=scene.add.graphics();ov.fillStyle(0,0.78);ov.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);ov.setInteractive(new Phaser.Geom.Rectangle(0,0,GAME_WIDTH,GAME_HEIGHT),Phaser.Geom.Rectangle.Contains);c.add(ov);
     const ox=30,oy=20,ow=GAME_WIDTH-60,oh=GAME_HEIGHT-40;
@@ -1054,6 +1131,14 @@ export function renderBestiaryPanel(scene: GameScene): void {
     const bodyY=sy2+14,bh=oh-(sy2-oy)-36,lw=380,dw2=ow-lw-40,lx=ox+14,dx2=lx+lw+16;
     const lb=scene.add.graphics();lb.fillStyle(0x0e0e22,0.7);lb.fillRoundedRect(lx,bodyY,lw,bh,6);lb.lineStyle(1,0x334466,0.4);lb.strokeRoundedRect(lx,bodyY,lw,bh,6);c.add(lb);
     const enc=GameState.bestiaryEncountered;c.add(scene.add.text(lx+12,bodyY+10,`已遭遇 ${enc.length} / ${tn}`,{fontSize:'12px',color:'#8899cc',fontStyle:'bold',padding:{y:2}}));
+    // 当前称号 + 称号按钮
+    const activeTD=(GameState as any).getActiveTitleDef ? (GameState as any).getActiveTitleDef() : null;
+    c.add(scene.add.text(lx+lw-205,bodyY+10,`称号：${activeTD?activeTD.name:'无'}`,{fontSize:'11px',color:activeTD?'#ffcc66':'#6677aa',fontStyle:'bold',padding:{y:2}}));
+    const tBtn=scene.add.text(lx+lw-92,bodyY+6,'[ 称号 ]',{fontSize:'12px',color:'#ffcc44',fontStyle:'bold',backgroundColor:'#33220088',padding:{x:8,y:4}}).setInteractive({useHandCursor:true});
+    tBtn.on('pointerover',()=>{tBtn.setColor('#ffff88');tBtn.setBackgroundColor('#443300aa');});
+    tBtn.on('pointerout',()=>{tBtn.setColor('#ffcc44');tBtn.setBackgroundColor('#33220088');});
+    tBtn.on('pointerdown',()=>{renderTitlePanel(scene);});
+    c.add(tBtn);
     const an=Object.entries(NAMED_ENEMIES);const ih=26,mv=Math.floor((bh-40)/ih);const lc=scene.add.container(lx,bodyY+34);c.add(lc);
     an.forEach(([nm,df],i)=>{if(i>=mv)return;const ry=i*ih;const en=GameState.bestiaryEncountered.includes(nm);const kl=GameState.bestiaryKilled[nm]||0;const ib2=df.type==='妖将'||df.type==='妖王';const rw=scene.add.container(0,ry);const rb=scene.add.rectangle(2,0,lw-6,ih-2,en?0x152525:0x121222,0.8);rb.setOrigin(0,0);rw.add(rb);if(ib2)rw.add(scene.add.text(8,3,'👑',{fontSize:'11px',padding:{y:1}}));const nc2=en?(ib2?'#ffcc44':df.type==='恶妖'?'#ff8866':'#bbbbdd'):'#444466';rw.add(scene.add.text(ib2?24:10,4,en?nm:'???',{fontSize:'12px',color:nc2,fontStyle:en&&ib2?'bold':'normal',padding:{y:1}}));if(en&&df.element&&df.element!=='无'){const ec2:Record<string,string>={火:'#ff6644',水:'#4488ff',风:'#44cc88',土:'#cc9944',暗:'#8844cc',光:'#ffdd44'};rw.add(scene.add.text(lw-110,4,df.element,{fontSize:'10px',color:ec2[df.element]||'#888888',padding:{y:1}}));}if(kl>0)rw.add(scene.add.text(lw-55,4,`×${kl}`,{fontSize:'11px',color:'#668866',fontStyle:'bold',padding:{y:1}}));rb.setInteractive({useHandCursor:true});rb.on('pointerover',()=>rb.setFillStyle(0x1a2a3a,1));rb.on('pointerout',()=>rb.setFillStyle(en?0x152525:0x121222,0.8));rb.on('pointerdown',()=>{showBestiaryDetail(scene, dx2,bodyY,dw2,bh,nm,df,en,kl,c);});lc.add(rw);});
     const rb2=scene.add.graphics();rb2.fillStyle(0x0e0e22,0.7);rb2.fillRoundedRect(dx2,bodyY,dw2,bh,6);rb2.lineStyle(1,0x334466,0.4);rb2.strokeRoundedRect(dx2,bodyY,dw2,bh,6);c.add(rb2);

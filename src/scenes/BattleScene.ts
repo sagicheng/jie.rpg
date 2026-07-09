@@ -237,7 +237,8 @@ export class BattleScene extends Phaser.Scene {
 
     // 我方
     const player = this.add.sprite(GAME_WIDTH / 2, 460, 'player').setScale(2.5).setFlipX(true);
-    this.add.text(GAME_WIDTH / 2, 530, GameState.playerName, {
+    const bt = GameState.getActiveTitleDef()?.name;
+    this.add.text(GAME_WIDTH / 2, 530, bt ? `${GameState.playerName} · ${bt}` : GameState.playerName, {
       fontSize: '14px', color: '#88aacc', padding: { y: 2 },
     }).setOrigin(0.5);
 
@@ -709,7 +710,8 @@ export class BattleScene extends Phaser.Scene {
         case 'damage': {
           const power = Kido.getNodePower(skill.id);
           const { damage, crit } = calcMagicDamage(this.playerMatk * getPlayerMatkMod(this.playerStatus), enemy.mdef, power);
-          const dmg = this.hellActive ? damage * 2 : damage;
+          const titleMult = GameState.getTitleDamageMult(enemy.type);
+          const dmg = (this.hellActive ? damage * 2 : damage) * titleMult;
           enemy.hp -= dmg;
           if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(this.selectedEnemyIndex); }
           msg = `${skill.name}！${crit ? '暴击！' : ''}造成 ${dmg} 伤害！`;
@@ -809,10 +811,12 @@ export class BattleScene extends Phaser.Scene {
       : 1.0;
     const base = calcDamage(this.playerAtk * getPlayerAtkMod(this.playerStatus), enemy.def, 1.0, elemMult);
     const crit = base.crit || Math.random() < this.getCritBonus();
-    const dmg = this.hellActive ? base.damage * 2 : (crit && !base.crit ? Math.round(base.damage * 1.5) : base.damage);
+    const titleMult = GameState.getTitleDamageMult(enemy.type);
+    const dmg = (this.hellActive ? base.damage * 2 : (crit && !base.crit ? Math.round(base.damage * 1.5) : base.damage)) * titleMult;
     let logMsg = crit ? `暴击！造成 ${dmg} 伤害！` : `攻击 ${enemy.name}！造成 ${dmg} 伤害！`;
     if (elemMult > 1.0) logMsg += ' [克制]';
     else if (elemMult < 1.0) logMsg += ' [抵抗]';
+    if (titleMult > 1.0) logMsg += ' [称号]';
     if (this.hellActive) logMsg += ' (狱解×2)';
     this.logText.setText(logMsg);
     this.flashEnemySprite(this.enemySprites[this.selectedEnemyIndex]);
@@ -1004,7 +1008,7 @@ export class BattleScene extends Phaser.Scene {
       const elemMult = GameState.element
         ? getElementMultiplier(GameState.element, eInfo.element, eInfo.weakness, eInfo.resist)
         : 1.0;
-      hitDmg *= elemMult;
+      hitDmg *= elemMult * GameState.getTitleDamageMult(enemy.type);
       const isCrit = Math.random() < (0.05 + critBonus);
       if (isCrit) { hitDmg *= 1.5; crit = true; }
       hitDmg *= 0.9 + Math.random() * 0.2;
@@ -1282,7 +1286,7 @@ export class BattleScene extends Phaser.Scene {
       { label: '防御', action: () => this.playerDefend() },
       { label: '逃跑', action: () => this.escapeBattle() },
     ];
-    if (hasBankaiUnlocked) cmds.push({ label: this.bankaiActive ? '万解(' + this.bankaiTurnsLeft + ')' : (this.bankaiUsed ? '万解-' : '万解'), action: () => this.activateBankai(), disabled: !canBankai });
+    if (hasBankaiUnlocked) cmds.push({ label: this.bankaiActive ? '卍解(' + this.bankaiTurnsLeft + ')' : (this.bankaiUsed ? '卍解-' : '卍解'), action: () => this.activateBankai(), disabled: !canBankai });
     if (hasHollowUnlocked) cmds.push({ label: this.hollowActive ? '虚化(' + this.hollowTurnsLeft + ')' : (this.hollowUsed ? '虚化-' : '虚化'), action: () => this.activateHollow(), disabled: !canHollow });
     if (hasHellUnlocked) cmds.push({ label: this.hellActive ? '狱解(' + this.hellTurnsLeft + ')' : (this.hellUsed ? '狱解-' : '狱解'), action: () => this.activateHell(), disabled: !canHell });
 
@@ -1479,6 +1483,7 @@ export class BattleScene extends Phaser.Scene {
     });
     // 记录图鉴击杀
     this.enemies.forEach(e => GameState.recordKill(e.name));
+    const newTitles = GameState.drainTitleNotifications();
     GameState.gold += totalGold;
     const levelUp = GameState.gainExp(totalExp);
     this.playerHp = GameState.hp;
@@ -1492,7 +1497,7 @@ export class BattleScene extends Phaser.Scene {
       });
     });
 
-    const panelH = 280 + allLoot.length * 30;
+    const panelH = 280 + allLoot.length * 30 + (newTitles.length ? 28 + newTitles.length * 22 : 0);
     const container = this.add.container(0, 0).setDepth(100);
     const panel = this.add.graphics();
     panel.fillStyle(0x1a1a2e, 0.95);
@@ -1522,6 +1527,14 @@ export class BattleScene extends Phaser.Scene {
         if (item.quality) { color = QUALITY_COLOR[item.quality] || '#cccccc'; label = `[${QUALITY_CN[item.quality]}] ${item.name}`; }
         else if (item.type === 'material') color = '#aaaacc';
         container.add(this.add.text(GAME_WIDTH / 2, iy, label, { fontSize: '14px', color, padding: { y: 2 } }).setOrigin(0.5));
+      });
+    }
+    if (newTitles.length > 0) {
+      const lootEndY = allLoot.length > 0 ? (levelUp ? 365 : 340) + allLoot.length * 30 : (levelUp ? 340 : 315);
+      const ttY = lootEndY + 8;
+      container.add(this.add.text(GAME_WIDTH / 2, ttY, '─ 解锁称号 ─', { fontSize: '14px', color: '#ffcc44', padding: { y: 2 } }).setOrigin(0.5));
+      newTitles.forEach((nm, i) => {
+        container.add(this.add.text(GAME_WIDTH / 2, ttY + 22 + i * 22, `🏅 ${nm}`, { fontSize: '13px', color: '#ffdd66', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5));
       });
     }
     const confirmY = 220 + panelH - 35;

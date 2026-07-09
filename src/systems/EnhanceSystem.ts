@@ -407,11 +407,12 @@ export function getEnhanceLabel(item: Item): string {
   return lv > 0 ? `+${lv}` : '';
 }
 
-/** 获取装备光效等级 — +9橙光 / +10金光 */
+/** 获取装备光效等级 — +8 冰蓝 / +9 橙光 / +10 金光 */
 export function getEnhanceGlow(item: Item): { color: number; intensity: number } | null {
   const lv = item.enhanceLevel || 0;
   if (lv >= 10) return { color: 0xffd700, intensity: 1.0 };  // 金光
-  if (lv >= 9) return { color: 0xff8800, intensity: 0.8 };   // 橙光
+  if (lv >= 9) return { color: 0xff3344, intensity: 0.85 };  // 红光
+  if (lv >= 8) return { color: 0x66ccff, intensity: 0.6 };   // 冰蓝
   return null;
 }
 

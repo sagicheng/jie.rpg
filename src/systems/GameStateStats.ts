@@ -65,6 +65,18 @@ export function GameStateStatsMixin<TBase extends Constructor>(Base: TBase) {
         + Math.round((eqBody.spd || 0) * fbMult) + Math.round((eqJewel.spd || 0) * sfMult);
       this.spd = Math.round(this.spd * (1 + (kp.spd_pct || 0)));
 
+      // 称号全属性加成（仅当前装备称号生效）
+      const titlePct = (this as any).getActiveTitleAllStatsPct ? (this as any).getActiveTitleAllStatsPct() : 0;
+      if (titlePct > 0) {
+        this.maxHp = Math.round(this.maxHp * (1 + titlePct));
+        this.maxMp = Math.round(this.maxMp * (1 + titlePct));
+        this.atk = Math.round(this.atk * (1 + titlePct));
+        this.def = Math.round(this.def * (1 + titlePct));
+        this.matk = Math.round(this.matk * (1 + titlePct));
+        this.mdef = Math.round(this.mdef * (1 + titlePct));
+        this.spd = Math.round(this.spd * (1 + titlePct));
+      }
+
       this.statusAcc = (g as any).statusAcc || 0;
       this.hp = Math.min(this.hp || this.maxHp, this.maxHp);
       this.mp = Math.min(this.mp || this.maxMp, this.maxMp);

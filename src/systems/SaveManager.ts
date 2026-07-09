@@ -59,6 +59,7 @@ export const SaveManager = {
         gs.allocatedMATK = gs.allocatedSPI;
       }
       Object.assign(GameState, data.gameState);
+      (GameState as any).pendingTitleNotifications = [];
 
       // 恢复 Inventory
       Inventory.items.length = 0;
