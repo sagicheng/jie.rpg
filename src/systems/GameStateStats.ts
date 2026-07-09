@@ -1,9 +1,9 @@
 /**
  * GameState 战斗属性模块 — HP/MP/ATK/DEF 等、加点、recalcStats、gainExp
  */
-import { BASE_STATS, STAT_PER_POINT, POINTS_PER_LEVEL, ZANPAKUTO_GROWTH } from '../config';
+import { STAT_PER_POINT, POINTS_PER_LEVEL, ZANPAKUTO_GROWTH } from '../config';
 import { Inventory } from './Inventory';
-import { Kido, calcKidoPoints } from './Kido';
+import { Kido } from './Kido';
 import { expForLevel } from './BattleData';
 import { Constructor } from '../types';
 

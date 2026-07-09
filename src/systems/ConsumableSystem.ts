@@ -3,7 +3,7 @@
  * 支持HP/MP回复、状态解除、复活、临时buff
  */
 
-import { PlayerStatus, applyStatusToPlayer, createPlayerStatus } from './StatusSystem';
+import { PlayerStatus } from './StatusSystem';
 
 /** 消耗品效果类型 */
 export type ConsumableEffectType =

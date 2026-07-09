@@ -3,7 +3,7 @@
  * 涵盖：多段攻击 / 吸血 / 标记引爆 / 反伤 / 自身buff / 敌人debuff / 条件增伤 / HP消耗 / 无视防御 / MP吸取
  */
 
-import { EnemyStatus, PlayerStatus } from './StatusSystem';
+import { EnemyStatus } from './StatusSystem';
 
 /** 技能特殊机制类型 */
 export type SkillMechanicType =

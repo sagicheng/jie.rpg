@@ -1,25 +1,16 @@
 ﻿import Phaser from 'phaser';
 import { matId, NODE_TO_MATERIAL } from '../data/materials';
-import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES, ZANPAKUTO_GROWTH } from '../config';
+import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES } from '../config';
 import { DialogueBox, DialogueLine } from '../ui/DialogueBox';
 import { GameState } from '../systems/GameState';
 import { EnemyData, expForLevel, generateLoot } from '../systems/BattleData';
-import { getEnemyData, NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress } from '../systems/BestiaryData';
+import { getEnemyData, NAMED_ENEMIES } from '../systems/BestiaryData';
 import { Inventory } from '../systems/Inventory';
-import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
-import { createPlayerStatus } from '../systems/StatusSystem';
 import { SaveManager } from '../systems/SaveManager';
 import { ZONE_CONFIGS } from '../systems/Zones';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
-import { SHIKAI_SKILLS, ZANPAKUTO_ELEMENT } from '../systems/Skills';
-import { Kido, KIDO_NODES, KidoSchool, TIER_LOCK } from '../systems/Kido';
-import {
-  getEnhanceRate, getEnhanceCost, doEnhance,
-  getRefineMaxSlots, getRefineCost, doRefine, doRefineReset,
-  getDecompReturn, doDecompose,
-  getEnhanceLabel,
-} from '../systems/EnhanceSystem';
-import { openShop, toggleInventory, closeInventory, renderInventoryPanel, toggleStatPanel, closeStatPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, renderQuestLogPanel, toggleBestiaryPanel, closeBestiaryPanel, renderBestiaryPanel, showBestiaryDetail, showNamingInput, showElementSelection, showShikaiSelection, renderTitlePanel, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
+import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
+import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -33,10 +24,6 @@ interface NPCData {
 }
 
 export class GameScene extends Phaser.Scene {
-  private static STAT_NAMES: Record<string, string> = {
-    hp: 'HP', mp: 'MP', atk: 'ATK', def: 'DEF', matk: 'MATK', mdef: 'MDEF', spd: 'SPD',
-  };
-
   // Core
   private player!: Phaser.Physics.Arcade.Sprite;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -380,7 +367,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ═══ Enemies ═══
-  private checkEnemyCollision(): void { if (this.battleCooldown > 0 || this.isInDialogue) return; for (const en of this.enemies) { if (en.data.hp<=0) continue; if (Phaser.Math.Distance.Between(this.player.x,this.player.y,en.sprite.x,en.sprite.y)<50){this.battleCooldown=180;this.scene.pause();this.scene.launch('BattleScene',{template:en.data,enemyRef:en,zone:GameState.zone});return;} } }
+  private checkEnemyCollision(): void { if (this.battleCooldown > 0 || this.isInDialogue) return; for (const en of this.enemies) { if (en.data.hp<=0) continue; if (Phaser.Math.Distance.Between(this.player.x,this.player.y,en.sprite.x,en.sprite.y)<31){this.battleCooldown=180;this.scene.pause();this.scene.launch('BattleScene',{template:en.data,enemyRef:en,zone:GameState.zone});return;} } }
   onBattleEnd(result: string, er: any): void {
     this.input.keyboard!.resetKeys(); this.physics.resume(); this.menuPauseDepth = 0;
     if (result === 'defeat') { this.player.x=400;this.player.y=500;GameState.hp=GameState.maxHp;GameState.mp=GameState.maxMp;return; }

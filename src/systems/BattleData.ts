@@ -38,19 +38,23 @@ export interface EnemyData {
   drops: { item: string; rate: number }[];
 }
 
+/** 小怪微调难度（仅杂妖/恶妖，Boss 不受影响） */
+const NORMAL_DIFF = 1.12;
+
 /** 按区域PL生成敌人数据 */
 export function createEnemyData(name: string, type: EnemyType, element: string, zone: number): EnemyData {
   const pl = ZONE_PL[zone] || 10;
   const m = ENEMY_STAT_MULT[type];
+  const nm = (type === '杂妖' || type === '恶妖') ? NORMAL_DIFF : 1;
 
   const expRates: Record<EnemyType, number> = { 杂妖: 1, 恶妖: 3, 妖将: 10, 妖王: 30 };
   const goldRates: Record<EnemyType, number> = { 杂妖: 1, 恶妖: 2, 妖将: 8, 妖王: 20 };
 
   return {
     name, type, element, zone,
-    hp: Math.round(pl * m.HP),
-    maxHp: Math.round(pl * m.HP),
-    atk: Math.round(pl * m.ATK),
+    hp: Math.round(pl * m.HP * nm),
+    maxHp: Math.round(pl * m.HP * nm),
+    atk: Math.round(pl * m.ATK * nm),
     def: Math.round(pl * m.DEF),
     matk: Math.round(pl * m.MATK),
     mdef: Math.round(pl * m.MDEF),

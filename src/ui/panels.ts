@@ -1,11 +1,9 @@
 import type { GameScene } from '../scenes/GameScene';
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES, ZANPAKUTO_GROWTH } from '../config';
-import { DialogueBox, DialogueLine } from './DialogueBox';
+import { GAME_WIDTH, GAME_HEIGHT, ZANPAKUTO_GROWTH } from '../config';
 import { GameState } from '../systems/GameState';
-import { expForLevel } from '../systems/BattleData';
 import { SaveManager } from '../systems/SaveManager';
-import { getEnemyData, NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../systems/BestiaryData';
+import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../systems/BestiaryData';
 import { Inventory, EquipSlot, Item } from '../systems/Inventory';
 import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
 import { createPlayerStatus } from '../systems/StatusSystem';
@@ -701,8 +699,6 @@ export function showKidoPanel(scene: GameScene): void {
             return dist < Math.abs((best?.column || 0) - (n.column || 0)) ? nn : best;
           }, parentNodes[0]);
           if (parent) {
-            const parentIdx = parentNodes.indexOf(parent);
-            const parentSpacing = (ow - 120) / Math.max(parentNodes.length, 1);
             const py = nodeAreaY + (tierIdx - 1) * rowH + rowH / 2;
             const parentPts = Kido.getPoints(parent.id) || 0;
             const lg = scene.add.graphics();
@@ -1027,7 +1023,6 @@ export function renderQuestLogPanel(scene: GameScene): void {
       const isCompleted = GameState.questCompleted.includes(questId);
       const isActive = GameState.activeQuest === questId;
       const isAvailable = !isCompleted && !isActive && (!quest.prerequisite || GameState.questCompleted.includes(quest.prerequisite));
-      const isLocked = !isCompleted && !isActive && !isAvailable;
       const col = mainIdx % 2, row = Math.floor(mainIdx / 2);
       const mx = ox + 30 + col * colW2, my = cy + row * 22;
       let icon = '\u25cb', color = '#556677';

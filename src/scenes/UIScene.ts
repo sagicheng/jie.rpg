@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config';
 import { GameState } from '../systems/GameState';
 import { expForLevel } from '../systems/BattleData';
-import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS, QuestDef } from '../systems/QuestData';
+import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
 
 export class UIScene extends Phaser.Scene {
   private hpBar!: Phaser.GameObjects.Graphics;
@@ -198,7 +198,6 @@ export class UIScene extends Phaser.Scene {
 
       const isCompleted = GameState.questCompleted.includes(questId);
       const isActive = GameState.activeQuest === questId;
-      const isAvailable = this.isQuestAvailable(quest);
       // 锁定（前置未完成或区域未到达）→ 隐藏
       const isLocked = quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)
         || (quest.zoneRequired && !GameState.discoveredZones.includes(quest.zoneRequired));
@@ -285,25 +284,6 @@ export class UIScene extends Phaser.Scene {
         this.questPanelOpen = false;
       },
     });
-  }
-
-  /** 检查任务是否可接取 */
-  private isQuestAvailable(quest: QuestDef): boolean {
-    // 前置任务检查
-    if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) {
-      return false;
-    }
-    // 区域检查
-    if (quest.zoneRequired && !GameState.discoveredZones.includes(quest.zoneRequired)) {
-      return false;
-    }
-    // 已经完成了
-    if (GameState.questCompleted.includes(quest.id)) return false;
-    // 已经是激活任务
-    if (GameState.activeQuest === quest.id) return true;
-    // 已有其他激活任务
-    if (GameState.activeQuest && GameState.activeQuest !== quest.id) return false;
-    return true;
   }
 
   private refresh(): void {

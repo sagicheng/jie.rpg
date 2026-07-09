@@ -19,7 +19,6 @@ export class DialogueBox {
   private fullText = '';
   private currentChar = 0;
   private onComplete: (() => void) | null = null;
-  private choiceCallbacks: (() => void)[] = [];
 
   private readonly boxW = 700;
   private readonly boxH = 190;

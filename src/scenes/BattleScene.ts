@@ -2,28 +2,29 @@ import Phaser from 'phaser';
 import { QUALITY_COLOR, QUALITY_CN } from '../constants';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config';
 import { GameState } from '../systems/GameState';
-import { EnemyData, calcDamage, calcMagicDamage, expForLevel, generateLoot } from '../systems/BattleData';
+import { EnemyData, calcDamage, calcMagicDamage, generateLoot } from '../systems/BattleData';
 import { Inventory } from '../systems/Inventory';
 import { getAvailableSkills, getSkillTargetType, SkillData } from '../systems/Skills';
-import { Kido, KIDO_NODES, KidoNode } from '../systems/Kido';
+import { Kido, KidoNode } from '../systems/Kido';
 import {
-  EnemyStatus, PlayerStatus, StatusType,
+  EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
   applyStatusToEnemy, applyStatusToPlayer,
   isEnemyBlocked, doesEnemySkipFromFear,
-  getEnemyAtkMod, getEnemyDefMod, getEnemySpdMod, getEnemyMatkMod,
+  getEnemyAtkMod, getEnemyMatkMod,
   getPlayerAtkMod, getPlayerMatkMod,
   isPlayerBlocked, doesPlayerSkipFromFear,
   getEnemyStatusIcons, getPlayerStatusIcons, getStatusTags,
-  clearAllEnemyStatus, clearAllPlayerStatus,
+  clearAllPlayerStatus,
 } from '../systems/StatusSystem';
-import { applyConsumable, getConsumableEffect, CONSUMABLES, ConsumableEffect, TempBuff } from '../systems/ConsumableSystem';
+import { applyConsumable, getConsumableEffect, CONSUMABLES, TempBuff } from '../systems/ConsumableSystem';
 import { getStatusHitRate, getEnemyElementInfo, getElementMultiplier, generateNamedLoot, NAMED_ENEMIES } from '../systems/BestiaryData';
+import { setupBoss, runBossMechanics, onBossAddDeath } from '../systems/BossMechanics';
 import {
   getSkillMechanics, applyConditionalDamage, hasIgnoreDef, getHpCost,
   getMultiHitCount, getLifestealPct, getMpStealPct, getSpeedScaling,
   applyDebuffFromMechanics, getBuffsFromMechanics, getShieldFromMechanics,
-  isCleanseSkill, getAoEHealAmount, getReflectInfo, getMarkInfo, getMarkDetonateMult,
+  isCleanseSkill, getAoEHealAmount, getReflectInfo, getMarkInfo,
   getAbsorbMagicTurns,
   SkillMechanic, MarkState,
 } from '../systems/SkillMechanics';
@@ -69,7 +70,6 @@ export class BattleScene extends Phaser.Scene {
   private selectedEnemyIndex = 0;
   private enemyActQueue: number[] = [];   // 本轮待行动敌人队列
   private enemyPhaseActive = false;        // 防重入守卫
-  private playerActed = false; // 玩家是否已在本轮行动
   private templateEnemy!: EnemyData;
   private shortcutKeys: Phaser.Input.Keyboard.Key[] = []; // 键盘快捷键引用(清理用)
   private battleZone = 1;  // 当前战斗所在区域(调试用)
@@ -130,7 +130,6 @@ export class BattleScene extends Phaser.Scene {
   init(data: { template: EnemyData; enemyRef?: any; zone?: number }): void {
     this.phase = 'intro';
     this.selectedEnemyIndex = 0;
-    this.playerActed = false;
     this.enemyActQueue = [];
     this.enemyPhaseActive = false;
     this.commandContainer = null;
@@ -165,7 +164,7 @@ export class BattleScene extends Phaser.Scene {
     }
 
     // Boss机制状态重置
-    (this as any)._bossRegenUsed = false;
+    (this as any)._bossRt = undefined;
 
     // 记录图鉴遭遇
     this.enemies.forEach(e => GameState.recordEncounter(e.name));
@@ -236,7 +235,7 @@ export class BattleScene extends Phaser.Scene {
     });
 
     // 我方
-    const player = this.add.sprite(GAME_WIDTH / 2, 460, 'player').setScale(2.5).setFlipX(true);
+    this.add.sprite(GAME_WIDTH / 2, 460, 'player').setScale(2.5).setFlipX(true);
     const bt = GameState.getActiveTitleDef()?.name;
     this.add.text(GAME_WIDTH / 2, 530, bt ? `${GameState.playerName} · ${bt}` : GameState.playerName, {
       fontSize: '14px', color: '#88aacc', padding: { y: 2 },
@@ -253,6 +252,10 @@ export class BattleScene extends Phaser.Scene {
       fontSize: '14px', color: '#ccaa88',
       wordWrap: { width: 600 }, align: 'center', padding: { y: 2 },
     }).setOrigin(0.5);
+
+    // Boss机制初始化（缩放难度/护盾/随从）—— 必须在 logText 创建之后调用，否则 log() 会打到 undefined
+    const initBoss = this.enemies.find(e => e.type === '妖将' || e.type === '妖王');
+    if (initBoss) setupBoss(this, initBoss);
 
     // 开场动画
     this.spritesFadeIn(() => {
@@ -354,7 +357,6 @@ export class BattleScene extends Phaser.Scene {
     } else {
       const fastest = this.enemies.find(e => e.spd === fastestEnemySpd && e.hp > 0);
       this.logText.setText((fastest?.name || 'Enemy') + ' acts first!');
-      this.playerActed = true;
       this.startEnemyPhase();
     }
   }
@@ -382,7 +384,6 @@ export class BattleScene extends Phaser.Scene {
     if (this.enemyActQueue.length === 0) {
       // 全部敌人行动完毕 → 进入玩家回合前，递减敌人状态时长
       this.enemyPhaseActive = false;
-      this.playerActed = false;
       if (this.allEnemiesDead()) { this.victory(); return; }
       this.tickEnemyStatusDuration();
       this.logText.setText('Your turn!');
@@ -421,16 +422,10 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
 
-    // Boss特殊机制：大虚·亚丘卡斯 HP<40%时再生（1次）
-    if (enemy.name === '大虚·亚丘卡斯' && !(this as any)._bossRegenUsed && enemy.hp > 0 && enemy.hp <= enemy.maxHp * 0.4) {
-      const heal = Math.round(enemy.maxHp * 0.20);
-      enemy.hp += heal;
-      if (enemy.hp > enemy.maxHp) enemy.hp = enemy.maxHp;
-      (this as any)._bossRegenUsed = true;
-      this.logText.setText(`⚠ ${enemy.name} 发动【再生】！回复 ${heal} HP！`);
-      this.flashEnemySprite(sprite);
-      this.time.delayedCall(1200, () => this.processEnemyQueue());
-      return;
+    // Boss机制（数据驱动，见 BossMechanics.ts）
+    if (this.isBossName(enemy.name)) {
+      const consumed = runBossMechanics(this, enemy, index);
+      if (consumed) return; // 该机制已占用本回合（动画/延时后继续队列）
     }
 
     const canUseSkill = enemy.skills.length > 0 && ks.sealed <= 0 && Math.random() < 0.4;
@@ -473,8 +468,7 @@ export class BattleScene extends Phaser.Scene {
     let reflectMsg = '';
     if (actualDamage > 0 && this.reflectPct > 0 && this.reflectTurns > 0) {
       const reflectDmg = Math.round(actualDamage * this.reflectPct);
-      enemy.hp -= reflectDmg;
-      if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(index); }
+      this.hurtEnemy(index, reflectDmg);
       reflectMsg = ` [反伤${reflectDmg}]`;
       this.flashEnemySprite(sprite);
     }
@@ -568,6 +562,108 @@ export class BattleScene extends Phaser.Scene {
       this.tweens.add({ targets: type, alpha: 0, duration: 300, onComplete: () => type.setVisible(false) });
     }
     if (bar) bar.clear();
+  }
+
+  // ── Boss 战辅助（逻辑见 systems/BossMechanics.ts） ──
+
+  /** 战斗日志（供 BossMechanics 调用） */
+  log(msg: string): void { if (this.logText) this.logText.setText(msg); }
+
+  /** 是否为当前 Boss 战的主怪 */
+  private isBossName(name: string): boolean {
+    const rt = (this as any)._bossRt;
+    return !!(rt && rt.config.name === name);
+  }
+
+  /** Boss 是否处于异常免疫 */
+  private bossImmuneTo(index: number): boolean {
+    const rt = (this as any)._bossRt;
+    const enemy = this.enemies[index];
+    return !!(rt && enemy && rt.config.name === enemy.name && rt.immune);
+  }
+
+  /** 取当前存活的 Boss 主怪 */
+  getBossEnemy(): EnemyData | null {
+    const rt = (this as any)._bossRt;
+    if (!rt) return null;
+    return this.enemies.find(e => e.name === rt.config.name && e.hp > 0) || null;
+  }
+
+  /** 敌人闪光（供 BossMechanics 调用） */
+  flashEnemy(index: number): void {
+    const s = this.enemySprites[index];
+    if (s) this.flashEnemySprite(s);
+  }
+
+  /** 给玩家施加异常（供 BossMechanics 调用） */
+  applyPlayerStatus(subtype: string, rate: number, turns: number): void {
+    if (Math.random() < (rate || 0.5)) applyStatusToPlayer(this.playerStatus, subtype, turns);
+  }
+
+  /** 重新排布所有敌人精灵位置（增援导致数量变化时调用） */
+  private repositionEnemies(): void {
+    const positions = this.getEnemyPositions(this.enemies.length);
+    const big = this.enemies.length <= 4;
+    this.enemies.forEach((e, i) => {
+      if (e.hp <= 0) return;
+      const pos = positions[i];
+      const scale = big ? 2.2 : 1.6;
+      const s = this.enemySprites[i]; if (s) { s.setPosition(pos.x, pos.y); s.setScale(scale); }
+      const n = this.enemyNameTexts[i]; if (n) n.setPosition(pos.x, pos.y + (big ? -70 : -48));
+      const t = this.enemyTypeTexts[i]; if (t) t.setPosition(pos.x, pos.y + (big ? -54 : -36));
+    });
+  }
+
+  /** 动态加入一只敌人（Boss 随从/增援），与 this.enemies 索引对齐 */
+  spawnAdd(data: EnemyData): void {
+    const enemy = { ...data };
+    enemy.hp = data.maxHp; enemy.maxHp = data.maxHp;
+    this.enemies.push(enemy);
+    this.enemyStatuses.push(createEnemyStatus());
+    this.marks.push({ active: false, turns: 0, detonateMult: 0 });
+    GameState.recordEncounter(enemy.name);
+    this.repositionEnemies();
+    const i = this.enemies.length - 1;
+    const big = this.enemies.length <= 4;
+    const pos = this.getEnemyPositions(this.enemies.length)[i];
+    const tex = enemy.type === '妖将' || enemy.type === '妖王' ? 'enemy_boss' : 'enemy_elite';
+    const sprite = this.add.sprite(pos.x, pos.y, tex).setScale(big ? 2.2 : 1.6).setAlpha(0);
+    this.enemySprites.push(sprite);
+    this.enemyNameTexts.push(this.add.text(pos.x, pos.y + (big ? -70 : -48), enemy.name, { fontSize: big ? '13px' : '11px', color: '#ff6666', fontFamily: 'serif', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5).setVisible(true));
+    this.enemyTypeTexts.push(this.add.text(pos.x, pos.y + (big ? -54 : -36), enemy.type, { fontSize: '8px', color: '#994444', padding: { y: 1 } }).setOrigin(0.5).setVisible(true));
+    this.enemyHpBars.push(this.add.graphics());
+    this.enemyInfoTexts.push(this.add.text(pos.x, pos.y + 47, '', { fontSize: '11px', color: '#ffbbbb', fontFamily: 'monospace', align: 'center' }).setOrigin(0.5, 0).setVisible(true));
+    this.tweens.add({ targets: sprite, alpha: 1, duration: 400 });
+  }
+
+  /** 敌人死亡结算（含 Boss 增援触发） */
+  private checkEnemyDeath(index: number): void {
+    const enemy = this.enemies[index];
+    if (!enemy || enemy.hp > 0) return;
+    enemy.hp = 0;
+    const rt = (this as any)._bossRt;
+    const isBoss = !!(rt && rt.config.name === enemy.name);
+    this.removeDeadEnemy(index);
+    if (!isBoss && rt && rt.config.name) onBossAddDeath(this);
+  }
+
+  /** 对敌人造成伤害（含 Boss 护盾/易伤），并结算死亡 */
+  private hurtEnemy(index: number, dmg: number): void {
+    const enemy = this.enemies[index];
+    if (!enemy || enemy.hp <= 0) return;
+    let d = Math.max(0, dmg);
+    const rt = (this as any)._bossRt;
+    if (rt && rt.config.name === enemy.name) {
+      if (rt.shield > 0) {
+        const absorbed = Math.min(rt.shield, d);
+        rt.shield -= absorbed; d -= absorbed;
+        if (rt.shield <= 0) { rt.vulnerable = true; this.log(`⚠ ${enemy.name} 的护盾破碎！陷入易伤！`); this.flashEnemy(index); }
+      } else if (rt.vulnerable) {
+        d = Math.round(d * 1.2);
+      }
+    }
+    enemy.hp -= d;
+    this.checkEnemyDeath(index);
   }
 
   private allEnemiesDead(): boolean {
@@ -692,7 +788,6 @@ export class BattleScene extends Phaser.Scene {
   // ════════════════════ 鬼道执行 ════════════════════
 
   private executeKido(skill: KidoNode): void {
-    this.playerActed = true;
     this.phase = 'executing';
     const mp = Kido.getNodeMp(skill.id);
     this.playerMp -= mp;
@@ -712,8 +807,7 @@ export class BattleScene extends Phaser.Scene {
           const { damage, crit } = calcMagicDamage(this.playerMatk * getPlayerMatkMod(this.playerStatus), enemy.mdef, power);
           const titleMult = GameState.getTitleDamageMult(enemy.type);
           const dmg = (this.hellActive ? damage * 2 : damage) * titleMult;
-          enemy.hp -= dmg;
-          if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(this.selectedEnemyIndex); }
+          this.hurtEnemy(this.selectedEnemyIndex, dmg);
           msg = `${skill.name}！${crit ? '暴击！' : ''}造成 ${dmg} 伤害！`;
           if (this.hellActive) msg += ' (狱解×2)';
           this.flashEnemySprite(this.enemySprites[this.selectedEnemyIndex]);
@@ -726,8 +820,12 @@ export class BattleScene extends Phaser.Scene {
           const hit = Math.random() < finalRate;
           if (hit) {
             const sub = skill.effect.subtype;
-            const statusMsg = applyStatusToEnemy(ks, sub, turns, enemy.maxHp);
-            msg = `${skill.name}！${enemy.name} ${statusMsg}！`;
+            if (this.bossImmuneTo(this.selectedEnemyIndex)) {
+              msg = `${skill.name}！但 ${enemy.name} 免疫异常！`;
+            } else {
+              const statusMsg = applyStatusToEnemy(ks, sub, turns, enemy.maxHp);
+              msg = `${skill.name}！${enemy.name} ${statusMsg}！`;
+            }
           } else { msg = `${skill.name}！但 ${enemy.name} 抵抗了...`; }
           break;
         }
@@ -800,7 +898,6 @@ export class BattleScene extends Phaser.Scene {
   // ════════════════════ 玩家行动 ════════════════════
 
   private playerAttack(): void {
-    this.playerActed = true;
     this.phase = 'executing';
     this.clearCommands();
     const enemy = this.enemy;
@@ -820,8 +917,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.hellActive) logMsg += ' (狱解×2)';
     this.logText.setText(logMsg);
     this.flashEnemySprite(this.enemySprites[this.selectedEnemyIndex]);
-    enemy.hp -= dmg;
-    if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(this.selectedEnemyIndex); }
+    this.hurtEnemy(this.selectedEnemyIndex, dmg);
     if (this.allEnemiesDead()) { this.time.delayedCall(800, () => this.victory()); }
     else { this.time.delayedCall(1000, () => this.startEnemyPhase()); }
   }
@@ -870,7 +966,6 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private executePlayerSkill(sk: SkillData): void {
-    this.playerActed = true;
     this.phase = 'executing';
     this.playerMp -= sk.mp;
 
@@ -993,7 +1088,6 @@ export class BattleScene extends Phaser.Scene {
     const atkVal = isPhysical
       ? Math.round(this.playerAtk * buffMods.atk)
       : Math.round(this.playerMatk * buffMods.matk);
-    const defVal = ignoreDef ? 0 : (isPhysical ? enemy.def : enemy.mdef);
     const defMod = ignoreDef ? 0.0 : 0.4;
 
     let total = 0, crit = false;
@@ -1015,8 +1109,7 @@ export class BattleScene extends Phaser.Scene {
       total += Math.round(hitDmg);
     }
 
-    enemy.hp -= total;
-    if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(idx); }
+        this.hurtEnemy(idx, total);
 
     // 吸血
     let life = 0;
@@ -1031,7 +1124,7 @@ export class BattleScene extends Phaser.Scene {
     // debuff（来自机制）
     const debuffs: string[] = [];
     if (enemy.hp > 0) {
-      const d = applyDebuffFromMechanics(mechanics, ks, enemy.statusRes);
+      const d = this.bossImmuneTo(this.selectedEnemyIndex) ? [] : applyDebuffFromMechanics(mechanics, ks, enemy.statusRes);
       if (d.length) debuffs.push(...d);
     }
 
@@ -1083,11 +1176,10 @@ export class BattleScene extends Phaser.Scene {
 
   private applySkillStatus(subtype: string, turns: number, idx: number = this.selectedEnemyIndex): void {
     const ks = this.enemyStatuses[idx];
-    applyStatusToEnemy(ks, subtype, turns, this.enemy.maxHp);
+    if (!this.bossImmuneTo(idx)) applyStatusToEnemy(ks, subtype, turns, this.enemy.maxHp);
   }
 
   private useItem(): void {
-    this.playerActed = true;
     const consumables = Inventory.items.filter(i => i.type === 'consumable');
     if (consumables.length === 0) {
       this.logText.setText('暂无可用道具');
@@ -1156,7 +1248,6 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private playerDefend(): void {
-    this.playerActed = true;
     this.phase = 'executing';
     this.clearCommands();
     this.isDefending = true;
@@ -1166,7 +1257,6 @@ export class BattleScene extends Phaser.Scene {
 
   /** 逃跑：按速度差计算成功率（《飘流幻境》式），成功返回据点，失败进入敌人回合 */
   private escapeBattle(): void {
-    this.playerActed = true;
     this.phase = 'executing';
     this.clearCommands(); this.clearSubMenu();
     const alive = this.getAliveEnemyIndices();
@@ -1193,7 +1283,6 @@ export class BattleScene extends Phaser.Scene {
   // ════════════════════ 变身系统 ════════════════════
 
   private activateBankai(): void {
-    this.playerActed = true;
     if (this.bankaiUsed || this.bankaiActive) return;
     this.phase = 'executing';
     this.clearCommands(); this.clearSubMenu();
@@ -1210,7 +1299,6 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private activateHollow(): void {
-    this.playerActed = true;
     if (this.hollowUsed || this.hollowActive) return;
     this.phase = 'executing';
     this.clearCommands(); this.clearSubMenu();
@@ -1224,7 +1312,6 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private activateHell(): void {
-    this.playerActed = true;
     if (this.hellUsed || this.hellActive) return;
     this.phase = 'executing';
     this.clearCommands(); this.clearSubMenu();
@@ -1239,7 +1326,6 @@ export class BattleScene extends Phaser.Scene {
 
   private showPlayerCommands(): void {
     this.phase = 'playerTurn';
-    this.playerActed = false;
     this.clearCommands();
     this.isDefending = false;
     this.selectedEnemyIndex = this.getFirstAliveEnemyIndex();
@@ -1249,14 +1335,12 @@ export class BattleScene extends Phaser.Scene {
     // 玩家被控制/恐惧跳过行动 (坑①：异常状态对玩家生效)
     const ps = this.playerStatus;
     if (isPlayerBlocked(ps)) {
-      this.playerActed = true;
       this.phase = 'executing';
       this.logText.setText(`你被控制无法行动！${getPlayerStatusIcons(ps)}`);
       this.time.delayedCall(1200, () => this.startEnemyPhase());
       return;
     }
     if (doesPlayerSkipFromFear(ps)) {
-      this.playerActed = true;
       this.phase = 'executing';
       this.logText.setText('你陷入恐惧，不敢行动！');
       this.time.delayedCall(1200, () => this.startEnemyPhase());
@@ -1396,7 +1480,7 @@ export class BattleScene extends Phaser.Scene {
       if (ks.burn > 0) enemy.hp -= Math.round(enemy.maxHp * 0.05);
       if (ks.poison > 0) enemy.hp -= ks.poisonDmg;
       if (ks.parasite > 0) enemy.hp -= Math.round(enemy.maxHp * 0.05);
-      if (enemy.hp <= 0) { enemy.hp = 0; this.removeDeadEnemy(i); }
+      this.checkEnemyDeath(i);
     });
 
     // ── 变身tick (原有逻辑) ──
@@ -1443,7 +1527,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** 敌人状态时长递减：在本轮敌人全部行动结束后结算，确保当回合施加的控制/异常仍能生效 */
   private tickEnemyStatusDuration(): void {
-    this.enemies.forEach((enemy, i) => {
+    this.enemies.forEach((_enemy, i) => {
       const ks = this.enemyStatuses[i];
       if (ks.burn > 0) ks.burn--;
       if (ks.poison > 0) { ks.poison--; if (ks.poison <= 0) ks.poisonDmg = 0; }
@@ -1667,9 +1751,4 @@ export class BattleScene extends Phaser.Scene {
     );
   }
 
-  /** 获取敌人类型的中文名 */
-  private getEnemyRank(type: string): string {
-    const map: Record<string, string> = { '杂妖': '杂虚', '恶妖': '恶虚', '妖将': '大虚', '妖王': '王虚' };
-    return map[type] || type;
-  }
 }
