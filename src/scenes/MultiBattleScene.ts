@@ -168,6 +168,9 @@ export class MultiBattleScene extends Phaser.Scene {
     };
     getClient().joinOrCreate('battle', {
       name: this.playerName,
+      // 传递游戏房(GameRoom) sessionId 作为稳定身份：BattleRoom 据此把奖励写入玩家本体世界，
+      // 否则 Colyseus 每房间独立 sessionId 会导致奖励落到战斗房孤儿世界、玩家实际金币/经验不变。
+      ownerSessionId: (this.scene.get('GameScene') as any)?.mySessionId || '',
       enemyData: this.enemyData ?? undefined,
       enemyParty: this.enemyParty,
       monsterId: this.monsterId,

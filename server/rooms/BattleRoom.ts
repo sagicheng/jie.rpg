@@ -45,6 +45,10 @@ export class BattleRoom extends Room<BattleRoomState> {
   private enemyParty: EnemyData[] = [];
   /** 敌人技能表（仅服务端内存，不进 schema；用于 AI 选用技能威力与伤害类型） */
   private enemySkills: Map<string, { name: string; power: number; damageType: 'physical' | 'magical' }[]> = new Map();
+  /** 玩家稳定身份映射：战斗房 sessionId -> 游戏房(GameRoom) sessionId。
+   *  关键：Colyseus 每个房间分配独立 sessionId，奖励必须写入"游戏房 sessionId"对应的权威世界，
+   *  否则会写到战斗房孤儿世界，GameRoom 的 worldSync 永远广播不到，玩家金币/经验/图鉴实际不变。 */
+  private ownerSids: Map<string, string> = new Map();
   /** 玩家回合决策限时计时器（20s 超时自动跳过）。 */
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
   /** 当前玩家回合决策截止时间（epoch ms），与 schema.turnExpiresAt 同步。 */
@@ -83,6 +87,8 @@ export class BattleRoom extends Room<BattleRoomState> {
     p.mp = st?.mp ?? p.maxMp;
     p.alive = true;
     this.state.players.set(client.sessionId, p);
+    // 记录稳定身份：默认用战斗房 sid，若客户端传来游戏房 sid 则用它作为权威世界主键
+    this.ownerSids.set(client.sessionId, (options as any).ownerSessionId || client.sessionId);
 
     // 记录玩家可用技能/鬼道/道具，供后续意图权威校验与结算
     const lo: PlayerLoadout = { skills: new Set(), kidos: new Map(), items: new Set() };
@@ -471,7 +477,8 @@ export class BattleRoom extends Room<BattleRoomState> {
     // 战利品 / 金币 / 经验 / 图鉴 写入权威世界状态（每位玩家各得一份），
     // 客户端经 GameRoom.worldSync 到账；battleReward 携带增量供战斗报告显示。
     this.clients.forEach((c: Client) => {
-      const pw = world.get(c.sessionId);
+      // 用游戏房 sessionId 取权威世界，确保奖励/图鉴真正写入玩家本体（经 GameRoom worldSync 到账）
+      const pw = world.get(this.ownerSids.get(c.sessionId) || c.sessionId);
       const exp = this.enemyDef.expReward || 0;
       const gold = this.enemyDef.goldReward || 0;
       world.grantLoot(pw, loot);
