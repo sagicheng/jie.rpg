@@ -3,7 +3,7 @@ import { matId, NODE_TO_MATERIAL } from '../data/materials';
 import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES } from '../config';
 import { DialogueBox, DialogueLine } from '../ui/DialogueBox';
 import { GameState } from '../systems/GameState';
-import { EnemyData, expForLevel, generateLoot } from '../systems/BattleData';
+import { EnemyData, createEnemyData, expForLevel, generateLoot } from '../systems/BattleData';
 import { getEnemyData, NAMED_ENEMIES } from '../systems/BestiaryData';
 import { Inventory } from '../systems/Inventory';
 import { SaveManager } from '../systems/SaveManager';
@@ -11,6 +11,7 @@ import { ZONE_CONFIGS } from '../systems/Zones';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
+import { BOSS_CONFIG } from '../systems/BossMechanics';
 import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 import { getClient } from '../net/Net';
 
@@ -429,7 +430,7 @@ export class GameScene extends Phaser.Scene {
         this.scene.pause();
         if (this.gameRoom) {
           // 联机：进权威战斗房间（单人独占该怪，根除双杀双掉落）；真实怪数据传给服务端结算
-          this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout() });
+          this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, enemyParty: this.buildEncounterParty(en.data), monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout() });
         } else {
           // 离线兜底：本地战斗
           this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
@@ -1021,7 +1022,9 @@ export class GameScene extends Phaser.Scene {
   private launchMultiBattle(): void {
     this.battleCooldown = 120;
     if (this.gameRoom) this.setBattling(true);
-    this.scene.launch('MultiBattleScene', { playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout() });
+    // V键组队：无指定怪，用当前区域虚怪组成小队（与单机 randomEnemyCount 同款）
+    const dummy: EnemyData = createEnemyData('虚', '杂妖', '火', GameState.zone);
+    this.scene.launch('MultiBattleScene', { playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), enemyParty: this.buildEncounterParty(dummy) });
     this.scene.pause();
   }
 
@@ -1031,7 +1034,48 @@ export class GameScene extends Phaser.Scene {
       skills: getAvailableSkills(GameState.zanpakuto, GameState.element, GameState.hasShikai, GameState.hasBankai, false, false, false).map((s) => s.name),
       kidos: Kido.getActiveLearned(),
       items: Inventory.items.filter((i) => i.type === 'consumable'),
+      // 玩家真实战斗属性（recalcStats 结果），用于服务端权威结算，根除硬编码 BASE_PLAYER 导致的数值崩坏
+      playerStats: {
+        hp: GameState.hp, maxHp: GameState.maxHp,
+        mp: GameState.mp, maxMp: GameState.maxMp,
+        atk: GameState.atk, def: GameState.def,
+        matk: GameState.matk, mdef: GameState.mdef,
+        spd: GameState.spd,
+      },
     };
+  }
+
+  /**
+   * 组装本场敌人阵容（与单机 BattleScene 同款规则）：
+   *  - Boss（妖将/妖王）：[Boss本体] + 配置中的随从 retinue（4~7 只）
+   *  - 小怪：按区域 randomEnemyCount 生成一组（每只独立满血）
+   * 仅客户端计算一次，整组传给服务端权威 spawn（服务端不重复依赖 BossMechanics）。
+   */
+  private buildEncounterParty(ed: EnemyData): EnemyData[] {
+    const isBoss = ed.type === '妖将' || ed.type === '妖王';
+    if (isBoss) {
+      const boss = { ...ed };
+      const cfg = BOSS_CONFIG[ed.name];
+      const adds: EnemyData[] = [];
+      if (cfg?.retinue) {
+        for (const r of cfg.retinue) adds.push(createEnemyData(r.name, r.type, r.element, cfg.zone));
+      }
+      return [boss, ...adds];
+    }
+    // 小怪：按单机 randomEnemyCount(zone) 生成一组
+    const zone = ed.zone;
+    let min = 1, max = 2;
+    if (zone <= 3) { min = 1; max = 2; }
+    else if (zone <= 6) { min = 1; max = 4; }
+    else if (zone <= 9) { min = 2; max = 6; }
+    else if (zone <= 12) { min = 3; max = 7; }
+    else if (zone <= 15) { min = 4; max = 8; }
+    else if (zone <= 18) { min = 5; max = 8; }
+    else { min = 6; max = 8; }
+    const n = min + Math.floor(Math.random() * (max - min + 1));
+    const party: EnemyData[] = [];
+    for (let i = 0; i < n; i++) party.push({ ...ed, hp: ed.maxHp, maxHp: ed.maxHp });
+    return party;
   }
   
 

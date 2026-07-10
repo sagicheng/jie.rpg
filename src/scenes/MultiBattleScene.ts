@@ -20,6 +20,7 @@ import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../systems/Skills'
 import { Kido, KidoNode } from '../systems/Kido';
 import { Inventory } from '../systems/Inventory';
 import type { Item } from '../systems/Inventory';
+import type { EnemyData } from '../systems/BattleData';
 
 interface Card {
   root: Phaser.GameObjects.Container;
@@ -37,6 +38,7 @@ interface ClientLoadout {
   skills: string[];
   kidos: KidoNode[];
   items: Item[];
+  playerStats?: { hp?: number; maxHp?: number; mp?: number; maxMp?: number; atk?: number; def?: number; matk?: number; mdef?: number; spd?: number };
 }
 
 interface MenuEntry {
@@ -61,12 +63,13 @@ export class MultiBattleScene extends Phaser.Scene {
 
   // 地图怪权威战斗模式（区别于 V键组队虚怪）
   private mode: 'vkey' | 'map' = 'vkey';
-  private enemyData: any = null;       // 真实地图怪数据（map 模式）
+  private enemyData: any = null;       // 真实地图怪数据（map 模式，用于胜利回写）
+  private enemyParty: EnemyData[] = []; // 本场敌人阵容（小怪成组 / Boss+随从），传给服务端权威 spawn
   private monsterId = '';              // 该怪在 GameRoom 的 `${zone}:${idx}`（map 模式）
   private endReported = false;         // 防止 victory/defeat 重复回写
   private intentionalLeave = false;    // 主动点「返回地图」时置真，避免 onLeave 误弹「连接断开」
 
-  // 进房携带的可用技能/鬼道/道具（服务端据其做权威校验）
+  // 进房携带的可用技能/鬼道/道具/玩家真实属性（服务端据其做权威校验与结算）
   private loadout: ClientLoadout = { skills: [], kidos: [], items: [] };
 
   // 子菜单 / 目标选择弹层
@@ -78,10 +81,11 @@ export class MultiBattleScene extends Phaser.Scene {
     super({ key: 'MultiBattleScene' });
   }
 
-  init(data: { playerName?: string; mode?: 'vkey' | 'map'; enemyData?: any; monsterId?: string; loadout?: ClientLoadout }): void {
+  init(data: { playerName?: string; mode?: 'vkey' | 'map'; enemyData?: any; enemyParty?: EnemyData[]; monsterId?: string; loadout?: ClientLoadout }): void {
     this.playerName = data?.playerName || '玩家';
     this.mode = data?.mode || 'vkey';
     this.enemyData = data?.enemyData || null;
+    this.enemyParty = data?.enemyParty || [];
     this.monsterId = data?.monsterId || '';
     this.loadout = data?.loadout || { skills: [], kidos: [], items: [] };
     // 重置（场景复用同一实例时避免脏状态）
@@ -154,8 +158,10 @@ export class MultiBattleScene extends Phaser.Scene {
     getClient().joinOrCreate('battle', {
       name: this.playerName,
       enemyData: this.enemyData ?? undefined,
+      enemyParty: this.enemyParty,
       monsterId: this.monsterId,
       loadout: serverLoadout,
+      playerStats: this.loadout.playerStats,
     })
       .then((room: any) => {
         this.room = room;

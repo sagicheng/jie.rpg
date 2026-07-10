@@ -3,8 +3,8 @@
  * 关键原则——所有战斗数学在服务端用 src/systems 的纯函数跑（calcDamage / createEnemyData / generateLoot），
  * 客户端只发"意图"(action)，收到状态后播动画。这是联机防作弊 + 多端一致的基石。
  *
- * 注意：玩家属性当前由服务端给基础值（BASE_PLAYER）。真实属性后续接 recalcStats(GameState)，
- * 待账号/存档（stage D）落地后替换，不影响本切片架构验证。
+ * 注意：玩家属性由客户端进房时携带的 playerStats（单机侧 recalcStats 结果）传入，服务端据此权威结算；
+ * 怪组（小怪成组 / Boss+随从）也由客户端按单机同款规则组装后通过 enemyParty 传入。BASE_PLAYER 仅作缺省兜底。
  */
 import { Room, Client } from '@colyseus/core';
 import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage } from '../schema';
@@ -38,6 +38,10 @@ export class BattleRoom extends Room<BattleRoomState> {
   private defending: Set<string> = new Set();
   /** 每玩家的可用技能/鬼道/道具（仅服务端内存，不进 schema） */
   private loadouts: Map<string, PlayerLoadout> = new Map();
+  /** 本场敌人阵容（客户端按单机同款规则组装：小怪成组 / Boss+随从），服务端只负责 spawn + 结算 */
+  private enemyParty: EnemyData[] = [];
+  /** 敌人技能表（仅服务端内存，不进 schema；用于 AI 选用技能威力与伤害类型） */
+  private enemySkills: Map<string, { name: string; power: number; damageType: 'physical' | 'magical' }[]> = new Map();
 
   onCreate(options: { monsterId?: string }) {
     // matchmaking：按 monsterId 隔离房间（地图怪各自独立，V键组队统一 ''）
@@ -47,20 +51,29 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.onMessage('action', (client, data: { type?: string; targetId?: string }) => this.handleAction(client, data));
   }
 
-  onJoin(client: Client, options: { name?: string; enemyData?: any; monsterId?: string; loadout?: { skills?: string[]; kidos?: KidoLoadoutDTO[]; items?: string[] } }) {
+  onJoin(client: Client, options: {
+    name?: string;
+    enemyData?: any;
+    enemyParty?: EnemyData[];
+    monsterId?: string;
+    loadout?: { skills?: string[]; kidos?: KidoLoadoutDTO[]; items?: string[] };
+    playerStats?: { hp?: number; maxHp?: number; mp?: number; maxMp?: number; atk?: number; def?: number; matk?: number; mdef?: number; spd?: number };
+  }) {
     const p = new CombatPlayer();
     p.sessionId = client.sessionId;
     p.name = (options?.name ?? '勇者').slice(0, 16);
     p.color = COLORS[Math.floor(Math.random() * COLORS.length)];
-    p.maxHp = BASE_PLAYER.hp;
-    p.hp = BASE_PLAYER.hp;
-    p.atk = BASE_PLAYER.atk;
-    p.def = BASE_PLAYER.def;
-    p.matk = BASE_PLAYER.matk;
-    p.mdef = BASE_PLAYER.mdef;
-    p.spd = BASE_PLAYER.spd;
-    p.mp = BASE_PLAYER.mp;
-    p.maxMp = BASE_PLAYER.maxMp;
+    // 玩家真实属性：优先用客户端传入的 recalcStats 结果，缺省再回退 BASE_PLAYER
+    const st = options?.playerStats;
+    p.maxHp = st?.maxHp ?? BASE_PLAYER.hp;
+    p.hp = st?.hp ?? p.maxHp;
+    p.atk = st?.atk ?? BASE_PLAYER.atk;
+    p.def = st?.def ?? BASE_PLAYER.def;
+    p.matk = st?.matk ?? BASE_PLAYER.matk;
+    p.mdef = st?.mdef ?? BASE_PLAYER.mdef;
+    p.spd = st?.spd ?? BASE_PLAYER.spd;
+    p.maxMp = st?.maxMp ?? BASE_PLAYER.maxMp;
+    p.mp = st?.mp ?? p.maxMp;
     p.alive = true;
     this.state.players.set(client.sessionId, p);
 
@@ -76,9 +89,15 @@ export class BattleRoom extends Room<BattleRoomState> {
 
     this.logMsg('system', `${p.name} 加入了战斗`);
 
-    // 地图怪遭遇战：携带真实怪数据 → 单人立即开战（权威结算，根除双杀双掉落）
-    if (options?.enemyData && options.enemyData.name) {
-      this.enemyDef = options.enemyData as EnemyData;
+    // 决定敌人阵容：优先 enemyParty（客户端按单机规则组装），其次兼容旧单只 enemyData
+    if (options?.enemyParty && Array.isArray(options.enemyParty) && options.enemyParty.length) {
+      this.enemyParty = options.enemyParty as EnemyData[];
+    } else if (options?.enemyData && options.enemyData.name) {
+      this.enemyParty = [options.enemyData as EnemyData];
+    }
+
+    // 地图怪遭遇战 / 客户端已带阵容 → 单人立即开战（权威结算，根除双杀双掉落）
+    if (this.enemyParty.length) {
       this.tryBeginCombat();
       return;
     }
@@ -100,33 +119,50 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (this.state.phase !== 'waiting') return;
     if (this.state.players.size < 1) return;
 
-    // 地图怪模式：onJoin 已设置 this.enemyDef（真实怪）；V键组队：仍用虚怪
-    const ed: EnemyData = this.enemyDef && this.enemyDef.name ? this.enemyDef : createEnemyData('虚', '杂妖', '火', 2);
-    this.enemyDef = ed;
+    // 决定敌人阵容：优先用客户端传入的 enemyParty（单机同款：小怪成组 / Boss+随从），其次默认虚怪
+    let party: EnemyData[];
+    if (this.enemyParty && this.enemyParty.length > 0) {
+      party = this.enemyParty;
+    } else {
+      // V键组队兜底：2 只杂妖
+      party = [createEnemyData('虚', '杂妖', '火', 2), createEnemyData('虚', '杂妖', '火', 2)];
+    }
 
-    const e = new CombatEnemy();
-    e.id = 'enemy:0';
-    e.name = ed.name;
-    e.type = ed.type;
-    e.maxHp = ed.maxHp;
-    e.hp = ed.hp;
-    e.atk = ed.atk;
-    e.def = ed.def;
-    e.matk = ed.matk;
-    e.mdef = ed.mdef;
-    e.spd = ed.spd;
-    e.alive = true;
-    this.state.enemies.set(e.id, e);
+    const nPlayers = this.state.players.size;
+    const bossHpMult = 1 + 0.35 * (nPlayers - 1); // 组队时 Boss 血量缩放（与单机 BOSS_HP_MULT 一致；单人=1 不缩放）
+
+    this.enemySkills.clear();
+    party.forEach((ed, i) => {
+      const e = new CombatEnemy();
+      e.id = `enemy:${i}`;
+      e.name = ed.name;
+      e.type = ed.type;
+      let maxHp = ed.maxHp;
+      // 仅 Boss（妖将/妖王）在组队时放大血量，小怪不缩放（与单机 setupBoss 一致）
+      if ((ed.type === '妖将' || ed.type === '妖王') && nPlayers > 1) maxHp = Math.round(maxHp * bossHpMult);
+      e.maxHp = maxHp;
+      e.hp = maxHp;
+      e.atk = ed.atk;
+      e.def = ed.def;
+      e.matk = ed.matk;
+      e.mdef = ed.mdef;
+      e.spd = ed.spd;
+      e.alive = true;
+      this.state.enemies.set(e.id, e);
+      this.enemySkills.set(e.id, (ed.skills || []).map((s) => ({ name: s.name, power: s.power, damageType: s.damageType })));
+      // 掉落类型/区域来源：优先取 Boss，否则首只
+      if (i === 0 || ed.type === '妖将' || ed.type === '妖王') this.enemyDef = ed;
+    });
 
     const order: string[] = [];
     this.state.players.forEach((pl) => order.push(pl.sessionId));
-    order.push(e.id);
+    this.state.enemies.forEach((e) => order.push(e.id));
     order.sort((a, b) => this.spdOf(b) - this.spdOf(a)); // 按 spd 降序
 
     this.state.turnOrder.splice(0, this.state.turnOrder.length, ...order);
     this.state.phase = 'combat';
     this.state.currentTurn = this.state.turnOrder[0] ?? '';
-    this.logMsg('system', `战斗开始！${this.state.players.size} 名队员 VS ${ed.name}`);
+    this.logMsg('system', `战斗开始！${nPlayers} 名队员 VS ${this.state.enemies.size} 只${this.enemyDef?.type || '敌人'}`);
 
     this.maybeRunEnemyTurn();
   }
@@ -358,12 +394,18 @@ export class BattleRoom extends Room<BattleRoomState> {
       return;
     }
     const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-    const r = calcDamage(e.atk, target.def, 1.0);
+    // 敌人使用自带技能（与单机一致：40% 随机技能，否则用首个；物理/魔法按技能类型）。异常状态暂不施加（服务端状态机为后续 stage）
+    const skills = this.enemySkills.get(id) || [];
+    const sk = skills.length ? (Math.random() < 0.4 ? skills[Math.floor(Math.random() * skills.length)] : skills[0]) : null;
+    const power = sk?.power ?? 1.0;
+    const magical = sk?.damageType === 'magical';
+    const r = magical ? calcMagicDamage(e.matk, target.mdef, power) : calcDamage(e.atk, target.def, power);
     let dmg = r.damage;
     const isDefending = this.defending.has(target.sessionId);
     if (isDefending) dmg = Math.round(dmg * 0.2);
     target.hp = Math.max(0, target.hp - dmg);
-    this.logMsg(e.name, `${e.name} 攻击 ${target.name} 造成 ${dmg} 伤害${r.crit ? '（暴击！）' : ''}${isDefending ? '（防御减伤）' : ''}`);
+    const skName = sk?.name ? `【${sk.name}】` : '';
+    this.logMsg(e.name, `${e.name}${skName}攻击 ${target.name} 造成 ${dmg} 伤害${r.crit ? '（暴击！）' : ''}${isDefending ? '（防御减伤）' : ''}`);
 
     if (target.hp <= 0) {
       target.alive = false;

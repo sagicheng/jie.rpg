@@ -261,15 +261,94 @@ async function main() {
   console.log(`[第二场] 可正常打到胜利               : ${victory2 ? 'OK' : 'BAD'}`);
   const settleOk = skillLogged && kidoLogged && itemLogged && victory1 && combat2 && victory2;
 
+  // ——— 8) 怪组数量 + 数值真实性（回归 Bug①怪单只 / Bug②数值崩坏）———
+  // 用真实 1 级玩家属性 + Boss(妖将)+随从 阵容，验证：怪组>1 / Boss对低防玩家伤害>1 / 玩家不能2回合秒Boss
+  const roomM = await clientA.joinOrCreate('game', { name: '子' });
+  const roomN = await clientB.joinOrCreate('game', { name: '丑' });
+  await wait(200);
+
+  const bossEnemy = {
+    name: '测试BOSS', type: '妖将', element: '火', zone: 2,
+    hp: 150, maxHp: 150, atk: 11, def: 5, matk: 8, mdef: 4, spd: 8, statusRes: 0,
+    skills: [{ name: '绝杀', power: 2.0, desc: '', damageType: 'physical' }],
+    expReward: 300, goldReward: 200, drops: [],
+  };
+  const retinue = {
+    name: '随从', type: '恶妖', element: '火', zone: 2,
+    hp: 40, maxHp: 40, atk: 9, def: 4, matk: 7, mdef: 3, spd: 7, statusRes: 0,
+    skills: [{ name: '猛击', power: 1.3, desc: '', damageType: 'physical' }],
+    expReward: 30, goldReward: 20, drops: [],
+  };
+  const lvl1Stats = { hp: 100, maxHp: 100, mp: 50, maxMp: 50, atk: 16, def: 6, matk: 10, mdef: 8, spd: 12 };
+  const bossParty = [bossEnemy, retinue];
+
+  const battle3: any = await clientA.joinOrCreate('battle', {
+    name: '子', enemyParty: bossParty, monsterId: 'z1:0',
+    loadout: { skills: [], kidos: [], items: [] }, playerStats: lvl1Stats,
+  });
+  await wait(300);
+
+  const groupOk = battle3.state.enemies.size >= 2; // Bug①：Boss+随从应成组，不再是单只
+  const enemyNames = [...battle3.state.enemies.values()].map((e: any) => e.name);
+
+  let playerAttacks = 0;
+  let bossHpAfter2 = -1;
+  let maxEnemyHit = 0;
+  let t3 = 0;
+  while (battle3.state.phase === 'combat' && t3++ < 40) {
+    if (battle3.state.currentTurn === battle3.sessionId) {
+      const boss = battle3.state.enemies.get('enemy:0');
+      if (boss && boss.alive) {
+        // 第 3 次出手前读取：前 2 次攻击经回合间隙的等待已被服务端结算，此时读到的才是真实血量
+        if (playerAttacks === 2) bossHpAfter2 = boss.hp;
+        battle3.send('action', { type: 'attack', targetId: 'enemy:0' });
+        playerAttacks++;
+      } else {
+        const e = [...battle3.state.enemies.values()].find((x: any) => x.alive) as any;
+        if (e) battle3.send('action', { type: 'attack', targetId: e.id });
+      }
+    }
+    for (const m of [...battle3.state.log.values()] as any[]) {
+      if (enemyNames.some((n) => m.text.startsWith(n))) {
+        const dm = m.text.match(/造成 (\d+) 伤害/);
+        if (dm) maxEnemyHit = Math.max(maxEnemyHit, parseInt(dm[1], 10));
+      }
+    }
+    await wait(40);
+  }
+  await battle3.leave();
+
+  // 小怪成组校验（Bug①：小怪也应为一组，而非单只）—— 复用同一套多怪 spawn 逻辑
+  const smallParty: any[] = [];
+  for (let i = 0; i < 3; i++) {
+    smallParty.push({ name: `小怪${i}`, type: '杂妖', element: '火', zone: 1, hp: 60, maxHp: 60, atk: 12, def: 6, matk: 8, mdef: 4, spd: 6, statusRes: 0, skills: [{ name: '撞击', power: 1, desc: '', damageType: 'physical' }], expReward: 10, goldReward: 5, drops: [] });
+  }
+  const battle4: any = await clientA.joinOrCreate('battle', { name: '子', enemyParty: smallParty, monsterId: 'z1:5', loadout: { skills: [], kidos: [], items: [] }, playerStats: lvl1Stats });
+  await wait(300);
+  const smallGroupOk = battle4.state.enemies.size === 3;
+  await battle4.leave();
+
+  await roomM.leave();
+  await roomN.leave();
+
+  const bossDmgOk = maxEnemyHit > 1;          // Bug②：Boss对低防1级角色不应只打1点
+  const noTwoShotOk = bossHpAfter2 > 0;       // Bug②：1级角色不能2回合秒掉Boss
+
+  console.log(`\n[怪组] Boss+随从成组(数量>=2)   : ${groupOk ? 'OK' : 'BAD'}`);
+  console.log(`[怪组] 小怪成组(数量==3)        : ${smallGroupOk ? 'OK' : 'BAD'}`);
+  console.log(`[数值] Boss对1级角色伤害>1      : ${bossDmgOk ? 'OK' : 'BAD'} (maxHit=${maxEnemyHit})`);
+  console.log(`[数值] 1级角色不能2回合秒Boss   : ${noTwoShotOk ? 'OK' : 'BAD'} (bossHpAfter2=${bossHpAfter2})`);
+  const numOk = groupOk && smallGroupOk && bossDmgOk && noTwoShotOk;
+
   const mapOk = moved && chatted;
   const battleOk = phase === 'victory';
   const monsterOk = lockOk && noMisKill && restoreOk && killOk && respawnOk;
   const battlingOk = battlingOn && battlingOff;
   const mapBattleOk = combatOk && mapVictoryOk && mapKillSyncOk;
   const isoOk = isolated && aCombat && bCombat && aSolo && bSolo;
-  const allOk = mapOk && battleOk && monsterOk && battlingOk && mapBattleOk && isoOk && settleOk;
+  const allOk = mapOk && battleOk && monsterOk && battlingOk && mapBattleOk && isoOk && settleOk && numOk;
   console.log(`\n==== 联机切片验证 ${allOk ? 'PASS ✅' : 'FAIL ❌'} ====`);
-  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'} | 地图怪权威战斗: ${mapBattleOk ? 'OK' : 'BAD'} | 地图怪隔离: ${isoOk ? 'OK' : 'BAD'} | 权威结算真实性: ${settleOk ? 'OK' : 'BAD'}`);
+  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'} | 地图怪权威战斗: ${mapBattleOk ? 'OK' : 'BAD'} | 地图怪隔离: ${isoOk ? 'OK' : 'BAD'} | 权威结算真实性: ${settleOk ? 'OK' : 'BAD'} | 怪组/数值: ${numOk ? 'OK' : 'BAD'}`);
   process.exit(allOk ? 0 : 1);
 }
 
