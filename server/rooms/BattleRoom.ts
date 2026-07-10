@@ -10,6 +10,24 @@ import { Room, Client } from '@colyseus/core';
 import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage } from '../schema';
 import { createEnemyData, calcDamage, calcMagicDamage, generateLoot } from '../../src/systems/BattleData';
 import type { EnemyData } from '../../src/systems/BattleData';
+import { SKILL_BY_NAME, getSkillTargetType } from '../../src/systems/Skills';
+import { CONSUMABLES } from '../../src/systems/ConsumableSystem';
+
+/** 客户端进房时携带的战斗配置（可用技能/鬼道/道具），用于服务端权威校验与结算。 */
+interface KidoLoadoutDTO {
+  id: string;
+  mp: number;
+  power: number;                                  // 已含等级的威力倍率
+  effectType: string;                             // damage | control | heal | shield | revive | cleanse
+  target?: string;                                // single | all
+  reviveHpPercent?: number;
+}
+interface PlayerLoadout {
+  skills: Set<string>;
+  kidos: Map<string, KidoLoadoutDTO>;
+  items: Set<string>;
+}
+const EMPTY_LOADOUT: PlayerLoadout = { skills: new Set(), kidos: new Map(), items: new Set() };
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
 const BASE_PLAYER = { hp: 220, atk: 42, def: 18, matk: 36, mdef: 16, spd: 12, mp: 120, maxMp: 120 };
@@ -18,6 +36,8 @@ export class BattleRoom extends Room<BattleRoomState> {
   private enemyDef!: EnemyData;
   /** 本回合处于防御姿态的玩家 sessionId 集合（防御只减伤一次敌人攻击） */
   private defending: Set<string> = new Set();
+  /** 每玩家的可用技能/鬼道/道具（仅服务端内存，不进 schema） */
+  private loadouts: Map<string, PlayerLoadout> = new Map();
 
   onCreate(options: { monsterId?: string }) {
     // matchmaking：按 monsterId 隔离房间（地图怪各自独立，V键组队统一 ''）
@@ -27,7 +47,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.onMessage('action', (client, data: { type?: string; targetId?: string }) => this.handleAction(client, data));
   }
 
-  onJoin(client: Client, options: { name?: string; enemyData?: any; monsterId?: string }) {
+  onJoin(client: Client, options: { name?: string; enemyData?: any; monsterId?: string; loadout?: { skills?: string[]; kidos?: KidoLoadoutDTO[]; items?: string[] } }) {
     const p = new CombatPlayer();
     p.sessionId = client.sessionId;
     p.name = (options?.name ?? '勇者').slice(0, 16);
@@ -43,6 +63,17 @@ export class BattleRoom extends Room<BattleRoomState> {
     p.maxMp = BASE_PLAYER.maxMp;
     p.alive = true;
     this.state.players.set(client.sessionId, p);
+
+    // 记录玩家可用技能/鬼道/道具，供后续意图权威校验与结算
+    const lo: PlayerLoadout = { skills: new Set(), kidos: new Map(), items: new Set() };
+    const l = options?.loadout;
+    if (l) {
+      if (Array.isArray(l.skills)) for (const s of l.skills) if (typeof s === 'string') lo.skills.add(s);
+      if (Array.isArray(l.kidos)) for (const k of l.kidos) if (k && typeof k.id === 'string') lo.kidos.set(k.id, k);
+      if (Array.isArray(l.items)) for (const i of l.items) if (typeof i === 'string') lo.items.add(i);
+    }
+    this.loadouts.set(client.sessionId, lo);
+
     this.logMsg('system', `${p.name} 加入了战斗`);
 
     // 地图怪遭遇战：携带真实怪数据 → 单人立即开战（权威结算，根除双杀双掉落）
@@ -58,6 +89,7 @@ export class BattleRoom extends Room<BattleRoomState> {
   }
 
   onLeave(client: Client) {
+    this.loadouts.delete(client.sessionId);
     const p = this.state.players.get(client.sessionId);
     if (p) p.alive = false;
     if (this.state.phase === 'combat') this.advanceTurn();
@@ -100,7 +132,7 @@ export class BattleRoom extends Room<BattleRoomState> {
   }
 
   // ——— 玩家意图处理（权威结算）———
-  private handleAction(client: Client, data: { type?: string; targetId?: string }) {
+  private handleAction(client: Client, data: { type?: string; id?: string; targetId?: string }) {
     if (this.state.phase !== 'combat') return;
     if (this.state.currentTurn !== client.sessionId) return; // 非当前行动者，忽略
     const p = this.state.players.get(client.sessionId);
@@ -108,47 +140,143 @@ export class BattleRoom extends Room<BattleRoomState> {
 
     // 防御只持续一轮：玩家再次行动时清除自身防御标记（覆盖中间的敌人回合）
     this.defending.delete(client.sessionId);
+    const lo = this.loadouts.get(client.sessionId) || EMPTY_LOADOUT;
 
-    // 攻击 / 斩魄刀技能：物理伤害
-    if (data.type === 'attack' || data.type === 'skill') {
+    // ——— 攻击（物理单体，可指定目标）———
+    if (data.type === 'attack') {
       const targetId = this.resolveTarget(data.targetId);
       if (!targetId) return;
       const e = this.state.enemies.get(targetId)!;
       const r = calcDamage(p.atk, e.def, 1.0);
       e.hp = Math.max(0, e.hp - r.damage);
-      this.logMsg(p.name, `${p.name} 使用${data.type === 'attack' ? '斩击' : '技能'}对 ${e.name} 造成 ${r.damage} 伤害${r.crit ? '（暴击！）' : ''}`);
-      if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); if (this.checkVictory()) return; }
+      this.logMsg(p.name, `${p.name} 斩击 ${e.name} 造成 ${r.damage} 伤害${r.crit ? '（暴击！）' : ''}`);
+      if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+      if (this.checkVictory()) return;
       this.advanceTurn();
       return;
     }
 
-    // 鬼道：魔法伤害（耗蓝）
+    // ——— 斩魄刀技能（按技能名权威解析：伤害/治疗/控制）———
+    if (data.type === 'skill') {
+      const sk = data.id ? SKILL_BY_NAME[data.id] : undefined;
+      if (!sk || !lo.skills.has(sk.name)) { this.logMsg('system', `${p.name} 使用了无效的技能`); return; }
+      if (p.mp < sk.mp) { this.logMsg('system', `${p.name} 灵力不足，无法施展「${sk.name}」`); return; }
+      p.mp = Math.max(0, p.mp - sk.mp);
+      const tt = getSkillTargetType(sk);
+      const magic = sk.damageType === 'magical';
+
+      if (tt === 'enemy') {
+        const targetId = this.resolveTarget(data.targetId);
+        if (!targetId) return;
+        const e = this.state.enemies.get(targetId)!;
+        const r = magic ? calcMagicDamage(p.matk, e.mdef, sk.power) : calcDamage(p.atk, e.def, sk.power);
+        e.hp = Math.max(0, e.hp - r.damage);
+        this.logMsg(p.name, `${p.name} 施展「${sk.name}」对 ${e.name} 造成 ${r.damage} 伤害${r.crit ? '（暴击！）' : ''}${sk.statusEffect ? `（附带${sk.statusEffect.subtype}）` : ''}`);
+        if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+      } else if (tt === 'enemy-all') {
+        for (const e of this.state.enemies.values()) {
+          if (!e.alive) continue;
+          const r = magic ? calcMagicDamage(p.matk, e.mdef, sk.power) : calcDamage(p.atk, e.def, sk.power);
+          e.hp = Math.max(0, e.hp - r.damage);
+          if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+        }
+        this.logMsg(p.name, `${p.name} 施展「${sk.name}」横扫全场！`);
+      } else if (tt === 'self' || tt === 'ally') {
+        const target = tt === 'ally' ? this.lowestHpAlly(p.sessionId) : p;
+        const heal = Math.round(p.matk * sk.power);
+        target.hp = Math.min(target.maxHp, target.hp + heal);
+        this.logMsg(p.name, `${p.name} 施展「${sk.name}」为 ${target.name} 回复 ${heal} HP`);
+      } else if (tt === 'ally-all') {
+        for (const pl of this.state.players.values()) {
+          if (!pl.alive) continue;
+          const heal = Math.round(p.matk * sk.power);
+          pl.hp = Math.min(pl.maxHp, pl.hp + heal);
+        }
+        this.logMsg(p.name, `${p.name} 施展「${sk.name}」全队回复！`);
+      }
+      if (this.checkVictory()) return;
+      this.advanceTurn();
+      return;
+    }
+
+    // ——— 鬼道（按 kidoId 权威解析：伤害/治疗/复活/控制）———
     if (data.type === 'kido') {
-      if (p.mp < 15) { this.logMsg('system', '灵力不足，无法施展鬼道'); return; }
-      const targetId = this.resolveTarget(data.targetId);
-      if (!targetId) return;
-      const e = this.state.enemies.get(targetId)!;
-      p.mp = Math.max(0, p.mp - 15);
-      const r = calcMagicDamage(p.matk, e.mdef, 1.3);
-      e.hp = Math.max(0, e.hp - r.damage);
-      this.logMsg(p.name, `${p.name} 施展鬼道对 ${e.name} 造成 ${r.damage} 伤害${r.crit ? '（暴击！）' : ''}`);
-      if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); if (this.checkVictory()) return; }
+      const k = data.id ? lo.kidos.get(data.id) : undefined;
+      if (!k) { this.logMsg('system', `${p.name} 使用了无效的鬼道`); return; }
+      if (p.mp < k.mp) { this.logMsg('system', `${p.name} 灵力不足，无法施展鬼道`); return; }
+      p.mp = Math.max(0, p.mp - k.mp);
+
+      if (k.effectType === 'damage') {
+        const targetId = this.resolveTarget(data.targetId);
+        if (!targetId) return;
+        const e = this.state.enemies.get(targetId)!;
+        const r = calcMagicDamage(p.matk, e.mdef, k.power);
+        e.hp = Math.max(0, e.hp - r.damage);
+        this.logMsg(p.name, `${p.name} 施展鬼道对 ${e.name} 造成 ${r.damage} 伤害${r.crit ? '（暴击！）' : ''}`);
+        if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+      } else if (k.effectType === 'heal') {
+        const target = this.lowestHpAlly(p.sessionId);
+        const heal = Math.round(k.power); // 回道 basePower 即固定回复量（已含等级缩放）
+        target.hp = Math.min(target.maxHp, target.hp + heal);
+        this.logMsg(p.name, `${p.name} 施展回道为 ${target.name} 回复 ${heal} HP`);
+      } else if (k.effectType === 'revive') {
+        const target = this.lowestHpAlly(p.sessionId);
+        if (!target.alive) {
+          const pct = k.reviveHpPercent ?? 50;
+          target.hp = Math.round(target.maxHp * pct / 100);
+          target.alive = true;
+          this.logMsg(p.name, `${p.name} 施展鬼道令 ${target.name} 以 ${pct}% HP 复活！`);
+        } else {
+          this.logMsg(p.name, `${p.name} 的复活鬼道对存活目标无效`);
+        }
+      } else {
+        // control / shield / cleanse：本切片仅记录，不施加机械效果（完整状态机为后续 stage）
+        this.logMsg(p.name, `${p.name} 施展鬼道（${k.effectType}）`);
+      }
+      if (this.checkVictory()) return;
       this.advanceTurn();
       return;
     }
 
-    // 道具：回复 HP/MP（服务端无背包，统一基础回复）
+    // ——— 道具（按 itemId 权威解析消耗品效果）———
     if (data.type === 'item') {
-      const healHp = Math.round(p.maxHp * 0.4);
-      const healMp = Math.round(p.maxMp * 0.4);
-      p.hp = Math.min(p.maxHp, p.hp + healHp);
-      p.mp = Math.min(p.maxMp, p.mp + healMp);
-      this.logMsg(p.name, `${p.name} 使用道具，回复 HP${healHp} / MP${healMp}`);
+      const itemId = data.id || '';
+      if (!lo.items.has(itemId)) { this.logMsg('system', `${p.name} 使用了无效的道具`); return; }
+      const def = CONSUMABLES[itemId];
+      if (!def) { this.logMsg('system', `${p.name} 使用了未知道具`); return; }
+      const eff = def.effect;
+      let msg = '';
+      switch (eff.type) {
+        case 'heal_hp': { const h = Math.min(p.maxHp, p.hp + (eff.hpAmount || 0)); msg = `回复 ${h - p.hp} HP`; p.hp = h; break; }
+        case 'heal_mp': { const m = Math.min(p.maxMp, p.mp + (eff.mpAmount || 0)); msg = `回复 ${m - p.mp} MP`; p.mp = m; break; }
+        case 'heal_both': { const h = Math.min(p.maxHp, p.hp + (eff.hpAmount || 0)); const m = Math.min(p.maxMp, p.mp + (eff.mpAmount || 0)); msg = `回复 ${h - p.hp} HP + ${m - p.mp} MP`; p.hp = h; p.mp = m; break; }
+        case 'full_heal': { p.hp = p.maxHp; p.mp = p.maxMp; msg = 'HP·MP 完全回复'; break; }
+        case 'revive': {
+          if (!p.alive) { p.hp = Math.round(p.maxHp * (eff.reviveHpPercent || 50) / 100); p.alive = true; msg = `以 ${eff.reviveHpPercent}% HP 复活`; }
+          else { const h = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.3)); msg = `回复 ${h - p.hp} HP`; p.hp = h; }
+          break;
+        }
+        case 'cure_status': { msg = '异常状态已净化'; break; }
+        case 'buff_temp': {
+          const stat = eff.buffStat || 'atk';
+          const v = eff.buffValue || 0;
+          if (stat === 'atk') p.atk = Math.round(p.atk * (1 + v));
+          else if (stat === 'def') p.def = Math.round(p.def * (1 + v));
+          else if (stat === 'matk') p.matk = Math.round(p.matk * (1 + v));
+          else if (stat === 'mdef') p.mdef = Math.round(p.mdef * (1 + v));
+          else if (stat === 'spd') p.spd = Math.round(p.spd * (1 + v));
+          msg = `${stat} 提升`;
+          break;
+        }
+        default: msg = '使用道具';
+      }
+      this.logMsg(p.name, `${p.name} 使用「${def.name}」${msg}`);
+      if (this.checkVictory()) return;
       this.advanceTurn();
       return;
     }
 
-    // 防御：减伤下一次受到的敌人伤害
+    // ——— 防御：减伤下一次受到的敌人伤害 ———
     if (data.type === 'defend') {
       this.defending.add(client.sessionId);
       this.logMsg(p.name, `${p.name} 进入防御姿态（下次受伤减伤）`);
@@ -156,7 +284,7 @@ export class BattleRoom extends Room<BattleRoomState> {
       return;
     }
 
-    // 逃跑：按速度差算概率，成功则脱离战斗
+    // ——— 逃跑：按速度差算概率，成功则脱离战斗 ———
     if (data.type === 'escape') {
       const aliveEnemies = [...this.state.enemies.values()].filter((e) => e.alive);
       const avgSpd = aliveEnemies.length ? aliveEnemies.reduce((s, e) => s + e.spd, 0) / aliveEnemies.length : 0;
@@ -172,6 +300,16 @@ export class BattleRoom extends Room<BattleRoomState> {
       this.advanceTurn();
       return;
     }
+  }
+
+  /** 选取 HP 比例最低的存活友方（单人战斗即自身），用于治疗/复活目标。 */
+  private lowestHpAlly(selfId: string): CombatPlayer {
+    let best: CombatPlayer | null = null;
+    for (const pl of this.state.players.values()) {
+      if (!pl.alive) continue;
+      if (!best || pl.hp / pl.maxHp < best.hp / best.maxHp) best = pl;
+    }
+    return best || this.state.players.get(selfId)!;
   }
 
   /** 解析攻击目标：优先指定 id（存活），否则首个存活敌人。 */

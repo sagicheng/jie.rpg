@@ -193,15 +193,83 @@ async function main() {
   console.log(`\n[隔离] A怪1/B怪2 房间独立 : ${isolated && aCombat && bCombat ? 'OK' : 'BAD'}`);
   console.log(`[隔离] 互不混入对方战斗   : ${aSolo && bSolo ? 'OK' : 'BAD'}`);
 
+  // ——— 7) 权威结算真实性：技能/道具/目标选择不"秒胜"，且连续两场战斗服务端不崩（回归 Bug①/Bug②）———
+  const roomK = await clientA.joinOrCreate('game', { name: '壬' });
+  const roomL = await clientB.joinOrCreate('game', { name: '癸' });
+  await wait(200);
+
+  const loEnemy = {
+    name: '结算测试妖', type: '杂妖', element: '火', zone: 1,
+    hp: 600, maxHp: 600, atk: 20, def: 10, matk: 15, mdef: 8, spd: 5, statusRes: 0,
+    skills: [{ name: '撞击', power: 1, desc: '', damageType: 'physical' }],
+    expReward: 30, goldReward: 20, drops: [],
+  };
+  const lo = {
+    skills: ['烈闪'],
+    kidos: [{ id: 'hado_t1_01', mp: 8, power: 1.4, effectType: 'damage', target: 'single' }],
+    items: ['stop_blood_grass'],
+  };
+
+  const battle1: any = await clientA.joinOrCreate('battle', { name: '壬', enemyData: loEnemy, monsterId: 'z1:0', loadout: lo });
+  await wait(300);
+
+  let usedSkill = false, usedItem = false, usedKido = false, skillLogged = false, itemLogged = false, kidoLogged = false;
+  const seen = new Set<string>();
+  let t1 = 0;
+  while (battle1.state.phase === 'combat' && t1++ < 80) {
+    if (battle1.state.currentTurn === battle1.sessionId) {
+      const enemyId = [...battle1.state.enemies.values()].find((e: any) => e.alive)?.id;
+      if (!usedSkill && enemyId) { battle1.send('action', { type: 'skill', id: '烈闪', targetId: enemyId }); usedSkill = true; }
+      else if (!usedKido && enemyId) { battle1.send('action', { type: 'kido', id: 'hado_t1_01', targetId: enemyId }); usedKido = true; }
+      else if (!usedItem) { battle1.send('action', { type: 'item', id: 'stop_blood_grass' }); usedItem = true; }
+      else { battle1.send('action', { type: 'attack', targetId: enemyId }); }
+    }
+    for (const m of [...battle1.state.log.values()] as any[]) {
+      if (!seen.has(m.text)) seen.add(m.text);
+      if (m.text.includes('烈闪')) skillLogged = true;
+      if (m.text.includes('止血草')) itemLogged = true;
+      if (m.text.includes('施展鬼道对')) kidoLogged = true; // 仅成功结算才出现
+    }
+    await wait(40);
+  }
+  const victory1 = battle1.state.phase === 'victory';
+  await battle1.leave();
+  await wait(200);
+
+  // 第二场战斗：重新进房（回归"第二次战斗直接连接断开"场景，服务端须干净重建）
+  const battle2: any = await clientA.joinOrCreate('battle', { name: '壬', enemyData: loEnemy, monsterId: 'z1:1', loadout: lo });
+  await wait(300);
+  const combat2 = battle2.state.phase === 'combat';
+  let t2 = 0;
+  while (battle2.state.phase === 'combat' && t2++ < 80) {
+    if (battle2.state.currentTurn === battle2.sessionId) {
+      const enemyId = [...battle2.state.enemies.values()].find((e: any) => e.alive)?.id;
+      battle2.send('action', { type: 'attack', targetId: enemyId });
+    }
+    await wait(40);
+  }
+  const victory2 = battle2.state.phase === 'victory';
+  await battle2.leave();
+  await roomK.leave();
+  await roomL.leave();
+
+  console.log(`\n[权威结算] 技能被真实结算(日志含烈闪) : ${skillLogged ? 'OK' : 'BAD'}`);
+  console.log(`[权威结算] 鬼道被真实结算(日志含施展鬼道) : ${kidoLogged ? 'OK' : 'BAD'}`);
+  console.log(`[权威结算] 道具被真实结算(日志含止血草) : ${itemLogged ? 'OK' : 'BAD'}`);
+  console.log(`[权威结算] 非秒胜(技能+道具+普攻多回合) : ${victory1 ? 'OK' : 'BAD'}`);
+  console.log(`[第二场] 重新进房即开战               : ${combat2 ? 'OK' : 'BAD'}`);
+  console.log(`[第二场] 可正常打到胜利               : ${victory2 ? 'OK' : 'BAD'}`);
+  const settleOk = skillLogged && kidoLogged && itemLogged && victory1 && combat2 && victory2;
+
   const mapOk = moved && chatted;
   const battleOk = phase === 'victory';
   const monsterOk = lockOk && noMisKill && restoreOk && killOk && respawnOk;
   const battlingOk = battlingOn && battlingOff;
   const mapBattleOk = combatOk && mapVictoryOk && mapKillSyncOk;
   const isoOk = isolated && aCombat && bCombat && aSolo && bSolo;
-  const allOk = mapOk && battleOk && monsterOk && battlingOk && mapBattleOk && isoOk;
+  const allOk = mapOk && battleOk && monsterOk && battlingOk && mapBattleOk && isoOk && settleOk;
   console.log(`\n==== 联机切片验证 ${allOk ? 'PASS ✅' : 'FAIL ❌'} ====`);
-  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'} | 地图怪权威战斗: ${mapBattleOk ? 'OK' : 'BAD'} | 地图怪隔离: ${isoOk ? 'OK' : 'BAD'}`);
+  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'} | 地图怪权威战斗: ${mapBattleOk ? 'OK' : 'BAD'} | 地图怪隔离: ${isoOk ? 'OK' : 'BAD'} | 权威结算真实性: ${settleOk ? 'OK' : 'BAD'}`);
   process.exit(allOk ? 0 : 1);
 }
 

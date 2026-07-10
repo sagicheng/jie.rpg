@@ -10,6 +10,7 @@ import { SaveManager } from '../systems/SaveManager';
 import { ZONE_CONFIGS } from '../systems/Zones';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
+import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 import { getClient } from '../net/Net';
 
@@ -428,7 +429,7 @@ export class GameScene extends Phaser.Scene {
         this.scene.pause();
         if (this.gameRoom) {
           // 联机：进权威战斗房间（单人独占该怪，根除双杀双掉落）；真实怪数据传给服务端结算
-          this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, monsterId: en.id, playerName: GameState.playerName || '勇者' });
+          this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout() });
         } else {
           // 离线兜底：本地战斗
           this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
@@ -1020,8 +1021,17 @@ export class GameScene extends Phaser.Scene {
   private launchMultiBattle(): void {
     this.battleCooldown = 120;
     if (this.gameRoom) this.setBattling(true);
-    this.scene.launch('MultiBattleScene', { playerName: GameState.playerName || '勇者' });
+    this.scene.launch('MultiBattleScene', { playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout() });
     this.scene.pause();
+  }
+
+  /** 组装联机权威战斗的可用技能/鬼道/道具清单，传给战斗房间做权威校验。 */
+  private buildBattleLoadout() {
+    return {
+      skills: getAvailableSkills(GameState.zanpakuto, GameState.element, GameState.hasShikai, GameState.hasBankai, false, false, false).map((s) => s.name),
+      kidos: Kido.getActiveLearned(),
+      items: Inventory.items.filter((i) => i.type === 'consumable'),
+    };
   }
   
 

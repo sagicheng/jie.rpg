@@ -372,3 +372,18 @@ export const HELL_SKILLS: SkillData[] = [
   { name: '狱炎', mp: 60, power: 6.5, desc: '狱解·单体地狱业火', element: '无', phase: '卍解', damageType: 'magical', targetType: 'enemy' },
   { name: '冥府之门', mp: 75, power: 4.0, desc: '狱解·全体地狱吞噬', element: '无', phase: '卍解', damageType: 'magical', targetType: 'enemy-all' },
 ];
+
+/**
+ * 按技能名索引的汇总表（联机权威战斗服务端用）。技能名在全部刀谱中唯一。
+ * 服务端据此把客户端传来的 skillName 解析为真实伤害/治疗/控制数据，做权威结算。
+ */
+export const SKILL_BY_NAME: Record<string, SkillData> = (() => {
+  const m: Record<string, SkillData> = {};
+  const add = (list: SkillData[]) => { for (const s of list) if (!m[s.name]) m[s.name] = s; };
+  for (const s of Object.values(SHALLOW_SKILLS)) add([s]);
+  for (const list of Object.values(SHIKAI_SKILLS)) add(list);
+  for (const list of Object.values(BANKAI_SKILLS)) add(list);
+  add(HOLLOW_SKILLS);
+  add(HELL_SKILLS);
+  return m;
+})();
