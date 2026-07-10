@@ -149,15 +149,22 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.state.turnExpiresAt = 0;
   }
 
-  /** 超时：当前玩家未决策 → 自动进入防御并跳过其回合（推进到下一个行动者）。 */
+  /** 超时：当前玩家未决策 → 自动以普攻攻击首位置存活敌人（不进入防御）。 */
   private onTurnTimeout(): void {
     this.turnTimer = null;
     if (this.state.phase !== 'combat') return;
     const id = this.state.currentTurn;
     const p = id ? this.state.players.get(id) : undefined;
     if (!p || !p.alive) return;
-    this.defending.add(id);
-    this.logMsg('system', `${p.name} 决策超时，自动进入防御`);
+    this.defending.delete(id); // 视作行动：清除自身防御标记（与正常攻击一致）
+    const targetId = this.resolveTarget(undefined); // 无指定目标 → 首位置存活敌人
+    if (!targetId) { this.advanceTurn(); return; }
+    const e = this.state.enemies.get(targetId)!;
+    const r = calcDamage(p.atk, e.def, 1.0);
+    e.hp = Math.max(0, e.hp - r.damage);
+    this.logMsg('system', `${p.name} 决策超时，自动普攻 ${e.name} 造成 ${r.damage} 伤害${r.crit ? '（暴击！）' : ''}`);
+    if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+    if (this.checkVictory()) return;
     this.advanceTurn();
   }
 
