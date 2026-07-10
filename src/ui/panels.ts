@@ -16,6 +16,9 @@ import {
   getDecompReturn, doDecompose,
   getEnhanceLabel, getEnhanceGlow,
 } from '../systems/EnhanceSystem';
+import {
+  requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset,
+} from '../systems/WorldClient';
 
 // ═══════════════════════════════════════════
 // UI 面板（从 GameScene 抽取，scene 为 GameScene 实例）
@@ -268,6 +271,7 @@ export function showShikaiSelection(scene: GameScene): void {
   }
 
 export function openShop(scene: GameScene, _s: any[]): void {
+    if (scene.shopPanel) { scene.shopPanel.destroy(true); scene.shopPanel = null; }
     scene.isInDialogue = false; scene.pauseForMenu();
     const shopItems = _s;
     const cam = scene.cameras.main; const panel = scene.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2 - 30).setDepth(310);
@@ -283,10 +287,28 @@ export function openShop(scene: GameScene, _s: any[]): void {
       panel.add(scene.add.text(sx + 260, sy + 18, `${item.price} 金币`, { fontSize: '12px', color: '#ffcc44', padding: { y: 2 } }));
       const canBuy = GameState.gold >= item.price;
       const buyBtn = scene.add.text(sx + 300, sy + 8, '[购买]', { fontSize: '12px', color: canBuy ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true });
-      if (canBuy) { buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88')); buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44')); buyBtn.on('pointerdown', () => { GameState.gold -= item.price; const boughtItem = { id: item.id, name: item.name, type: 'equipment' as any, desc: item.desc || '', quantity: 1, slot: item.slot, stats: item.stats, quality: item.quality || 'white' }; Inventory.equip(boughtItem); GameState.recalcStats(); closeInventory(scene); scene.isInDialogue = false; scene.scene.get('UIScene').events.emit('updateStats'); const bn = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '购买了 ' + item.name + '  剩余金币: ' + GameState.gold, { fontSize: '16px', color: '#ffcc44', fontStyle: 'bold', backgroundColor: '#332200cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); scene.tweens.add({ targets: bn, alpha: 0, y: GAME_HEIGHT / 2 - 110, duration: 2500, onComplete: () => bn.destroy() }); }); }
+      if (canBuy) { buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88')); buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44')); buyBtn.on('pointerdown', () => {
+        scene.isInDialogue = false;
+        if (scene.gameRoom) {
+          // 联机：购买走服务端权威（购买后直接装备），金币由 worldSync 更新
+          if (!requestBuy(item.id)) return;
+          openShop(scene, shopItems); // 重渲染（金币显示随 worldSync 刷新）
+        } else {
+          if (GameState.gold < item.price) return;
+          GameState.gold -= item.price;
+          const boughtItem = { id: item.id, name: item.name, type: 'equipment' as any, desc: item.desc || '', quantity: 1, slot: item.slot, stats: item.stats, quality: item.quality || 'white' };
+          Inventory.equip(boughtItem);
+          GameState.recalcStats();
+          scene.scene.get('UIScene').events.emit('updateStats');
+          openShop(scene, shopItems);
+        }
+        const bn = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '购买了 ' + item.name, { fontSize: '16px', color: '#ffcc44', fontStyle: 'bold', backgroundColor: '#332200cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
+        scene.tweens.add({ targets: bn, alpha: 0, y: GAME_HEIGHT / 2 - 110, duration: 2500, onComplete: () => bn.destroy() });
+      }); }
       panel.add(buyBtn);
     });
-    const cb3 = scene.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cb3.on('pointerover', () => cb3.setColor('#ffaaaa')); cb3.on('pointerout', () => cb3.setColor('#ff6666')); cb3.on('pointerdown', () => { panel.destroy(true); scene.resumeFromMenu(); }); panel.add(cb3);
+    const cb3 = scene.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cb3.on('pointerover', () => cb3.setColor('#ffaaaa')); cb3.on('pointerout', () => cb3.setColor('#ff6666')); cb3.on('pointerdown', () => { panel.destroy(true); scene.shopPanel = null; scene.resumeFromMenu(); }); panel.add(cb3);
+    scene.shopPanel = panel;
   }
 
 export function toggleInventory(scene: GameScene): void { if (scene.inventoryPanel) { closeInventory(scene); return; } renderInventoryPanel(scene); }
@@ -325,10 +347,16 @@ export function renderInventoryPanel(scene: GameScene): void {
         // 点击卸下装备
         const slotZone = scene.add.zone(sx, sy, eW, eH).setOrigin(0, 0).setInteractive({ useHandCursor: true });
         slotZone.on('pointerdown', () => {
-          Inventory.unequip(s);
-          GameState.recalcStats();
-          closeInventory(scene); renderInventoryPanel(scene);
-          scene.scene.get('UIScene').events.emit('updateStats');
+          if (scene.gameRoom) {
+            if (!requestUnequip(s)) return;
+            closeInventory(scene); renderInventoryPanel(scene);
+            scene.scene.get('UIScene').events.emit('updateStats');
+          } else {
+            Inventory.unequip(s);
+            GameState.recalcStats();
+            closeInventory(scene); renderInventoryPanel(scene);
+            scene.scene.get('UIScene').events.emit('updateStats');
+          }
         });
         p.add(slotZone);
       } else { p.add(scene.add.text(sx + 8, sy + 24, '空', { fontSize: '12px', color: '#334455', padding: { y: 1 } })); }
@@ -355,10 +383,16 @@ export function renderInventoryPanel(scene: GameScene): void {
         ez.on('pointerover', () => { cd2.clear(); cd2.fillStyle(0x1a2a3a, 0.8); cd2.fillRoundedRect(ex, ey, ecardW, 48, 5); cd2.lineStyle(1, parseInt((qc[q] || '#666666').replace('#', ''), 16), 0.6); cd2.strokeRoundedRect(ex, ey, ecardW, 48, 5); });
         ez.on('pointerout', () => { cd2.clear(); cd2.fillStyle(0x0a0a1a, 0.7); cd2.fillRoundedRect(ex, ey, ecardW, 48, 5); cd2.lineStyle(1, parseInt((qc[q] || '#666666').replace('#', ''), 16), 0.4); cd2.strokeRoundedRect(ex, ey, ecardW, 48, 5); });
         ez.on('pointerdown', () => {
-          Inventory.equip(item);
-          GameState.recalcStats();
-          closeInventory(scene); renderInventoryPanel(scene);
-          scene.scene.get('UIScene').events.emit('updateStats');
+          if (scene.gameRoom) {
+            // 联机：穿戴走服务端权威，worldSync 刷新背包/装备面板（断连被拒时 WorldClient 已提示）
+            if (!requestEquip(item.id)) return;
+            closeInventory(scene); renderInventoryPanel(scene);
+          } else {
+            Inventory.equip(item);
+            GameState.recalcStats();
+            closeInventory(scene); renderInventoryPanel(scene);
+            scene.scene.get('UIScene').events.emit('updateStats');
+          }
         });
         p.add(ez);
       });
@@ -841,6 +875,11 @@ export function toggleEnhancePanel(scene: GameScene): void {
             btn.on('pointerover', () => btn.setColor('#ffaa66'));
             btn.on('pointerout', () => btn.setColor('#ff8844'));
             btn.on('pointerdown', () => {
+              if (scene.gameRoom) {
+                // 联机：强化走服务端权威（按 id 定位装备栏/背包），成功由 worldSync 刷新面板，结果由 intentResult 提示
+                if (!requestEnhance(item.id)) return;
+                return;
+              }
               const result = doEnhance(item);
               GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene);
               scene.scene.get('UIScene').events.emit('updateStats');
@@ -860,6 +899,11 @@ export function toggleEnhancePanel(scene: GameScene): void {
             btn.on('pointerover', () => btn.setColor('#66aaff'));
             btn.on('pointerout', () => btn.setColor('#4488ff'));
             btn.on('pointerdown', () => {
+              if (scene.gameRoom) {
+                // 联机：精炼走服务端权威（按 id 定位），成功由 worldSync 刷新面板
+                if (!requestRefine(item.id)) return;
+                return;
+              }
               const result = doRefine(item);
               GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene);
               scene.scene.get('UIScene').events.emit('updateStats');
@@ -870,7 +914,13 @@ export function toggleEnhancePanel(scene: GameScene): void {
           } else {
             p.add(scene.add.text(sx + 300, sy + 8, `${curSlots}/${maxSlots}槽已满`, { fontSize: '10px', color: '#888899', padding: { y: 1 } }));
             const btn = scene.add.text(sx + 420, sy + 4, '[ 重置 ]', { fontSize: '16px', color: '#cc8844', fontStyle: 'bold', padding: { x: 16, y: 8 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
-            btn.on('pointerdown', () => { doRefineReset(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats'); });
+            btn.on('pointerdown', () => {
+              if (scene.gameRoom) {
+                if (!requestRefineReset(item.id)) return;
+                return;
+              }
+              doRefineReset(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats');
+            });
             p.add(btn);
           }
         } else {
@@ -882,6 +932,11 @@ export function toggleEnhancePanel(scene: GameScene): void {
           btn.on('pointerover', () => btn.setColor('#aaffaa'));
           btn.on('pointerout', () => btn.setColor('#88cc44'));
           btn.on('pointerdown', () => {
+            if (scene.gameRoom) {
+              // 联机：分解走服务端权威（按 id 定位装备栏/背包），成功由 worldSync 刷新面板
+              if (!requestDecompose(item.id)) return;
+              return;
+            }
             const result = doDecompose(item);
             GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene);
             scene.scene.get('UIScene').events.emit('updateStats');
@@ -915,7 +970,10 @@ export function toggleEnhancePanel(scene: GameScene): void {
           const cost = getEnhanceCost(elv + 1, q); const rate = getEnhanceRate(elv + 1);
           p.add(scene.add.text(sx + 280, sy + 6, `${cost.gold}金 ${Math.round(rate * 100)}%`, { fontSize: '9px', color: '#888899', padding: { y: 1 } }));
           const btn = scene.add.text(sx + 400, sy + 4, '[ 强化 ]', { fontSize: '14px', color: '#ff8844', fontStyle: 'bold', padding: { x: 12, y: 6 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
-          btn.on('pointerdown', () => { const result = doEnhance(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats'); const n = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, result.message, { fontSize: '16px', color: result.success ? '#88ff88' : '#ff6666', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); scene.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() }); });
+          btn.on('pointerdown', () => {
+            if (scene.gameRoom) { if (!requestEnhance(item.id)) return; return; }
+            const result = doEnhance(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats'); const n = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, result.message, { fontSize: '16px', color: result.success ? '#88ff88' : '#ff6666', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); scene.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
+          });
           p.add(btn);
         } else if (scene.enhanceTab === 1) {
           const maxSlots = getRefineMaxSlots(q); const curSlots = (item as any).refineStats?.length || 0;
@@ -923,19 +981,31 @@ export function toggleEnhancePanel(scene: GameScene): void {
             const rc = getRefineCost(item);
             p.add(scene.add.text(sx + 280, sy + 6, `${rc.gold}金 ${curSlots}/${maxSlots}槽`, { fontSize: '9px', color: '#888899', padding: { y: 1 } }));
             const btn = scene.add.text(sx + 400, sy + 4, '[ 精炼 ]', { fontSize: '14px', color: '#4488ff', fontStyle: 'bold', padding: { x: 12, y: 6 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true });
-            btn.on('pointerdown', () => { const result = doRefine(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats'); const n = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, result.message, { fontSize: '16px', color: result.success ? '#88ccff' : '#ff6666', fontStyle: 'bold', backgroundColor: '#111122cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); scene.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() }); });
+            btn.on('pointerdown', () => {
+            if (scene.gameRoom) { if (!requestRefine(item.id)) return; return; }
+            const result = doRefine(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats'); const n = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, result.message, { fontSize: '16px', color: result.success ? '#88ccff' : '#ff6666', fontStyle: 'bold', backgroundColor: '#111122cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); scene.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
+          });
             p.add(btn);
           } else {
             p.add(scene.add.text(sx + 350, sy + 8, `${curSlots}/${maxSlots}满`, { fontSize: '10px', color: '#888899', padding: { y: 1 } }));
             const btn = scene.add.text(sx + 420, sy + 4, '[ 重置 ]', { fontSize: '14px', color: '#cc8844', fontStyle: 'bold', padding: { x: 12, y: 6 }, backgroundColor: '#33220088' }).setInteractive({ useHandCursor: true });
-            btn.on('pointerdown', () => { doRefineReset(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats'); });
+            btn.on('pointerdown', () => {
+              if (scene.gameRoom) {
+                if (!requestRefineReset(item.id)) return;
+                return;
+              }
+              doRefineReset(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats');
+            });
             p.add(btn);
           }
         } else if (scene.enhanceTab === 2) {
           const dr = getDecompReturn(item);
           p.add(scene.add.text(sx + 280, sy + 6, `${dr.gold}金 ${dr.materials.map(m => m.name + '×' + m.qty).join(',')}`, { fontSize: '8px', color: '#888899', padding: { y: 1 } }));
           const btn = scene.add.text(sx + 400, sy + 4, '[ 分解 ]', { fontSize: '14px', color: '#88cc44', fontStyle: 'bold', padding: { x: 12, y: 6 }, backgroundColor: '#11221188' }).setInteractive({ useHandCursor: true });
-          btn.on('pointerdown', () => { const result = doDecompose(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats'); const n = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, result.message, { fontSize: '16px', color: '#88cc44', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); scene.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() }); });
+          btn.on('pointerdown', () => {
+            if (scene.gameRoom) { if (!requestDecompose(item.id)) return; return; }
+            const result = doDecompose(item); GameState.recalcStats(); closeEnhancePanel(scene); toggleEnhancePanel(scene); scene.scene.get('UIScene').events.emit('updateStats'); const n = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, result.message, { fontSize: '16px', color: '#88cc44', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); scene.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
+          });
           p.add(btn);
         }
       });

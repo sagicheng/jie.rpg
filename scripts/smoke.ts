@@ -6,8 +6,11 @@
  * 跑法：先 npm run dev:server，另开终端 npm run smoke
  */
 import { Client } from 'colyseus.js';
+import { ZONE_CONFIGS } from '../src/systems/Zones';
+import { NODE_TO_MATERIAL } from '../src/data/materials';
 
 const ENDPOINT = 'ws://localhost:2567';
+const GW = 1920, GH = 1080;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
@@ -340,15 +343,91 @@ async function main() {
   console.log(`[数值] 1级角色不能2回合秒Boss   : ${noTwoShotOk ? 'OK' : 'BAD'} (bossHpAfter2=${bossHpAfter2})`);
   const numOk = groupOk && smallGroupOk && bossDmgOk && noTwoShotOk;
 
+  // ——— 9) 权威世界状态：进房即收到 worldSync（服务端单一真相源）———
+  const roomW: any = await clientA.joinOrCreate('game', { name: '世' });
+  let lastSync: any = null;
+  let lastResult: any = null;
+  roomW.onMessage('worldSync', (pw: any) => { lastSync = pw; });
+  roomW.onMessage('intentResult', (r: any) => { lastResult = r; });
+  await wait(400);
+  const wsInitOk = !!lastSync && Array.isArray(lastSync.inventory) && typeof lastSync.gold === 'number';
+  const startGold = lastSync ? lastSync.gold : -1;
+
+  // ——— 10) 采集走 intent：服务端校验坐标并下发 material（全状态权威）———
+  const z1 = ZONE_CONFIGS[1];
+  const gatherIdx = [0, 2, 4, 6]; // 3 个矿脉 + 1 个灵木（铁剑配方所需）
+  for (const idx of gatherIdx) {
+    const g = z1.gathering[idx];
+    const nx = Math.round(g.x * GW * 3), ny = Math.round(g.y * GH * 2);
+    roomW.send('intent', { op: 'gather', zone: 1, nodeIdx: idx, x: nx, y: ny });
+    await wait(250);
+  }
+  const ironOre = lastSync.inventory.filter((i: any) => i.name === '铁矿石').reduce((s: number, i: any) => s + (i.quantity || 0), 0);
+  const wood = lastSync.inventory.filter((i: any) => i.name === '灵木枝').reduce((s: number, i: any) => s + (i.quantity || 0), 0);
+  const gatherOk = ironOre >= 3 && wood >= 1;
+
+  // ——— 11) 制造走 intent：扣材料并产出装备（服务端权威）———
+  roomW.send('intent', { op: 'craft', recipeName: '铁剑' });
+  await wait(400);
+  const ironOreAfter = lastSync.inventory.filter((i: any) => i.name === '铁矿石').reduce((s: number, i: any) => s + (i.quantity || 0), 0);
+  const woodAfter = lastSync.inventory.filter((i: any) => i.name === '灵木枝').reduce((s: number, i: any) => s + (i.quantity || 0), 0);
+  const hasIronSword = lastSync.inventory.some((i: any) => i.name === '铁剑') || Object.values(lastSync.equipment).some((it: any) => it && it.name === '铁剑');
+  const craftOk = hasIronSword && ironOreAfter === 0 && woodAfter === 0;
+
+  // ——— 12) 商店购买走 intent：扣金币并直接装备（服务端权威）———
+  let buyItemId: string | null = null;
+  let buyItemName = '';
+  for (const cfg of Object.values(ZONE_CONFIGS)) {
+    for (const npc of cfg.npcs) {
+      if (npc.shop && npc.shop.length) { buyItemId = npc.shop[0].id; buyItemName = npc.shop[0].name; break; }
+    }
+    if (buyItemId) break;
+  }
+  const goldBeforeBuy = lastSync.gold;
+  let buyOk = false;
+  if (buyItemId) {
+    roomW.send('intent', { op: 'buy', itemId: buyItemId });
+    await wait(400);
+    const goldAfterBuy = lastSync.gold;
+    const boughtEquipped = Object.values(lastSync.equipment).some((it: any) => it && it.id === buyItemId);
+    buyOk = goldAfterBuy < goldBeforeBuy && boughtEquipped;
+  }
+
+  // ——— 13) 强化走 intent：服务端材料校验（无灵晶碎片应被拒，杜绝本地内存篡改）———
+  lastResult = null;
+  roomW.send('intent', { op: 'enhance', itemId: '铁剑' });
+  await wait(300);
+  const enhanceRejected = !!lastResult && lastResult.ok === false; // 缺材料被服务端拒绝
+
+  // ——— 14) 断连世界隔离：leave 后服务端清除权威世界，重连重新种子（无残留/被篡改状态）———
+  const goldBeforeLeave = lastSync ? lastSync.gold : -1;
+  await roomW.leave();
+  await wait(400);
+  const roomW2: any = await clientA.joinOrCreate('game', { name: '世2' });
+  let lastSync2: any = null;
+  roomW2.onMessage('worldSync', (pw: any) => { lastSync2 = pw; });
+  await wait(400);
+  const reseedOk = !!lastSync2 && lastSync2.gold === 200 && Array.isArray(lastSync2.inventory); // 重新种子 = 干净起始
+  await roomW2.leave();
+
+  console.log(`\n[权威世界] 进房即 worldSync          : ${wsInitOk ? 'OK' : 'BAD'}`);
+  console.log(`[权威世界] 采集走 intent(材料到账)   : ${gatherOk ? 'OK' : 'BAD'} (铁矿石=${ironOre}, 灵木枝=${wood})`);
+  console.log(`[权威世界] 制造走 intent(产出装备)   : ${craftOk ? 'OK' : 'BAD'} (铁剑=${hasIronSword})`);
+  console.log(`[权威世界] 购买走 intent(扣金+装备)  : ${buyOk ? 'OK' : 'BAD'}` + (buyItemName ? ` (${buyItemName})` : ' (无商店跳过)'));
+  console.log(`[权威世界] 强化受服务端材料校验       : ${enhanceRejected ? 'OK' : 'BAD'} (被拒=${enhanceRejected})`);
+  console.log(`[断连隔离] leave后重连重新种子       : ${reseedOk ? 'OK' : 'BAD'} (gold=${lastSync2?.gold})`);
+
+  const worldOk = wsInitOk && gatherOk && craftOk && buyOk && enhanceRejected && reseedOk;
+
   const mapOk = moved && chatted;
   const battleOk = phase === 'victory';
   const monsterOk = lockOk && noMisKill && restoreOk && killOk && respawnOk;
   const battlingOk = battlingOn && battlingOff;
   const mapBattleOk = combatOk && mapVictoryOk && mapKillSyncOk;
   const isoOk = isolated && aCombat && bCombat && aSolo && bSolo;
-  const allOk = mapOk && battleOk && monsterOk && battlingOk && mapBattleOk && isoOk && settleOk && numOk;
+  const allOk = mapOk && battleOk && monsterOk && battlingOk && mapBattleOk && isoOk && settleOk && numOk && worldOk;
   console.log(`\n==== 联机切片验证 ${allOk ? 'PASS ✅' : 'FAIL ❌'} ====`);
-  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'} | 地图怪权威战斗: ${mapBattleOk ? 'OK' : 'BAD'} | 地图怪隔离: ${isoOk ? 'OK' : 'BAD'} | 权威结算真实性: ${settleOk ? 'OK' : 'BAD'} | 怪组/数值: ${numOk ? 'OK' : 'BAD'}`);
+  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'} | 地图怪权威战斗: ${mapBattleOk ? 'OK' : 'BAD'} | 地图怪隔离: ${isoOk ? 'OK' : 'BAD'} | 权威结算真实性: ${settleOk ? 'OK' : 'BAD'} | 怪组/数值: ${numOk ? 'OK' : 'BAD'} | 权威世界状态: ${worldOk ? 'OK' : 'BAD'}`);
   process.exit(allOk ? 0 : 1);
 }
 

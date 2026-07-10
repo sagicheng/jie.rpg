@@ -9,6 +9,7 @@
 import { Room, Client } from '@colyseus/core';
 import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage } from '../schema';
 import { createEnemyData, calcDamage, calcMagicDamage, generateLoot } from '../../src/systems/BattleData';
+import { world } from '../world';
 import type { EnemyData } from '../../src/systems/BattleData';
 import { SKILL_BY_NAME, getSkillTargetType } from '../../src/systems/Skills';
 import { CONSUMABLES } from '../../src/systems/ConsumableSystem';
@@ -424,6 +425,18 @@ export class BattleRoom extends Room<BattleRoomState> {
     const loot = generateLoot(this.enemyDef.type, this.enemyDef.zone);
     const lootNames = loot.map((i) => i.name).join('、') || '无';
     this.logMsg('system', `胜利！获得战利品：${lootNames}`);
+    // 战利品 / 金币 / 经验 / 图鉴 写入权威世界状态（每位玩家各得一份），
+    // 客户端经 GameRoom.worldSync 到账；battleReward 携带增量供战斗报告显示。
+    this.clients.forEach((c: Client) => {
+      const pw = world.get(c.sessionId);
+      const exp = this.enemyDef.expReward || 0;
+      const gold = this.enemyDef.goldReward || 0;
+      world.grantLoot(pw, loot);
+      const leveled = world.gainExp(pw, exp) > 0;
+      world.addGold(pw, gold);
+      world.recordKill(pw, this.enemyDef.name);
+      c.send('battleReward', { exp, gold, loot: loot.map((i) => i.name), leveled });
+    });
     return true;
   }
 

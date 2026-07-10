@@ -4,6 +4,7 @@
  */
 import { Room, Client } from '@colyseus/core';
 import { GameRoomState, GamePlayer, ChatMessage, MonsterState } from '../schema';
+import { world, type OpResult } from '../world';
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
 
@@ -47,6 +48,39 @@ export class GameRoom extends Room<GameRoomState> {
 
     // 每秒检查死亡怪物的刷新时间（从战斗结束计时）
     this.clock.setInterval(() => this.tickRespawn(), 1000);
+
+    // —— 权威世界状态：内容操作意图（采集/拾取/买卖/制造/强化/任务/装备…）——
+    // 客户端只发"意图"，服务端校验并改写 WorldService 单一真相源，再 worldSync 回广播。
+    this.onMessage('intent', (client, data: any) => {
+      const sid = client.sessionId;
+      const pw = world.get(sid);
+      let res: OpResult = { ok: false, msg: '未知操作' };
+      switch (data?.op) {
+        case 'gather': res = world.gather(pw, Number(data.zone) | 0, Number(data.nodeIdx) | 0, Number(data.x) | 0, Number(data.y) | 0); break;
+        case 'addLoot': world.grantLoot(pw, Array.isArray(data.drops) ? data.drops : []); res = { ok: true, msg: 'loot' }; break;
+        case 'buy': res = world.buy(pw, String(data.itemId || '')); break;
+        case 'equip': res = world.equip(pw, String(data.itemId || '')); break;
+        case 'unequip': res = world.unequip(pw, String(data.slot || '') as any); break;
+        case 'questProgress': world.updateQuest(pw, String(data.type || ''), String(data.target || ''), Number(data.amount) || 1); res = { ok: true, msg: 'progress' }; break;
+        case 'claimQuest': res = world.claimQuest(pw, String(data.questId || '')); break;
+        case 'craft': res = world.craft(pw, String(data.recipeName || '')); break;
+        case 'enhance': res = world.enhance(pw, String(data.itemId || '')); break;
+        case 'refine': res = world.refine(pw, String(data.itemId || '')); break;
+        case 'decompose': res = world.decompose(pw, String(data.itemId || '')); break;
+        case 'refineReset': res = world.refineReset(pw, String(data.itemId || '')); break;
+      }
+      // 回执（即时提示）+ 权威状态同步
+      client.send('intentResult', res);
+      client.send('worldSync', pw);
+    });
+
+    // 每秒把各玩家权威世界状态同步给其本人（确保 BattleRoom 写入的战利品也能到账）
+    this.clock.setInterval(() => {
+      this.state.players.forEach((_p: any, sid: string) => {
+        const c = this.clients.find((x: Client) => x.sessionId === sid);
+        if (c) c.send('worldSync', world.get(sid));
+      });
+    }, 1000);
   }
 
   /** 取/建怪物状态（懒创建，仅在被锁/被杀时出现于 map）。 */
@@ -113,10 +147,13 @@ export class GameRoom extends Room<GameRoomState> {
     p.x = 400 + Math.random() * 200;
     p.y = 300 + Math.random() * 100;
     this.state.players.set(client.sessionId, p);
+    // 进房即下发权威世界状态（背包/装备/金币/任务…），客户端以服务端为准
+    client.send('worldSync', world.get(client.sessionId));
     this.broadcast('system', `${p.name} 进入了地图`);
   }
 
   onLeave(client: Client) {
+    world.remove(client.sessionId); // 断线清除权威世界状态（重新进房会重新种子）
     this.state.players.delete(client.sessionId);
     // 断线释放自己锁定的怪（防卡死）：失败离开=怪物立即复原
     this.state.monsters.forEach((m) => {

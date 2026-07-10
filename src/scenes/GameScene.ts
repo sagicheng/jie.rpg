@@ -12,8 +12,9 @@ import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
-import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
+import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 import { getClient } from '../net/Net';
+import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest } from '../systems/WorldClient';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -42,7 +43,8 @@ export class GameScene extends Phaser.Scene {
   private menuPauseDepth = 0;
 
   // ——— 联机（共享地图房间）———
-  private gameRoom: any = null;
+  /** 联机 game 房间连接（panels.ts 等 UI 模块据其判读走服务端权威或本地逻辑）。 */
+  public gameRoom: any = null;
   private mySessionId = '';
   private remotePlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; tag: Phaser.GameObjects.Text; tx: number; ty: number; name: string; title: string }> = new Map();
   private lastSent = { x: -9999, y: -9999, t: 0 };
@@ -72,7 +74,8 @@ export class GameScene extends Phaser.Scene {
   private titleTag: Phaser.GameObjects.Text | null = null;
   private nameTag: Phaser.GameObjects.Text | null = null;
   public bestiaryDetailContainer: Phaser.GameObjects.Container | null = null;
-  private shopPanel: Phaser.GameObjects.Container | null = null;
+  public shopPanel: Phaser.GameObjects.Container | null = null;
+  private lastShopItems: any[] = [];
   public namingPanelActive = false;
 
   constructor() {
@@ -284,6 +287,7 @@ export class GameScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.gameRoom) { this.gameRoom.leave(); this.gameRoom = null; }
+      setActiveRoom(null);
       this.clearRemotePlayers();
     });
 
@@ -497,7 +501,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** 联机权威战斗（地图怪）结束桥接：MultiBattleScene 在 victory/defeat 时调用，复用单机奖励逻辑并回写怪物状态机。 */
-  onMultiBattleEnd(result: string, monsterId: string, enemyData: any): void {
+  /**
+   * 联机权威战斗（地图怪）结束桥接：MultiBattleScene 在 victory/defeat 时调用。
+   * 奖励来自服务端权威世界（gold/exp/loot/bestiary 由 BattleRoom 写入，经 worldSync 到账），
+   * reward 仅用于战斗报告显示；本地不再重复发放，杜绝与服务端双写。
+   */
+  onMultiBattleEnd(result: string, monsterId: string, enemyData: any, reward?: { exp: number; gold: number; loot: string[]; leveled: boolean }): void {
     if (result === 'defeat' || result === 'fled') {
       // 失败/逃脱：回城 + 怪物立即复原（对所有人可见）
       this.player.x = 400; this.player.y = 500;
@@ -510,15 +519,8 @@ export class GameScene extends Phaser.Scene {
       const en = this.enemies.find(e => e.id === monsterId);
       const data: EnemyData = enemyData;
       const ib = data.type === '妖将' || data.type === '妖王';
-      const expGain = data.expReward || 0;
-      const goldGain = data.goldReward || 0;
-      const leveled = GameState.gainExp(expGain);
-      GameState.gold += goldGain;
-      GameState.recordKill(data.name);
+      // 任务进度（客户端活动任务 UI 跟踪，不影响服务端权威）
       GameState.updateQuestProgress('kill', data.name);
-      const loot = generateLoot(data.type, GameState.zone);
-      const lootNames: string[] = [];
-      for (const drop of loot) { Inventory.addItem(drop as any); lootNames.push(drop.name); }
       if (en) this.removeMonster(en);
       if (this.gameRoom) {
         // 联机：通知服务端本怪物被击杀，按刷新时长从战斗结束计时后重新出现（共享怪物·玩家间争夺）
@@ -528,6 +530,11 @@ export class GameScene extends Phaser.Scene {
         const d = ib ? 7200000 : data.type === '恶妖' ? 300000 : 30000;
         en.respawnTimer = this.time.delayedCall(d, () => this.restoreMonster(en));
       }
+      // 奖励数据来自服务端下发（gold/exp/loot/bestiary 已由 worldSync 写入 GameState）
+      const expGain = reward?.exp ?? 0;
+      const goldGain = reward?.gold ?? 0;
+      const lootNames = reward?.loot ?? [];
+      const leveled = reward?.leveled ?? false;
       this.pendingBattleReport = { exp: expGain, gold: goldGain, loot: lootNames, leveled, defeat: false };
       this.scene.get('UIScene').events.emit('updateStats');
     }
@@ -671,7 +678,7 @@ export class GameScene extends Phaser.Scene {
           line.choices = d.choices.map(ch => ({
             text: ch.text,
             callback: () => {
-              if (ch.callback === 'openShop') openShop(this, c.shop || []);
+              if (ch.callback === 'openShop') this.openShopPanel(c.shop || []);
               else if (ch.callback === 'acceptQuest') this.acceptQuestFromNPC(c.name);
               else if (ch.callback === 'completeQuest') this.completeQuestFromNPC(c.name);
               else if (ch.callback === 'closeDialogue') this.isInDialogue = false;
@@ -768,11 +775,21 @@ export class GameScene extends Phaser.Scene {
   private checkGatherProximity(): void {
     if (this.isInDialogue) return;
     for (const pt of this.gatherPoints) {
+      const idx = this.gatherPoints.indexOf(pt);
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, pt.sprite.x, pt.sprite.y);
       if (dist < 55 && Phaser.Input.Keyboard.JustDown(this.interactKey)) {
+        // 客户端活动任务进度（UI 用，两种模式都更新）
+        GameState.updateQuestProgress('collect', pt.type, 1);
+        if (this.gameRoom) {
+          // 联机：采集走服务端权威，背包/节点隐藏由 worldSync 下发，反馈由 intentResult
+          if (!requestGather(GameState.zone, idx, Math.round(this.player.x), Math.round(this.player.y))) return;
+          this.isInDialogue = true;
+          this.time.delayedCall(300, () => { this.isInDialogue = false; });
+          return;
+        }
+        // 单机：本地采集
         this.isInDialogue = true;
         const matName = NODE_TO_MATERIAL[pt.type] || pt.type;
-        GameState.updateQuestProgress('collect', pt.type, 1);
         Inventory.addItem({ id: matId(matName), name: matName, type: 'material', desc: '\u91ce\u5916\u91c7\u96c6\u83b7\u5f97', quantity: 1 });
         pt.sprite.setVisible(false); pt.label.setVisible(false);
         this.time.delayedCall(30000, () => { pt.sprite.setVisible(true); pt.label.setVisible(true); });
@@ -844,7 +861,14 @@ export class GameScene extends Phaser.Scene {
       this.dialogueBox.show({ speaker: npcName, text: `任务还未完成。\n${GameState.getQuestTrackText()}` }, () => { this.isInDialogue = false; });
       return;
     }
-    GameState.completeQuest(q.id);
+    GameState.completeQuest(q.id); // 标记完成、清理活动任务（UI 需要）
+    if (this.gameRoom) {
+      // 联机：奖励由服务端权威发放（worldSync 到账），反馈由 intentResult 显示
+      requestClaimQuest(q.id);
+      this.dialogueBox.show({ speaker: npcName, text: `任务完成：${q.name}\n奖励将稍后到账` }, () => { this.isInDialogue = false; this.tryAutoStartNextQuest(); });
+      return;
+    }
+    // 单机：本地发放奖励
     let msg = `任务完成：${q.name}`;
     if (q.rewards.gold) { GameState.gold += q.rewards.gold; msg += `\n金币+${q.rewards.gold}`; }
     if (q.rewards.exp) { const lv = GameState.gainExp(q.rewards.exp); msg += `\n经验+${q.rewards.exp}`; if (lv) msg += `\n★升级！Lv.${GameState.level}`; }
@@ -891,7 +915,18 @@ export class GameScene extends Phaser.Scene {
   
 
   private openReturn(): void { this.isInDialogue = false; this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-300, -150, 600, 300, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-300, -150, 600, 300, 12); panel.add(bg); panel.add(this.add.text(0, -110, '传送', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); GameState.discoveredZones.forEach((z, i2) => { const rz = ZONE_NAMES[z] || '???'; const btn = this.add.text(-200 + (i2 % 3) * 200, -60 + Math.floor(i2 / 3) * 50, rz, { fontSize: '14px', color: '#88ccff', padding: { x: 12, y: 6 }, backgroundColor: '#11224488' }).setInteractive({ useHandCursor: true }); btn.on('pointerover', () => btn.setColor('#aaddff')); btn.on('pointerout', () => btn.setColor('#88ccff')); btn.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); const tcfg = ZONE_CONFIGS[z] || ZONE_CONFIGS[1]; const rp = tcfg.npcs.find((n: any) => n.role === 'return_point'); const tx = (rp ? rp.x : 0.5) * GAME_WIDTH * 3; const ty = (rp ? rp.y : 0.5) * GAME_HEIGHT * 2; this.transitionToZone(z, tx, ty); }); panel.add(btn); }); const cl4 = this.add.text(280, -130, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl4.on('pointerover', () => cl4.setColor('#ffaaaa')); cl4.on('pointerout', () => cl4.setColor('#ff6666')); cl4.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl4); }
-  private openCraft(): void { this.isInDialogue = false; this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-350, -200, 700, 400, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-350, -200, 700, 400, 12); panel.add(bg); panel.add(this.add.text(0, -160, '制造', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); panel.add(this.add.text(0, -120, '收集材料来制造装备', { fontSize: '14px', color: '#888899', padding: { y: 2 } }).setOrigin(0.5)); const recipes = [{ name: '铁剑', cost: { '\u94c1\u77ff\u77f3': 3, '\u7075\u6728\u679d': 1 } }, { name: '铁甲', cost: { '\u94c1\u77ff\u77f3': 5, '\u9ebb\u5e03\u7247': 2 } }, { name: '铁手甲', cost: { '\u94c1\u77ff\u77f3': 2, '\u7075\u6728\u679d': 1 } }]; recipes.forEach((r, i2) => { const ry = -70 + i2 * 60; panel.add(this.add.text(-300, ry, r.name, { fontSize: '16px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } })); const costs = Object.entries(r.cost).map(([k, v]) => { const owned = Inventory.items.find(i2 => i2.name === k)?.quantity || 0; return `${k}: ${owned}/${v}`; }).join('  '); panel.add(this.add.text(-100, ry + 4, costs, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } })); const canCraft = Object.entries(r.cost).every(([k, v]) => (Inventory.items.find(i2 => i2.name === k)?.quantity || 0) >= v); const btn2 = this.add.text(200, ry - 2, '[制造]', { fontSize: '14px', color: canCraft ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 10, y: 6 }, backgroundColor: canCraft ? '#11221188' : '#11111188' }).setInteractive({ useHandCursor: true }); if (canCraft) { btn2.on('pointerover', () => btn2.setColor('#88ff88')); btn2.on('pointerout', () => btn2.setColor('#44cc44')); btn2.on('pointerdown', () => { Object.entries(r.cost).forEach(([k, v]) => { const it = Inventory.items.find(i2 => i2.name === k); if (it) it.quantity = Math.max(0, (it.quantity || 0) - v); }); Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green' }); panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats'); const cn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, `制造成功：${r.name}`, { fontSize: '16px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400); this.tweens.add({ targets: cn, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => cn.destroy() }); }); } panel.add(btn2); }); const cl5 = this.add.text(330, -180, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl5.on('pointerover', () => cl5.setColor('#ffaaaa')); cl5.on('pointerout', () => cl5.setColor('#ff6666')); cl5.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl5); }
+  private openCraft(): void { this.isInDialogue = false; this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-350, -200, 700, 400, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-350, -200, 700, 400, 12); panel.add(bg); panel.add(this.add.text(0, -160, '制造', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); panel.add(this.add.text(0, -120, '收集材料来制造装备', { fontSize: '14px', color: '#888899', padding: { y: 2 } }).setOrigin(0.5)); const recipes = [{ name: '铁剑', cost: { '\u94c1\u77ff\u77f3': 3, '\u7075\u6728\u679d': 1 } }, { name: '铁甲', cost: { '\u94c1\u77ff\u77f3': 5, '\u9ebb\u5e03\u7247': 2 } }, { name: '铁手甲', cost: { '\u94c1\u77ff\u77f3': 2, '\u7075\u6728\u679d': 1 } }]; recipes.forEach((r, i2) => { const ry = -70 + i2 * 60; panel.add(this.add.text(-300, ry, r.name, { fontSize: '16px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } })); const costs = Object.entries(r.cost).map(([k, v]) => { const owned = Inventory.items.find(i2 => i2.name === k)?.quantity || 0; return `${k}: ${owned}/${v}`; }).join('  '); panel.add(this.add.text(-100, ry + 4, costs, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } })); const canCraft = Object.entries(r.cost).every(([k, v]) => (Inventory.items.find(i2 => i2.name === k)?.quantity || 0) >= v); const btn2 = this.add.text(200, ry - 2, '[制造]', { fontSize: '14px', color: canCraft ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 10, y: 6 }, backgroundColor: canCraft ? '#11221188' : '#11111188' }).setInteractive({ useHandCursor: true }); if (canCraft) { btn2.on('pointerover', () => btn2.setColor('#88ff88')); btn2.on('pointerout', () => btn2.setColor('#44cc44')); btn2.on('pointerdown', () => {
+  if (this.gameRoom) {
+    // 联机：制造走服务端权威（扣材料/产装备），成功由 worldSync 刷新背包，结果由 intentResult 提示
+    if (!requestCraft(r.name)) return;
+    panel.destroy(true); this.openCraft(); return;
+  }
+  Object.entries(r.cost).forEach(([k, v]) => { const it = Inventory.items.find(i2 => i2.name === k); if (it) it.quantity = Math.max(0, (it.quantity || 0) - v); });
+  Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green' });
+  panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats');
+  const cn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, `制造成功：${r.name}`, { fontSize: '16px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
+  this.tweens.add({ targets: cn, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => cn.destroy() });
+}); } panel.add(btn2); }); const cl5 = this.add.text(330, -180, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl5.on('pointerover', () => cl5.setColor('#ffaaaa')); cl5.on('pointerout', () => cl5.setColor('#ff6666')); cl5.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl5); }
   // TODO(待实现): 铁匠剧情 — 设计文档规划未实现，此为对话回调入口桩，保留以防入口丢失
   
 
@@ -936,6 +971,7 @@ export class GameScene extends Phaser.Scene {
   // ════════════════ 联机：共享地图房间 ════════════════
   private connectGameRoom(): void {
     if (this.gameRoom) return;
+    setDisconnectNotifier((msg: string) => this.showWorldNotif(msg, false));
     getClient().joinOrCreate('game', {
       name: GameState.playerName || '玩家',
       title: GameState.getActiveTitleDef()?.name ?? '',
@@ -943,16 +979,59 @@ export class GameScene extends Phaser.Scene {
       .then((room: any) => {
         this.gameRoom = room;
         this.mySessionId = room.sessionId;
+        setActiveRoom(room);
         // 进房即上报一次当前坐标，让其他客户端立刻看到自己
         room.send('move', { x: Math.round(this.player.x), y: Math.round(this.player.y) });
         room.onStateChange(() => this.syncRemotePlayers());
+        // 权威世界状态同步：服务端单一真相源，全量 reconcile 进本地缓存
+        room.onMessage('worldSync', (pw: any) => applyWorldSync(this, pw));
+        // 意图回执：即时反馈（获得/购买/强化结果等）
+        room.onMessage('intentResult', (res: any) => this.onIntentResult(res));
         // 共享怪物隐藏/恢复由每帧 pruneSharedMonsters 依据服务端状态机同步，无需 onAdd 钩子。
-        room.onLeave(() => this.clearRemotePlayers());
+        room.onLeave(() => { this.clearRemotePlayers(); setActiveRoom(null); });
         // 服务端 broadcast('system', ...) 的系统提示（进入地图等），客户端暂无需特殊处理，注册空处理器消除告警。
         room.onMessage('system', () => {});
         room.onError((code: number, msg: string) => console.warn('[game] 房间错误', code, msg));
       })
       .catch((e: any) => console.warn('[game] 联机房间连接失败，单机模式继续', e));
+  }
+
+  /** 意图回执提示（服务端权威操作结果）。 */
+  private onIntentResult(res: any): void {
+    if (!res) return;
+    this.showWorldNotif(res.msg || (res.ok ? '操作成功' : '操作失败'), !!res.ok);
+  }
+
+  /** 通用世界提示（断连封锁/意图结果）。 */
+  public showWorldNotif(msg: string, ok: boolean): void {
+    const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, msg, {
+      fontSize: '16px', color: ok ? '#88ff88' : '#ff6666', fontStyle: 'bold',
+      backgroundColor: '#112211cc', padding: { x: 16, y: 8 },
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
+    this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
+  }
+
+  /** 称号解锁播报（worldSync 后 evaluateTitleUnlocks 触发）。 */
+  public showTitleUnlockNotif(titles: string[]): void {
+    const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 100, '解锁称号：' + titles.join('、'), {
+      fontSize: '16px', color: '#ffd9a0', fontStyle: 'bold',
+      backgroundColor: '#221a11cc', padding: { x: 16, y: 8 },
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
+    this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 130, duration: 2500, onComplete: () => n.destroy() });
+  }
+
+  /** 刷新当前打开的面板（worldSync 实时同步背包/金币/装备）。 */
+  public refreshOpenPanels(): void {
+    if (this.inventoryPanel) { closeInventory(this); renderInventoryPanel(this); }
+    if (this.statPanel) { closeStatPanel(this); renderStatPanel(this); }
+    if (this.enhancePanel) { closeEnhancePanel(this); toggleEnhancePanel(this); }
+    if (this.shopPanel && this.lastShopItems) { openShop(this, this.lastShopItems); }
+  }
+
+  /** 打开商店并记录数据，便于 worldSync 后自动重渲染。 */
+  public openShopPanel(shop: any[]): void {
+    this.lastShopItems = shop;
+    openShop(this, shop);
   }
 
   /** 装备/卸下称号时，把最新称号广播给同房间的其他玩家（实时同步）。 */
@@ -979,7 +1058,7 @@ export class GameScene extends Phaser.Scene {
           stroke: '#000000', strokeThickness: 3,
           backgroundColor: '#00000066', padding: { x: 5, y: 2 },
           align: 'center',
-        }).setOrigin(0.5, 1).setDepth(900);
+        }).setOrigin(0.5, 1).setDepth(50);
         rp = { sprite, tag, tx: p.x, ty: p.y, name: '', title: '' };
         this.remotePlayers.set(sid, rp);
       }
