@@ -36,7 +36,7 @@ async function main() {
   await roomB.leave();
 
   // ——— 2) 权威战斗：组队打怪打到胜利 ———
-  const battleA = await clientA.joinOrCreate('battle', { name: '甲' });
+  const battleA = await clientA.joinOrCreate('battle', { name: '甲', monsterId: '' });
 
   const drive = (room: any) => (s: any) => {
     if (s.phase !== 'combat') return;
@@ -48,7 +48,7 @@ async function main() {
   // 先注册 A 的驱动，确保能捕获"第2人加入→自动开局"那一刻的 combat 状态变更
   battleA.onStateChange(drive(battleA));
 
-  const battleB = await clientB.joinOrCreate('battle', { name: '乙' });
+  const battleB = await clientB.joinOrCreate('battle', { name: '乙', monsterId: '' });
   battleB.onStateChange(drive(battleB)); // 第2人加入触发自动开局
 
   const phase = await new Promise<string>((resolve) => {
@@ -127,13 +127,81 @@ async function main() {
   console.log(`[战斗] 进入战斗广播 battling : ${battlingOn ? 'OK' : 'BAD'}`);
   console.log(`[战斗] 退出战斗清除 battling : ${battlingOff ? 'OK' : 'BAD'}`);
 
+  // ——— 5) 地图怪权威战斗：battle 房间单人权威结算胜利 → 回写 game 房间 killMonster 广播给另一玩家 ———
+  const roomG = await clientA.joinOrCreate('game', { name: '戊' });
+  const roomH = await clientB.joinOrCreate('game', { name: '己' });
+  await wait(200);
+
+  const realEnemy = {
+    name: '测试妖', type: '杂妖', element: '火', zone: 1,
+    hp: 60, maxHp: 60, atk: 20, def: 10, matk: 15, mdef: 8, spd: 10, statusRes: 0,
+    skills: [{ name: '撞击', power: 1, desc: '', damageType: 'physical' }],
+    expReward: 30, goldReward: 20, drops: [],
+  };
+
+  // 甲锁定怪物（模拟 GameScene.checkEnemyCollision 的 enterBattle）
+  await roomG.send('enterBattle', { id: 'z1:0' });
+  await wait(150);
+
+  // 甲进 battle 房间（map 模式，携带真实怪）→ 服务端单人立即开战（权威结算）
+  const mb: any = await clientA.joinOrCreate('battle', { name: '戊', enemyData: realEnemy, monsterId: 'z1:0' });
+  await wait(300);
+  const combatOk = mb.state.phase === 'combat';
+
+  // 甲连续普攻直到胜利（模拟玩家回合发 intent）
+  let g = 0;
+  while (mb.state.phase === 'combat' && g++ < 60) {
+    if (mb.state.currentTurn === mb.sessionId) mb.send('action', { type: 'attack' });
+    await wait(50);
+  }
+  const mapVictoryOk = mb.state.phase === 'victory';
+
+  // 模拟 GameScene.onMultiBattleEnd 胜利回写：game 房间 killMonster（乙应收到 dead）
+  roomG.send('killMonster', { id: 'z1:0', respawnMs: 30000 });
+  await wait(200);
+  const m5 = mon(roomH, 'z1:0');
+  const mapKillSyncOk = !!m5 && m5.state === 'dead';
+
+  await mb.leave();
+  await roomG.leave();
+  await roomH.leave();
+
+  console.log(`\n[地图怪权威] 单人进房即开战 : ${combatOk ? 'OK' : 'BAD'}`);
+  console.log(`[地图怪权威] 权威结算到胜利   : ${mapVictoryOk ? 'OK' : 'BAD'}`);
+  console.log(`[地图怪权威] 胜利回写kill同步 : ${mapKillSyncOk ? 'OK' : 'BAD'}`);
+
+  // ——— 6) 地图怪隔离：A 碰怪1 / B 碰怪2 必须各自独立房，绝不组队打同一只（修复"被拉进同一场"bug）———
+  const roomI = await clientA.joinOrCreate('game', { name: '庚' });
+  const roomJ = await clientB.joinOrCreate('game', { name: '辛' });
+  await wait(200);
+
+  const ba: any = await clientA.joinOrCreate('battle', { name: '庚', enemyData: realEnemy, monsterId: 'z1:0' });
+  const bb: any = await clientB.joinOrCreate('battle', { name: '辛', enemyData: realEnemy, monsterId: 'z2:0' });
+  await wait(300);
+
+  const isolated = ba.roomId !== bb.roomId;
+  const aCombat = ba.state.phase === 'combat';
+  const bCombat = bb.state.phase === 'combat';
+  const aSolo = ba.state.players.size === 1 && !ba.state.players.has(bb.sessionId);
+  const bSolo = bb.state.players.size === 1 && !bb.state.players.has(ba.sessionId);
+
+  await ba.leave();
+  await bb.leave();
+  await roomI.leave();
+  await roomJ.leave();
+
+  console.log(`\n[隔离] A怪1/B怪2 房间独立 : ${isolated && aCombat && bCombat ? 'OK' : 'BAD'}`);
+  console.log(`[隔离] 互不混入对方战斗   : ${aSolo && bSolo ? 'OK' : 'BAD'}`);
+
   const mapOk = moved && chatted;
   const battleOk = phase === 'victory';
   const monsterOk = lockOk && noMisKill && restoreOk && killOk && respawnOk;
   const battlingOk = battlingOn && battlingOff;
-  const allOk = mapOk && battleOk && monsterOk && battlingOk;
+  const mapBattleOk = combatOk && mapVictoryOk && mapKillSyncOk;
+  const isoOk = isolated && aCombat && bCombat && aSolo && bSolo;
+  const allOk = mapOk && battleOk && monsterOk && battlingOk && mapBattleOk && isoOk;
   console.log(`\n==== 联机切片验证 ${allOk ? 'PASS ✅' : 'FAIL ❌'} ====`);
-  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'}`);
+  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'} | 地图怪权威战斗: ${mapBattleOk ? 'OK' : 'BAD'} | 地图怪隔离: ${isoOk ? 'OK' : 'BAD'}`);
   process.exit(allOk ? 0 : 1);
 }
 

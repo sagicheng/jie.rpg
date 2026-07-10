@@ -12,18 +12,22 @@ import { createEnemyData, calcDamage, calcMagicDamage, generateLoot } from '../.
 import type { EnemyData } from '../../src/systems/BattleData';
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
-const BASE_PLAYER = { hp: 220, atk: 42, def: 18, matk: 36, mdef: 16, spd: 12 };
+const BASE_PLAYER = { hp: 220, atk: 42, def: 18, matk: 36, mdef: 16, spd: 12, mp: 120, maxMp: 120 };
 
 export class BattleRoom extends Room<BattleRoomState> {
   private enemyDef!: EnemyData;
+  /** 本回合处于防御姿态的玩家 sessionId 集合（防御只减伤一次敌人攻击） */
+  private defending: Set<string> = new Set();
 
-  onCreate() {
+  onCreate(options: { monsterId?: string }) {
+    // matchmaking：按 monsterId 隔离房间（地图怪各自独立，V键组队统一 ''）
+    this.setMetadata({ monsterId: options.monsterId ?? '' });
     this.setState(new BattleRoomState());
     this.onMessage('startbattle', () => this.tryBeginCombat());
     this.onMessage('action', (client, data: { type?: string; targetId?: string }) => this.handleAction(client, data));
   }
 
-  onJoin(client: Client, options: { name?: string }) {
+  onJoin(client: Client, options: { name?: string; enemyData?: any; monsterId?: string }) {
     const p = new CombatPlayer();
     p.sessionId = client.sessionId;
     p.name = (options?.name ?? '勇者').slice(0, 16);
@@ -35,11 +39,19 @@ export class BattleRoom extends Room<BattleRoomState> {
     p.matk = BASE_PLAYER.matk;
     p.mdef = BASE_PLAYER.mdef;
     p.spd = BASE_PLAYER.spd;
+    p.mp = BASE_PLAYER.mp;
+    p.maxMp = BASE_PLAYER.maxMp;
     p.alive = true;
     this.state.players.set(client.sessionId, p);
     this.logMsg('system', `${p.name} 加入了战斗`);
 
-    // 组队满 2 人自动开局（切片验证用；单人可发 startbattle 主动开战）
+    // 地图怪遭遇战：携带真实怪数据 → 单人立即开战（权威结算，根除双杀双掉落）
+    if (options?.enemyData && options.enemyData.name) {
+      this.enemyDef = options.enemyData as EnemyData;
+      this.tryBeginCombat();
+      return;
+    }
+    // V键组队：满 2 人自动开局（单人可发 startbattle 主动开战，见 MultiBattleScene）
     if (this.state.phase === 'waiting' && this.state.players.size >= 2) {
       this.tryBeginCombat();
     }
@@ -56,7 +68,8 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (this.state.phase !== 'waiting') return;
     if (this.state.players.size < 1) return;
 
-    const ed = createEnemyData('虚', '杂妖', '火', 2);
+    // 地图怪模式：onJoin 已设置 this.enemyDef（真实怪）；V键组队：仍用虚怪
+    const ed: EnemyData = this.enemyDef && this.enemyDef.name ? this.enemyDef : createEnemyData('虚', '杂妖', '火', 2);
     this.enemyDef = ed;
 
     const e = new CombatEnemy();
@@ -93,25 +106,78 @@ export class BattleRoom extends Room<BattleRoomState> {
     const p = this.state.players.get(client.sessionId);
     if (!p || !p.alive) return;
 
-    const targetId = (data.targetId && this.state.enemies.has(data.targetId) && this.state.enemies.get(data.targetId)!.alive)
-      ? data.targetId
-      : this.firstAliveEnemy();
-    if (!targetId) return;
+    // 防御只持续一轮：玩家再次行动时清除自身防御标记（覆盖中间的敌人回合）
+    this.defending.delete(client.sessionId);
 
-    const e = this.state.enemies.get(targetId)!;
-    const isSkill = data.type === 'skill';
-    const r = isSkill ? calcMagicDamage(p.matk, e.mdef, 1.3) : calcDamage(p.atk, e.def, 1.0);
-    const dmg = r.damage;
-    e.hp = Math.max(0, e.hp - dmg);
-
-    this.logMsg(p.name, `${p.name} 使用${isSkill ? '鬼道' : '斩击'}对 ${e.name} 造成 ${dmg} 伤害${r.crit ? '（暴击！）' : ''}`);
-
-    if (e.hp <= 0) {
-      e.alive = false;
-      this.logMsg('system', `${e.name} 被击败！`);
-      if (this.checkVictory()) return;
+    // 攻击 / 斩魄刀技能：物理伤害
+    if (data.type === 'attack' || data.type === 'skill') {
+      const targetId = this.resolveTarget(data.targetId);
+      if (!targetId) return;
+      const e = this.state.enemies.get(targetId)!;
+      const r = calcDamage(p.atk, e.def, 1.0);
+      e.hp = Math.max(0, e.hp - r.damage);
+      this.logMsg(p.name, `${p.name} 使用${data.type === 'attack' ? '斩击' : '技能'}对 ${e.name} 造成 ${r.damage} 伤害${r.crit ? '（暴击！）' : ''}`);
+      if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); if (this.checkVictory()) return; }
+      this.advanceTurn();
+      return;
     }
-    this.advanceTurn();
+
+    // 鬼道：魔法伤害（耗蓝）
+    if (data.type === 'kido') {
+      if (p.mp < 15) { this.logMsg('system', '灵力不足，无法施展鬼道'); return; }
+      const targetId = this.resolveTarget(data.targetId);
+      if (!targetId) return;
+      const e = this.state.enemies.get(targetId)!;
+      p.mp = Math.max(0, p.mp - 15);
+      const r = calcMagicDamage(p.matk, e.mdef, 1.3);
+      e.hp = Math.max(0, e.hp - r.damage);
+      this.logMsg(p.name, `${p.name} 施展鬼道对 ${e.name} 造成 ${r.damage} 伤害${r.crit ? '（暴击！）' : ''}`);
+      if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); if (this.checkVictory()) return; }
+      this.advanceTurn();
+      return;
+    }
+
+    // 道具：回复 HP/MP（服务端无背包，统一基础回复）
+    if (data.type === 'item') {
+      const healHp = Math.round(p.maxHp * 0.4);
+      const healMp = Math.round(p.maxMp * 0.4);
+      p.hp = Math.min(p.maxHp, p.hp + healHp);
+      p.mp = Math.min(p.maxMp, p.mp + healMp);
+      this.logMsg(p.name, `${p.name} 使用道具，回复 HP${healHp} / MP${healMp}`);
+      this.advanceTurn();
+      return;
+    }
+
+    // 防御：减伤下一次受到的敌人伤害
+    if (data.type === 'defend') {
+      this.defending.add(client.sessionId);
+      this.logMsg(p.name, `${p.name} 进入防御姿态（下次受伤减伤）`);
+      this.advanceTurn();
+      return;
+    }
+
+    // 逃跑：按速度差算概率，成功则脱离战斗
+    if (data.type === 'escape') {
+      const aliveEnemies = [...this.state.enemies.values()].filter((e) => e.alive);
+      const avgSpd = aliveEnemies.length ? aliveEnemies.reduce((s, e) => s + e.spd, 0) / aliveEnemies.length : 0;
+      let rate = 0.5 + (p.spd - avgSpd) * 0.03;
+      rate = Math.max(0.1, Math.min(0.95, rate));
+      if (Math.random() < rate) {
+        this.state.phase = 'fled';
+        this.state.winner = 'escape';
+        this.logMsg('system', `${p.name} 成功逃脱！`);
+        return;
+      }
+      this.logMsg('system', `${p.name} 逃跑失败，被敌人包围！`);
+      this.advanceTurn();
+      return;
+    }
+  }
+
+  /** 解析攻击目标：优先指定 id（存活），否则首个存活敌人。 */
+  private resolveTarget(targetId?: string): string | undefined {
+    if (targetId && this.state.enemies.has(targetId) && this.state.enemies.get(targetId)!.alive) return targetId;
+    return this.firstAliveEnemy();
   }
 
   // ——— 回合推进 ———
@@ -155,9 +221,11 @@ export class BattleRoom extends Room<BattleRoomState> {
     }
     const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
     const r = calcDamage(e.atk, target.def, 1.0);
-    const dmg = r.damage;
+    let dmg = r.damage;
+    const isDefending = this.defending.has(target.sessionId);
+    if (isDefending) dmg = Math.round(dmg * 0.2);
     target.hp = Math.max(0, target.hp - dmg);
-    this.logMsg(e.name, `${e.name} 攻击 ${target.name} 造成 ${dmg} 伤害${r.crit ? '（暴击！）' : ''}`);
+    this.logMsg(e.name, `${e.name} 攻击 ${target.name} 造成 ${dmg} 伤害${r.crit ? '（暴击！）' : ''}${isDefending ? '（防御减伤）' : ''}`);
 
     if (target.hp <= 0) {
       target.alive = false;
@@ -173,7 +241,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (anyEnemy) return false;
     this.state.phase = 'victory';
     this.state.winner = 'players';
-    const loot = generateLoot('杂妖', 2);
+    const loot = generateLoot(this.enemyDef.type, this.enemyDef.zone);
     const lootNames = loot.map((i) => i.name).join('、') || '无';
     this.logMsg('system', `胜利！获得战利品：${lootNames}`);
     return true;

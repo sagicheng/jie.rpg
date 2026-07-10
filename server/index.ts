@@ -22,7 +22,8 @@ const gameServer = new Server({
 });
 
 gameServer.define('game', GameRoom);
-gameServer.define('battle', BattleRoom);
+// battle 房按 monsterId 隔离：A 撞怪1 / B 撞怪2 各自独立房；V键组队 monsterId='' 仍同房
+gameServer.define('battle', BattleRoom).filterBy(['monsterId']);
 
 gameServer.listen(PORT).then(() => {
   console.log(`[联机] Colyseus 权威游戏服已启动：ws://localhost:${PORT}`);

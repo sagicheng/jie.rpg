@@ -45,6 +45,8 @@ export class GameScene extends Phaser.Scene {
   private remotePlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; tag: Phaser.GameObjects.Text; tx: number; ty: number; name: string; title: string }> = new Map();
   private lastSent = { x: -9999, y: -9999, t: 0 };
   private netHint!: Phaser.GameObjects.Text;
+  /** 权威战斗结束后的奖励报告，等场景 RESUME 时弹出（避免被战斗场景遮挡）。 */
+  private pendingBattleReport: { exp: number; gold: number; loot: string[]; leveled: boolean; defeat: boolean; fled?: boolean } | null = null;
 
   // HUD
   private zoneText!: Phaser.GameObjects.Text;
@@ -205,8 +207,11 @@ export class GameScene extends Phaser.Scene {
       this.launchMultiBattle();
     });
 
-    // 战斗结束（scene resume）时清除「战斗中」标记，便于其他玩家看到战斗状态（组队系统前置）
-    this.events.on(Phaser.Scenes.Events.RESUME, () => this.setBattling(false));
+    // 战斗结束（scene resume）时清除「战斗中」标记，并弹出权威战斗奖励报告（避免被战斗场景遮挡）
+    this.events.on(Phaser.Scenes.Events.RESUME, () => {
+      this.setBattling(false);
+      this.flushBattleReport();
+    });
 
     // Dev cheats
     const ctrl = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
@@ -421,7 +426,13 @@ export class GameScene extends Phaser.Scene {
         if (this.gameRoom) { this.gameRoom.send('enterBattle', { id: en.id }); this.setBattling(true); }
         this.battleCooldown = 180;
         this.scene.pause();
-        this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
+        if (this.gameRoom) {
+          // 联机：进权威战斗房间（单人独占该怪，根除双杀双掉落）；真实怪数据传给服务端结算
+          this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, monsterId: en.id, playerName: GameState.playerName || '勇者' });
+        } else {
+          // 离线兜底：本地战斗
+          this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
+        }
         return;
       }
     }
@@ -481,6 +492,71 @@ export class GameScene extends Phaser.Scene {
         er.respawnTimer = this.time.delayedCall(d, () => this.restoreMonster(er));
       }
     }
+  }
+
+  /** 联机权威战斗（地图怪）结束桥接：MultiBattleScene 在 victory/defeat 时调用，复用单机奖励逻辑并回写怪物状态机。 */
+  onMultiBattleEnd(result: string, monsterId: string, enemyData: any): void {
+    if (result === 'defeat' || result === 'fled') {
+      // 失败/逃脱：回城 + 怪物立即复原（对所有人可见）
+      this.player.x = 400; this.player.y = 500;
+      GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
+      if (this.gameRoom) this.gameRoom.send('unlockMonster', { id: monsterId });
+      this.pendingBattleReport = { exp: 0, gold: 0, loot: [], leveled: false, defeat: result === 'defeat', fled: result === 'fled' };
+      return;
+    }
+    if (result === 'victory') {
+      const en = this.enemies.find(e => e.id === monsterId);
+      const data: EnemyData = enemyData;
+      const ib = data.type === '妖将' || data.type === '妖王';
+      const expGain = data.expReward || 0;
+      const goldGain = data.goldReward || 0;
+      const leveled = GameState.gainExp(expGain);
+      GameState.gold += goldGain;
+      GameState.recordKill(data.name);
+      GameState.updateQuestProgress('kill', data.name);
+      const loot = generateLoot(data.type, GameState.zone);
+      const lootNames: string[] = [];
+      for (const drop of loot) { Inventory.addItem(drop as any); lootNames.push(drop.name); }
+      if (en) this.removeMonster(en);
+      if (this.gameRoom) {
+        // 联机：通知服务端本怪物被击杀，按刷新时长从战斗结束计时后重新出现（共享怪物·玩家间争夺）
+        this.gameRoom.send('killMonster', { id: monsterId, respawnMs: this.monsterRespawnMs({ data }) });
+      } else if (en) {
+        if (en.respawnTimer) en.respawnTimer.destroy();
+        const d = ib ? 7200000 : data.type === '恶妖' ? 300000 : 30000;
+        en.respawnTimer = this.time.delayedCall(d, () => this.restoreMonster(en));
+      }
+      this.pendingBattleReport = { exp: expGain, gold: goldGain, loot: lootNames, leveled, defeat: false };
+      this.scene.get('UIScene').events.emit('updateStats');
+    }
+  }
+
+  /** 场景 RESUME 时弹出权威战斗奖励报告（此时战斗场景已关闭，通知可见）。 */
+  private flushBattleReport(): void {
+    const r = this.pendingBattleReport;
+    if (!r) return;
+    this.pendingBattleReport = null;
+    if (r.defeat) {
+      const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, '战斗失败，已返回', {
+        fontSize: '16px', color: '#ff8866', fontStyle: 'bold', backgroundColor: '#221111cc', padding: { x: 16, y: 8 },
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+      this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
+      return;
+    }
+    if (r.fled) {
+      const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, '成功逃脱，已返回', {
+        fontSize: '16px', color: '#ffdd66', fontStyle: 'bold', backgroundColor: '#222211cc', padding: { x: 16, y: 8 },
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+      this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
+      return;
+    }
+    let msg = `经验+${r.exp}  金币+${r.gold}`;
+    if (r.loot.length > 0) msg += `\n掉落: ${r.loot.join(', ')}`;
+    if (r.leveled) msg += `\n★ 升级！Lv.${GameState.level}`;
+    const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, msg, {
+      fontSize: '16px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 },
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+    this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 120, duration: 2500, onComplete: () => n.destroy() });
   }
 
   /** 怪物刷新时长（ms）：Boss 2h / 恶妖 5min / 其余 30s。 */

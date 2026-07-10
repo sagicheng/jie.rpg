@@ -32,22 +32,32 @@ export class MultiBattleScene extends Phaser.Scene {
   private enemyCards: Map<string, Card> = new Map();
   private logText!: Phaser.GameObjects.Text;
   private turnText!: Phaser.GameObjects.Text;
-  private attackBtn!: Button;
-  private skillBtn!: Button;
+  private actionBtns: Record<string, Button> = {};
+  private mpText!: Phaser.GameObjects.Text;
   private resultPanel: Phaser.GameObjects.Container | null = null;
+
+  // 地图怪权威战斗模式（区别于 V键组队虚怪）
+  private mode: 'vkey' | 'map' = 'vkey';
+  private enemyData: any = null;       // 真实地图怪数据（map 模式）
+  private monsterId = '';              // 该怪在 GameRoom 的 `${zone}:${idx}`（map 模式）
+  private endReported = false;         // 防止 victory/defeat 重复回写
 
   constructor() {
     super({ key: 'MultiBattleScene' });
   }
 
-  init(data: { playerName?: string }): void {
+  init(data: { playerName?: string; mode?: 'vkey' | 'map'; enemyData?: any; monsterId?: string }): void {
     this.playerName = data?.playerName || '玩家';
+    this.mode = data?.mode || 'vkey';
+    this.enemyData = data?.enemyData || null;
+    this.monsterId = data?.monsterId || '';
     // 重置（场景复用同一实例时避免脏状态）
     this.room = null;
     this.mySessionId = '';
     this.playerCards.clear();
     this.enemyCards.clear();
     this.resultPanel = null;
+    this.endReported = false;
   }
 
   create(): void {
@@ -62,8 +72,24 @@ export class MultiBattleScene extends Phaser.Scene {
       fontSize: '14px', color: '#cccccc', wordWrap: { width: w - 120 }, lineSpacing: 4,
     }).setDepth(10);
 
-    this.attackBtn = this.makeButton(w / 2 - 130, h - 70, '斩击', 0x2e7d32, () => this.sendAction('attack'));
-    this.skillBtn = this.makeButton(w / 2 + 130, h - 70, '鬼道', 0x283593, () => this.sendAction('skill'));
+    // 命令栏：攻击/技能/鬼道/道具/防御/逃跑（还原单机完整指令，左右布局不变）
+    const cmdDefs: { label: string; type: string; color: number }[] = [
+      { label: '攻击', type: 'attack', color: 0x2e7d32 },
+      { label: '技能', type: 'skill', color: 0x1565c0 },
+      { label: '鬼道', type: 'kido', color: 0x283593 },
+      { label: '道具', type: 'item', color: 0xef6c00 },
+      { label: '防御', type: 'defend', color: 0x455a64 },
+      { label: '逃跑', type: 'escape', color: 0xc62828 },
+    ];
+    const bw = 140, bh = 48, bgap = 6;
+    const totalW = bw * cmdDefs.length + bgap * (cmdDefs.length - 1);
+    const startX = (w - totalW) / 2 + bw / 2;
+    const by = h - 70;
+    cmdDefs.forEach((c, i) => {
+      const bx = startX + i * (bw + bgap);
+      this.actionBtns[c.type] = this.makeButton(bx, by, c.label, c.color, () => this.sendAction(c.type), bw, bh);
+    });
+    this.mpText = this.add.text(w / 2, 110, '', { fontSize: '15px', color: '#88aaff' }).setOrigin(0.5).setDepth(10);
 
     this.connect();
 
@@ -75,7 +101,8 @@ export class MultiBattleScene extends Phaser.Scene {
 
   // ——— 连接权威战斗房间 ———
   private connect(): void {
-    getClient().joinOrCreate('battle', { name: this.playerName })
+    // monsterId 保留原值：map 模式为具体怪 id，V键组队为 ''（filterBy 据此匹配同房）
+    getClient().joinOrCreate('battle', { name: this.playerName, enemyData: this.enemyData ?? undefined, monsterId: this.monsterId })
       .then((room: any) => {
         this.room = room;
         this.mySessionId = room.sessionId;
@@ -97,7 +124,7 @@ export class MultiBattleScene extends Phaser.Scene {
       });
   }
 
-  private sendAction(type: 'attack' | 'skill'): void {
+  private sendAction(type: string): void {
     if (!this.room || !this.room.state) return;
     if (this.room.state.phase !== 'combat') return;
     if (this.room.state.currentTurn !== this.mySessionId) return; // 非我方回合，忽略（防加速/作弊）
@@ -118,8 +145,9 @@ export class MultiBattleScene extends Phaser.Scene {
       this.turnText.setText(`阶段：${s.phase}`);
       this.turnText.setColor('#aaaacc');
     }
-    this.attackBtn.setEnable(isMyTurn);
-    this.skillBtn.setEnable(isMyTurn);
+    for (const b of Object.values(this.actionBtns)) b.setEnable(isMyTurn);
+    const me = s.players.get(this.mySessionId);
+    if (this.mpText) this.mpText.setText(me ? `灵力 MP ${Math.max(0, Math.round(me.mp))} / ${Math.round(me.maxMp)}` : '');
 
     this.syncCards(this.playerCards, s.players, true);
     this.syncCards(this.enemyCards, s.enemies, false);
@@ -127,8 +155,17 @@ export class MultiBattleScene extends Phaser.Scene {
     const logs = (s.log as any[]) ?? [];
     this.logText.setText(logs.slice(-13).map((m: any) => `[${m.name}] ${m.text}`).join('\n'));
 
-    if (s.phase === 'victory' || s.phase === 'defeat') {
-      this.showResult(s.phase === 'victory' ? '胜 利 ！' : '战 斗 失 败');
+    if (s.phase === 'victory' || s.phase === 'defeat' || s.phase === 'fled') {
+      const title = s.phase === 'victory' ? '胜 利 ！' : s.phase === 'defeat' ? '战 斗 失 败' : '脱 逃 成 功';
+      this.showResult(title);
+      // 地图怪模式：权威战斗结束 → 回写 GameScene（奖励结算 + 怪物 kill/unlock/复原），仅触发一次
+      if (this.mode === 'map' && !this.endReported) {
+        const gs = this.scene.get('GameScene') as any;
+        if (gs && typeof gs.onMultiBattleEnd === 'function') {
+          this.endReported = true;
+          gs.onMultiBattleEnd(s.phase, this.monsterId, this.enemyData);
+        }
+      }
     }
   }
 
@@ -181,8 +218,7 @@ export class MultiBattleScene extends Phaser.Scene {
     card.hpText.setText(`HP ${Math.max(0, Math.round(hp))} / ${Math.round(maxHp)}`);
   }
 
-  private makeButton(x: number, y: number, label: string, color: number, cb: () => void): Button {
-    const w = 200, h = 56;
+  private makeButton(x: number, y: number, label: string, color: number, cb: () => void, w = 200, h = 56): Button {
     const container = this.add.container(x, y).setDepth(20);
     const bg = this.add.graphics();
     const text = this.add.text(0, 0, label, { fontSize: '20px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
@@ -223,7 +259,7 @@ export class MultiBattleScene extends Phaser.Scene {
     panel.lineStyle(2, 0xc9a96e, 0.8);
     panel.strokeRoundedRect(-260, -170, 520, 340, 14);
     const t = this.add.text(0, -90, title, {
-      fontSize: '40px', color: title.includes('胜利') ? '#88ff88' : '#ff8866', fontStyle: 'bold',
+      fontSize: '40px', color: title.includes('胜利') ? '#88ff88' : title.includes('脱') ? '#ffdd66' : '#ff8866', fontStyle: 'bold',
     }).setOrigin(0.5);
     const btn = this.add.text(0, 80, '返回地图', {
       fontSize: '22px', color: '#d4c5a0', padding: { x: 24, y: 10 }, backgroundColor: '#2a2a3e',

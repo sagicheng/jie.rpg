@@ -49,6 +49,8 @@ export class CombatPlayer extends Schema {
   @type('number') mdef = 0;
   @type('number') spd = 0;
   @type('boolean') alive = true;
+  @type('number') mp = 0;
+  @type('number') maxMp = 0;
 }
 
 /** 战斗房间：敌人 */
