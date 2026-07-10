@@ -77,6 +77,12 @@ export class MultiBattleScene extends Phaser.Scene {
   private menuOpen = false;
   private lastIsMyTurn = false;
 
+  // 20s 决策倒计时显示（截止时间来自服务端 schema.turnExpiresAt，自己/队友回合都显示）
+  private turnCountdownText!: Phaser.GameObjects.Text;
+
+  // 服务端权威战斗奖励（battleReward 消息），透传给 GameScene.onMultiBattleEnd 供结算报告
+  private lastReward: { exp: number; gold: number; loot: string[]; leveled: boolean } | null = null;
+
   constructor() {
     super({ key: 'MultiBattleScene' });
   }
@@ -98,6 +104,7 @@ export class MultiBattleScene extends Phaser.Scene {
     this.intentionalLeave = false;
     this.menu = null;
     this.menuOpen = false;
+    this.lastReward = null;
   }
 
   create(): void {
@@ -130,6 +137,10 @@ export class MultiBattleScene extends Phaser.Scene {
       this.actionBtns[c.type] = this.makeButton(bx, by, c.label, c.color, c.act, bw, bh);
     });
     this.mpText = this.add.text(w / 2, 110, '', { fontSize: '15px', color: '#88aaff' }).setOrigin(0.5).setDepth(10);
+
+    // 20s 决策倒计时（由服务端 turnExpiresAt 驱动，覆盖自己与队友回合）
+    this.turnCountdownText = this.add.text(w / 2, 138, '', { fontSize: '16px', color: '#ffcc66', fontStyle: 'bold' }).setOrigin(0.5).setDepth(10);
+    this.time.addEvent({ delay: 200, loop: true, callback: () => this.updateCountdown() });
 
     this.connect();
 
@@ -177,6 +188,16 @@ export class MultiBattleScene extends Phaser.Scene {
         });
         // 服务端 BattleRoom.logMsg('system', ...) 的系统提示，客户端暂无需处理，注册空处理器消除告警。
         room.onMessage('system', () => {});
+        // 服务端权威战斗奖励（gold/exp/loot），供结算报告使用；若胜利已回写后再到，则刷新报告真实数值
+        room.onMessage('battleReward', (r: any) => {
+          this.lastReward = { exp: r?.exp ?? 0, gold: r?.gold ?? 0, loot: Array.isArray(r?.loot) ? r.loot : [], leveled: !!r?.leveled };
+          if (this.mode === 'map' && this.endReported) {
+            const gs = this.scene.get('GameScene') as any;
+            if (gs && typeof gs.onMultiBattleEnd === 'function') {
+              gs.onMultiBattleEnd('victory', this.monsterId, this.enemyData, this.lastReward);
+            }
+          }
+        });
         this.renderState();
         // 单人自检：若 1.5s 内仍只有自己（无人组队），则主动开战，便于单窗口验证 UI
         this.time.delayedCall(1500, () => {
@@ -358,6 +379,19 @@ export class MultiBattleScene extends Phaser.Scene {
     this.time.delayedCall(1000, () => t.destroy());
   }
 
+  /** 显示当前行动者（自己或队友）的 20s 决策倒计时，由服务端 turnExpiresAt 驱动。 */
+  private updateCountdown(): void {
+    if (!this.turnCountdownText) return;
+    const s = this.room?.state;
+    if (!s || s.phase !== 'combat' || !s.turnExpiresAt) { this.turnCountdownText.setText(''); return; }
+    const remain = Math.max(0, (s.turnExpiresAt - Date.now()) / 1000);
+    const secs = Math.ceil(remain);
+    const cur = s.players.get(s.currentTurn);
+    const who = cur?.name ?? '行动者';
+    this.turnCountdownText.setText(`${who} 决策时间 ${secs}s`);
+    this.turnCountdownText.setColor(secs <= 5 ? '#ff6666' : '#ffcc66');
+  }
+
   // ——— 渲染（完全由服务端状态驱动）———
   private renderState(): void {
     if (!this.room || !this.room.state) return;
@@ -394,7 +428,7 @@ export class MultiBattleScene extends Phaser.Scene {
         const gs = this.scene.get('GameScene') as any;
         if (gs && typeof gs.onMultiBattleEnd === 'function') {
           this.endReported = true;
-          gs.onMultiBattleEnd(s.phase, this.monsterId, this.enemyData);
+          gs.onMultiBattleEnd(s.phase, this.monsterId, this.enemyData, this.lastReward ?? undefined);
         }
       }
     }

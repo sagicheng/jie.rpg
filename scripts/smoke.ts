@@ -321,6 +321,24 @@ async function main() {
   }
   await battle3.leave();
 
+  // 奖励断言专用：弱怪，确保能在有限回合内击杀并触发服务端 battleReward（BUG4 验证）
+  const rewardEnemy = [{ name: '奖励怪', type: '杂妖', element: '火', zone: 1, hp: 60, maxHp: 60, atk: 5, def: 2, matk: 3, mdef: 2, spd: 1, statusRes: 0, skills: [{ name: '撞击', power: 1, desc: '', damageType: 'physical' }], expReward: 10, goldReward: 5, drops: [] }];
+  const battleR: any = await clientA.joinOrCreate('battle', { name: '奖', enemyParty: rewardEnemy, monsterId: '', loadout: { skills: [], kidos: [], items: [] }, playerStats: lvl1Stats });
+  await wait(300);
+  let lastRewardR: any = null;
+  battleR.onMessage('battleReward', (r: any) => { lastRewardR = r; });
+  let tR = 0;
+  while (battleR.state.phase === 'combat' && tR++ < 40) {
+    if (battleR.state.currentTurn === battleR.sessionId) {
+      const e = [...battleR.state.enemies.values()].find((x: any) => x.alive) as any;
+      if (e) battleR.send('action', { type: 'attack', targetId: e.id });
+    }
+    await wait(40);
+  }
+  await wait(400); // 等 battleReward 消息到达客户端
+  await battleR.leave();
+  const rewardOk = !!lastRewardR && lastRewardR.gold > 0 && lastRewardR.exp > 0; // BUG4：服务端下发的战斗奖励非0
+
   // 小怪成组校验（Bug①：小怪也应为一组，而非单只）—— 复用同一套多怪 spawn 逻辑
   const smallParty: any[] = [];
   for (let i = 0; i < 3; i++) {
@@ -341,7 +359,8 @@ async function main() {
   console.log(`[怪组] 小怪成组(数量==3)        : ${smallGroupOk ? 'OK' : 'BAD'}`);
   console.log(`[数值] Boss对1级角色伤害>1      : ${bossDmgOk ? 'OK' : 'BAD'} (maxHit=${maxEnemyHit})`);
   console.log(`[数值] 1级角色不能2回合秒Boss   : ${noTwoShotOk ? 'OK' : 'BAD'} (bossHpAfter2=${bossHpAfter2})`);
-  const numOk = groupOk && smallGroupOk && bossDmgOk && noTwoShotOk;
+  console.log(`[奖励] 服务端下发battleReward非0 : ${rewardOk ? 'OK' : 'BAD'} (gold=${lastRewardR?.gold}, exp=${lastRewardR?.exp})`);
+  const numOk = groupOk && smallGroupOk && bossDmgOk && noTwoShotOk && rewardOk;
 
   // ——— 9) 权威世界状态：进房即收到 worldSync（服务端单一真相源）———
   const roomW: any = await clientA.joinOrCreate('game', { name: '世' });
@@ -417,6 +436,17 @@ async function main() {
   console.log(`[权威世界] 强化受服务端材料校验       : ${enhanceRejected ? 'OK' : 'BAD'} (被拒=${enhanceRejected})`);
   console.log(`[断连隔离] leave后重连重新种子       : ${reseedOk ? 'OK' : 'BAD'} (gold=${lastSync2?.gold})`);
 
+  // ——— 10) 战斗 20s 决策超时（BUG3 验证）：玩家全程不动作，服务端应自动跳过其回合 ———
+  const tEnemy = [{ name: '超时怪', type: '杂妖', element: '火', zone: 1, hp: 300, maxHp: 300, atk: 4, def: 2, matk: 2, mdef: 2, spd: 1, statusRes: 0, skills: [{ name: '撞击', power: 1, desc: '', damageType: 'physical' }], expReward: 1, goldReward: 1, drops: [] }];
+  const tb: any = await clientA.joinOrCreate('battle', { name: '超时', enemyParty: tEnemy, monsterId: '', loadout: { skills: [], kidos: [], items: [] }, playerStats: lvl1Stats });
+  await wait(300);
+  // 不发送任何 action，静候服务端 20s 超时自动跳过
+  await wait(21500);
+  const tlog = ([...tb.state.log.values()] as any[]).map((m: any) => m.text).join(' | ');
+  const timeoutOk = tlog.includes('决策超时');
+  await tb.leave();
+  console.log(`[超时] 20s未决策服务端自动跳过   : ${timeoutOk ? 'OK' : 'BAD'}` + (timeoutOk ? '' : ` (log: ${tlog.slice(-150)})`));
+
   const worldOk = wsInitOk && gatherOk && craftOk && buyOk && enhanceRejected && reseedOk;
 
   const mapOk = moved && chatted;
@@ -425,9 +455,9 @@ async function main() {
   const battlingOk = battlingOn && battlingOff;
   const mapBattleOk = combatOk && mapVictoryOk && mapKillSyncOk;
   const isoOk = isolated && aCombat && bCombat && aSolo && bSolo;
-  const allOk = mapOk && battleOk && monsterOk && battlingOk && mapBattleOk && isoOk && settleOk && numOk && worldOk;
+  const allOk = mapOk && battleOk && monsterOk && battlingOk && mapBattleOk && isoOk && settleOk && numOk && worldOk && timeoutOk;
   console.log(`\n==== 联机切片验证 ${allOk ? 'PASS ✅' : 'FAIL ❌'} ====`);
-  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'} | 地图怪权威战斗: ${mapBattleOk ? 'OK' : 'BAD'} | 地图怪隔离: ${isoOk ? 'OK' : 'BAD'} | 权威结算真实性: ${settleOk ? 'OK' : 'BAD'} | 怪组/数值: ${numOk ? 'OK' : 'BAD'} | 权威世界状态: ${worldOk ? 'OK' : 'BAD'}`);
+  console.log(`  地图同步: ${mapOk ? 'OK' : 'BAD'} | 权威战斗(组队打怪): ${battleOk ? 'OK' : 'BAD'} | 怪物锁定/复原/刷新: ${monsterOk ? 'OK' : 'BAD'} | 战斗中标记: ${battlingOk ? 'OK' : 'BAD'} | 地图怪权威战斗: ${mapBattleOk ? 'OK' : 'BAD'} | 地图怪隔离: ${isoOk ? 'OK' : 'BAD'} | 权威结算真实性: ${settleOk ? 'OK' : 'BAD'} | 怪组/数值: ${numOk ? 'OK' : 'BAD'} | 权威世界状态: ${worldOk ? 'OK' : 'BAD'} | 20s决策超时: ${timeoutOk ? 'OK' : 'BAD'}`);
   process.exit(allOk ? 0 : 1);
 }
 

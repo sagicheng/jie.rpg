@@ -32,6 +32,8 @@ const EMPTY_LOADOUT: PlayerLoadout = { skills: new Set(), kidos: new Map(), item
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
 const BASE_PLAYER = { hp: 220, atk: 42, def: 18, matk: 36, mdef: 16, spd: 12, mp: 120, maxMp: 120 };
+/** 玩家每回合决策限时（秒）。超时服务端自动跳过该玩家回合（进入防御），防止一人挂机卡住全队。 */
+const TURN_SECONDS = 20;
 
 export class BattleRoom extends Room<BattleRoomState> {
   private enemyDef!: EnemyData;
@@ -43,6 +45,10 @@ export class BattleRoom extends Room<BattleRoomState> {
   private enemyParty: EnemyData[] = [];
   /** 敌人技能表（仅服务端内存，不进 schema；用于 AI 选用技能威力与伤害类型） */
   private enemySkills: Map<string, { name: string; power: number; damageType: 'physical' | 'magical' }[]> = new Map();
+  /** 玩家回合决策限时计时器（20s 超时自动跳过）。 */
+  private turnTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 当前玩家回合决策截止时间（epoch ms），与 schema.turnExpiresAt 同步。 */
+  private turnExpiresAt = 0;
 
   onCreate(options: { monsterId?: string }) {
     // matchmaking：按 monsterId 隔离房间（地图怪各自独立，V键组队统一 ''）
@@ -115,6 +121,40 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (this.state.phase === 'combat') this.advanceTurn();
   }
 
+  onDispose() {
+    this.clearTurnTimer();
+  }
+
+  // ——— 玩家回合决策限时 ———
+  /** 为当前玩家回合装填 20s 计时；敌人回合/非战斗不计时（敌人瞬时行动）。 */
+  private armTurnTimer(): void {
+    this.clearTurnTimer();
+    if (this.state.phase !== 'combat') { this.state.turnExpiresAt = 0; return; }
+    const id = this.state.currentTurn;
+    const p = id ? this.state.players.get(id) : undefined;
+    if (!p || !p.alive) { this.state.turnExpiresAt = 0; return; }
+    this.state.turnExpiresAt = Date.now() + TURN_SECONDS * 1000;
+    this.turnTimer = setTimeout(() => this.onTurnTimeout(), TURN_SECONDS * 1000);
+  }
+
+  private clearTurnTimer(): void {
+    if (this.turnTimer) { clearTimeout(this.turnTimer); this.turnTimer = null; }
+    this.turnExpiresAt = 0;
+    this.state.turnExpiresAt = 0;
+  }
+
+  /** 超时：当前玩家未决策 → 自动进入防御并跳过其回合（推进到下一个行动者）。 */
+  private onTurnTimeout(): void {
+    this.turnTimer = null;
+    if (this.state.phase !== 'combat') return;
+    const id = this.state.currentTurn;
+    const p = id ? this.state.players.get(id) : undefined;
+    if (!p || !p.alive) return;
+    this.defending.add(id);
+    this.logMsg('system', `${p.name} 决策超时，自动进入防御`);
+    this.advanceTurn();
+  }
+
   // ——— 战斗开始 ———
   private tryBeginCombat() {
     if (this.state.phase !== 'waiting') return;
@@ -166,6 +206,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.logMsg('system', `战斗开始！${nPlayers} 名队员 VS ${this.state.enemies.size} 只${this.enemyDef?.type || '敌人'}`);
 
     this.maybeRunEnemyTurn();
+    this.armTurnTimer(); // 为首个玩家回合装填决策限时（敌人先手则递归落定后由 advanceTurn 装填）
   }
 
   // ——— 玩家意图处理（权威结算）———
@@ -375,6 +416,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     }
     if (guard >= order.length) return; // 不应发生（胜负已判定）
     this.maybeRunEnemyTurn();
+    this.armTurnTimer(); // 为落定的玩家回合装填决策限时
   }
 
   // ——— 敌人 AI（服务端自动结算）———
@@ -422,6 +464,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (anyEnemy) return false;
     this.state.phase = 'victory';
     this.state.winner = 'players';
+    this.clearTurnTimer();
     const loot = generateLoot(this.enemyDef.type, this.enemyDef.zone);
     const lootNames = loot.map((i) => i.name).join('、') || '无';
     this.logMsg('system', `胜利！获得战利品：${lootNames}`);
@@ -445,6 +488,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (anyPlayer) return false;
     this.state.phase = 'defeat';
     this.state.winner = 'enemy';
+    this.clearTurnTimer();
     this.logMsg('system', '全员阵亡……战斗失败。');
     return true;
   }

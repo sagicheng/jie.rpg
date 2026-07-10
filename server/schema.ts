@@ -76,6 +76,8 @@ export class BattleRoomState extends Schema {
   @type('string') currentTurn = '';
   /** waiting | combat | victory | defeat */
   @type('string') phase = 'waiting';
+  /** 当前行动者(玩家)的决策截止时间 epoch ms；>0 表示正在限时决策（敌人回合/非战斗为 0）。客户端据此显示 20s 倒计时。 */
+  @type('number') turnExpiresAt = 0;
   @type([ChatMessage]) log = new ArraySchema<ChatMessage>();
   @type('string') winner = '';
 }

@@ -271,8 +271,10 @@ export function showShikaiSelection(scene: GameScene): void {
   }
 
 export function openShop(scene: GameScene, _s: any[]): void {
+    const shopWasOpen = !!scene.shopPanel;
     if (scene.shopPanel) { scene.shopPanel.destroy(true); scene.shopPanel = null; }
-    scene.isInDialogue = false; scene.pauseForMenu();
+    scene.isInDialogue = false;
+    if (!shopWasOpen) scene.pauseForMenu(); // 仅首次开商店暂停物理；重渲染(购买后)不再累加 menuPauseDepth，否则关店后物理卡死无法移动
     const shopItems = _s;
     const cam = scene.cameras.main; const panel = scene.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2 - 30).setDepth(310);
     const bg = scene.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-400, -260, 800, 520, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-400, -260, 800, 520, 12); panel.add(bg);
@@ -555,7 +557,7 @@ export function renderStatPanel(scene: GameScene): void {
 
     // ═══ Right column: Equipment grid ═══
     p.add(scene.add.text(rx, hdrY, '装备栏', { fontSize: '18px', color: '#aaccdd', fontStyle: 'bold', padding: { y: 3 } }));
-    p.add(scene.add.text(rx + 80, hdrY + 4, '（点击装备可卸下）', { fontSize: '11px', color: '#556688', padding: { y: 1 } }));
+    p.add(scene.add.text(rx + 80, hdrY + 4, '（查看用·卸下请开背包 B）', { fontSize: '11px', color: '#556688', padding: { y: 1 } }));
     const eq = Inventory.equipment;
     const sn: Record<string, string> = { weapon: '斩魄刀', head: '头部', body: '身体', bracer: '手甲', boots: '战靴', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
     const eqs: EquipSlot[] = ['head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
@@ -599,13 +601,7 @@ export function renderStatPanel(scene: GameScene): void {
         p.add(scene.add.text(sx + 10, sy + 46, sts, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
         const refineStr = getRefineDisplay(it);
         if (refineStr) p.add(scene.add.text(sx + 10, sy + 58, `精炼: ${refineStr}`, { fontSize: '9px', color: '#F5A623', padding: { y: 1 } }));
-        // Click to unequip
-        er.setInteractive(new Phaser.Geom.Rectangle(sx, sy, eqColW, 66), Phaser.Geom.Rectangle.Contains);
-        er.on('pointerdown', () => {
-          Inventory.unequip(s);
-          GameState.recalcStats();
-          closeStatPanel(scene); renderStatPanel(scene); scene.scene.get('UIScene').events.emit('updateStats');
-        });
+        // 属性面板(C)仅查看装备，不允许点击卸下（卸下请在背包(B)面板操作）
       } else {
         p.add(scene.add.text(sx + 10, sy + 28, '— 空 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
       }
@@ -631,7 +627,7 @@ export function renderStatPanel(scene: GameScene): void {
 
     // Footer
     const fy = oy + oh - 28; const ft = scene.add.graphics(); ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
-    p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, 'C键 开关  |  ESC 关闭  |  ＋/－ 加减属性点  |  点击装备卸下', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+    p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, 'C键 开关  |  ESC 关闭  |  ＋/－ 加减属性点  |  卸下装备请开背包(B)', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
   }
 
 export function showKidoPanel(scene: GameScene): void {
