@@ -34,6 +34,12 @@ const config: Phaser.Types.Core.GameConfig = {
     antialias: true,
     roundPixels: false,
   },
+  // 游戏完全不用音频，禁用 Web Audio 系统，避免浏览器自动播放策略在
+  // scene.launch 异步 create() 中创建 AudioContext 被挂起 → 真实 Chrome 下
+  // 抛错中断渲染循环导致画面冻结（表现为"卡死" + AudioContext 警告）。
+  audio: {
+    disableWebAudio: true,
+  },
 };
 
 const game = new Phaser.Game(config);
