@@ -21,6 +21,17 @@ import { Inventory } from '../systems/Inventory';
 import { buildDungeonParty, buildClientBattleLoadout, getDungeonStageVisual } from '../systems/dungeon';
 import { EnemyData } from '../systems/BattleData';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config';
+// 复用 GameScene 同一套面板系统（背包/属性/鬼道/图鉴/任务/标题），让副本内也能开 C/B 等界面。
+// DungeonMapScene 实现与 GameScene 同款的「面板宿主契约」（公开字段 + pauseForMenu/resumeFromMenu），
+// 调用时以 `this as any` 桥接（不改 panels.ts，零回归风险）。
+import {
+  toggleInventory, closeInventory,
+  toggleStatPanel, closeStatPanel,
+  showKidoPanel, closeKidoPanel, closeEnhancePanel,
+  toggleQuestLog,
+  toggleBestiaryPanel, closeBestiaryPanel,
+  toggleTitlePanel, closeTitlePanel,
+} from '../ui/panels';
 
 interface DungeonEnemy {
   sprite: Phaser.GameObjects.Sprite;
@@ -59,6 +70,32 @@ export class DungeonMapScene extends Phaser.Scene {
   private miniMap!: Phaser.GameObjects.Graphics;
   private stageText!: Phaser.GameObjects.Text;
 
+  // ═══ 面板宿主契约（与 GameScene 同款，使 C/B/K/N/L/T 界面在副本内可用）═══
+  public statPanel: Phaser.GameObjects.Container | null = null;
+  public inventoryPanel: Phaser.GameObjects.Container | null = null;
+  public kidoPanel: Phaser.GameObjects.Container | null = null;
+  public kidoTooltip: Phaser.GameObjects.Container | null = null;
+  public enhancePanel: Phaser.GameObjects.Container | null = null;
+  public bestiaryPanel: Phaser.GameObjects.Container | null = null;
+  public bestiaryDetailContainer: Phaser.GameObjects.Container | null = null;
+  public titlePanel: Phaser.GameObjects.Container | null = null;
+  public shopPanel: Phaser.GameObjects.Container | null = null;
+  public questLogPanel: Phaser.GameObjects.Container | null = null;
+  public namingPanelActive = false;
+  public isInDialogue = false;
+  public gameRoom: any = null;
+  private menuPauseDepth = 0;
+
+  public pauseForMenu(): void { this.menuPauseDepth++; if (this.menuPauseDepth === 1) this.physics.pause(); }
+  public resumeFromMenu(): void { this.menuPauseDepth = Math.max(0, this.menuPauseDepth - 1); if (this.menuPauseDepth === 0) this.physics.resume(); }
+
+  /** 是否有任意面板/对话打开（用于 update 冻结移动 + 屏蔽碰撞/点击）。 */
+  private isMenuOpen(): boolean {
+    return this.isInDialogue || this.namingPanelActive ||
+      !!this.statPanel || !!this.inventoryPanel || !!this.kidoPanel || !!this.enhancePanel ||
+      !!this.bestiaryPanel || !!this.titlePanel || !!this.questLogPanel || !!this.shopPanel;
+  }
+
   constructor() {
     super({ key: 'DungeonMapScene' });
   }
@@ -79,6 +116,12 @@ export class DungeonMapScene extends Phaser.Scene {
     this.battleCooldown = 0;
     this.isTransitioning = false;
     this.pendingNearby = '';
+    // 复位面板宿主状态（防止上一次副本残留的面板/暂停标记带到新副本）
+    this.statPanel = null; this.inventoryPanel = null; this.kidoPanel = null;
+    this.kidoTooltip = null; this.enhancePanel = null; this.bestiaryPanel = null;
+    this.bestiaryDetailContainer = null; this.titlePanel = null; this.shopPanel = null;
+    this.questLogPanel = null; this.namingPanelActive = false; this.isInDialogue = false;
+    this.gameRoom = null; this.menuPauseDepth = 0;
   }
 
   create(): void {
@@ -96,6 +139,9 @@ export class DungeonMapScene extends Phaser.Scene {
     this.createEnemies();
     this.createUI();
     this.setupInput();
+    // 接上联机世界房（与 GameScene 同一实例，Colyseus 房间连接不随场景停止而断开），
+    // 使副本内背包的装备/强化等联网动作与原地图行为一致。
+    this.gameRoom = (this.scene.get('GameScene') as any)?.gameRoom || null;
     this.connectDungeonRoom();
 
     this.cameras.main.fadeIn(500, 0, 0, 0);
@@ -207,13 +253,38 @@ export class DungeonMapScene extends Phaser.Scene {
     };
     this.ctrlKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
     this.input.keyboard!.on('keydown-F', this.onInteractKey, this);
+    // 面板键：C 属性 / B 背包 / K 鬼道 / N 图鉴 / L 任务 / T 称号——与 GameScene 同款
+    this.input.keyboard!.addKey('B').on('down', () => { if (!this.isInDialogue && !this.statPanel) toggleInventory(this as any); });
+    this.input.keyboard!.addKey('C').on('down', () => { if (!this.isInDialogue && !this.inventoryPanel) toggleStatPanel(this as any); });
+    this.input.keyboard!.addKey('K').on('down', () => {
+      if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel) showKidoPanel(this as any);
+    });
+    this.input.keyboard!.addKey('N').on('down', () => {
+      if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel)
+        toggleBestiaryPanel(this as any);
+    });
+    this.input.keyboard!.addKey('L').on('down', () => {
+      if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel && !this.bestiaryPanel)
+        toggleQuestLog(this as any);
+    });
+    this.input.keyboard!.addKey('T').on('down', () => {
+      if (!this.isInDialogue && !this.inventoryPanel && !this.statPanel && !this.kidoPanel && !this.enhancePanel && !this.bestiaryPanel)
+        toggleTitlePanel(this as any);
+    });
     this.input.keyboard!.on('keydown-ESC', () => {
-      // 副本内 ESC 直接返回原地图（不弹存档，副本进度已存服务端）
+      // 先关任意已开面板；无面板时 ESC 直接返回原地图（副本进度已存服务端）
+      if (this.inventoryPanel) { closeInventory(this as any); return; }
+      if (this.statPanel) { closeStatPanel(this as any); return; }
+      if (this.kidoPanel) { closeKidoPanel(this as any); return; }
+      if (this.enhancePanel) { closeEnhancePanel(this as any); return; }
+      if (this.titlePanel) { closeTitlePanel(this as any); return; }
+      if (this.bestiaryPanel) { closeBestiaryPanel(this as any); return; }
+      if (this.questLogPanel) { this.questLogPanel.destroy(true); this.questLogPanel = null; this.resumeFromMenu(); return; }
       this.exitToGame();
     });
-    // 鼠标点击移动
+    // 鼠标点击移动（面板打开 / 切换中不响应）
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.isTransitioning) return;
+      if (this.isTransitioning || this.isMenuOpen()) return;
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.moveTarget = { x: wp.x, y: wp.y };
     });
@@ -225,6 +296,7 @@ export class DungeonMapScene extends Phaser.Scene {
   update(): void {
     this.enemies.forEach(e => { e.label.setPosition(e.sprite.x, e.sprite.y - e.sprite.height / 2 - 10); });
     if (this.isTransitioning) { this.player.setVelocity(0, 0); return; }
+    if (this.isMenuOpen()) { this.player.setVelocity(0, 0); return; }
     const speed = this.ctrlKey.isDown ? 500 : 160;
     let vx = 0, vy = 0;
     if (this.moveTarget) {

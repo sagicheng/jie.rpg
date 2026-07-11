@@ -130,6 +130,11 @@ export class GameScene extends Phaser.Scene {
     this.isInDialogue = false;
     this.canInteract = false;
     this.currentNPC = null;
+    // 副本返回时 GameScene 是 scene.start 重启（复用同一实例，不重跑构造期字段初始化），
+    // inDungeon/nearbyDungeon 会残留上次 true → 二次进入副本被 checkDungeonPortal 的 !inDungeon 守卫永久挡掉。
+    // 这里显式复位，确保每次重建都能再次进入副本。
+    this.inDungeon = false;
+    this.nearbyDungeon = false;
 
     this.createMap();
     this.dialogueBox = new DialogueBox(this);
