@@ -32,7 +32,6 @@ export class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
-  private interactKey!: Phaser.Input.Keyboard.Key;
   /** 是否已进入副本（防止重复进入）。 */
   private inDungeon = false;
   /** 是否站在副本传送阵附近（F 键进入）。 */
@@ -170,7 +169,9 @@ export class GameScene extends Phaser.Scene {
       S: this.input.keyboard!.addKey('S'), D: this.input.keyboard!.addKey('D'),
       SHIFT: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
     };
-    this.interactKey = this.input.keyboard!.addKey('F');
+    // 离散动作键 F 用事件驱动（keydown-F），与 B/C 一致；避免 JustDown 在快速点按时被
+    // keyup 同帧清零导致「按了像没按」的吞键问题
+    this.input.keyboard!.on('keydown-F', this.onInteractKey, this);
     this.input.keyboard!.addKey('B').on('down', () => { if (!this.isInDialogue && !this.statPanel) toggleInventory(this); });
     this.input.keyboard!.addKey('C').on('down', () => { if (!this.isInDialogue && !this.inventoryPanel) toggleStatPanel(this); });
     this.input.keyboard!.addKey('K').on('down', () => {
@@ -349,8 +350,8 @@ export class GameScene extends Phaser.Scene {
     }
     this.player.setVelocity(vx, vy);
     if (vx < 0) this.player.setFlipX(true); else if (vx > 0) this.player.setFlipX(false);
-    this.checkNPCProximity(); this.checkGatherProximity(); this.checkZoneExit(); this.checkDungeonPortal();
-    this.checkInteract(); this.updateMiniMap(); this.checkEnemyCollision();
+    this.checkNPCProximity(); this.checkZoneExit(); this.checkDungeonPortal();
+    this.updateMiniMap(); this.checkEnemyCollision();
     GameState.x = this.player.x; GameState.y = this.player.y;
     if (this.battleCooldown > 0) this.battleCooldown--;
     this.coordText.setText(`X:${Math.round(this.player.x)}  Y:${Math.round(this.player.y)}`);
@@ -394,12 +395,58 @@ export class GameScene extends Phaser.Scene {
     if (this.canInteract && this.currentNPC) { this.promptText.setText(`按 F 与 ${this.currentNPC.name} 对话`); this.promptText.setPosition(this.currentNPC.sprite.x, this.currentNPC.sprite.y - 50); this.promptText.setVisible(true); }
     else { this.promptText.setVisible(false); }
   }
-  private checkInteract(): void {
-    // 注意：JustDown 会消费按下标志，必须只取一次给两个分支共用，否则第二处永远为 false
-    const fDown = Phaser.Input.Keyboard.JustDown(this.interactKey);
-    if (fDown && this.canInteract && this.currentNPC) { this.startDialogue(this.currentNPC); return; }
+  /** F 键统一处理（事件驱动，keydown 即触发，不受 keyup 时机影响）。按优先级：NPC > 副本传送阵 > 采集点 > 区域出口。 */
+  private onInteractKey(): void {
+    if (this.isInDialogue) return;
+    // NPC 对话优先
+    if (this.canInteract && this.currentNPC) { this.startDialogue(this.currentNPC); return; }
     // 副本传送阵：F 进入
-    if (fDown && this.nearbyDungeon && !this.inDungeon) { this.enterDungeon(GameState.zone); }
+    if (this.nearbyDungeon && !this.inDungeon) { this.enterDungeon(GameState.zone); return; }
+    // 采集点
+    for (let i = 0; i < this.gatherPoints.length; i++) {
+      const pt = this.gatherPoints[i];
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, pt.sprite.x, pt.sprite.y);
+      if (dist < 55) { this.tryGather(i); return; }
+    }
+    // 区域出口（站在副本传送阵上时 F 留给副本进入，上面已处理）
+    const cfg = ZONE_CONFIGS[GameState.zone];
+    if (cfg) {
+      if (this.dungeonPortalPos) {
+        const dpDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.dungeonPortalPos.x, this.dungeonPortalPos.y);
+        if (dpDist < 60) return;
+      }
+      for (const exit of cfg.exits) {
+        const ex = exit.x * GAME_WIDTH * 3, ey = exit.y * GAME_HEIGHT * 2;
+        if (Phaser.Math.Distance.Between(this.player.x, this.player.y, ex, ey) < 60) {
+          this.transitionToZone(exit.targetZone, exit.targetX * GAME_WIDTH * 3, exit.targetY * GAME_HEIGHT * 2);
+          return;
+        }
+      }
+    }
+  }
+
+  /** 采集动作（从 onInteractKey 调用，原 checkGatherProximity 的 F-触发逻辑提取）。 */
+  private tryGather(idx: number): void {
+    if (this.isInDialogue) return;
+    const pt = this.gatherPoints[idx];
+    // 客户端活动任务进度（UI 用，两种模式都更新）
+    GameState.updateQuestProgress('collect', pt.type, 1);
+    if (this.gameRoom) {
+      // 联机：采集走服务端权威，背包/节点隐藏由 worldSync 下发，反馈由 intentResult
+      if (!requestGather(GameState.zone, idx, Math.round(this.player.x), Math.round(this.player.y))) return;
+      this.isInDialogue = true;
+      this.time.delayedCall(300, () => { this.isInDialogue = false; });
+      return;
+    }
+    // 单机：本地采集
+    this.isInDialogue = true;
+    const matName = NODE_TO_MATERIAL[pt.type] || pt.type;
+    Inventory.addItem({ id: matId(matName), name: matName, type: 'material', desc: '野外采集获得', quantity: 1 });
+    pt.sprite.setVisible(false); pt.label.setVisible(false);
+    this.time.delayedCall(30000, () => { pt.sprite.setVisible(true); pt.label.setVisible(true); });
+    const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, `获得：${matName}`, { fontSize: '18px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 16, y: 8 } }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+    this.tweens.add({ targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 100, duration: 1500, onComplete: () => notif.destroy() });
+    this.time.delayedCall(300, () => { this.isInDialogue = false; });
   }
 
   /** 副本传送阵 proximity：站在传送阵附近时显示进入提示。 */
@@ -434,7 +481,7 @@ export class GameScene extends Phaser.Scene {
       const dpDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.dungeonPortalPos.x, this.dungeonPortalPos.y);
       if (dpDist < 60) return;
     }
-    for (const exit of cfg.exits) { const ex = exit.x * GAME_WIDTH * 3, ey = exit.y * GAME_HEIGHT * 2; const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, ex, ey); if (dist < 60) { this.promptText.setText(`按 F 前往 ${ZONE_NAMES[exit.targetZone]}`); this.promptText.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60); this.promptText.setVisible(true); if (Phaser.Input.Keyboard.JustDown(this.interactKey)) this.transitionToZone(exit.targetZone, exit.targetX * GAME_WIDTH * 3, exit.targetY * GAME_HEIGHT * 2); return; } }
+    for (const exit of cfg.exits) { const ex = exit.x * GAME_WIDTH * 3, ey = exit.y * GAME_HEIGHT * 2; const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, ex, ey); if (dist < 60) { this.promptText.setText(`按 F 前往 ${ZONE_NAMES[exit.targetZone]}`); this.promptText.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60); this.promptText.setVisible(true); return; } }
     if (!this.canInteract) this.promptText.setVisible(false);
   }
   private transitionToZone(tz: number, tx: number, ty: number): void {
@@ -823,35 +870,6 @@ export class GameScene extends Phaser.Scene {
       const label = this.add.text(gx, gy - 20, pt.type, { fontSize: '10px', color: '#aaddaa', backgroundColor: '#00000066', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(3);
       this.tweens.add({ targets: sprite, alpha: 0.6, duration: 1500, yoyo: true, repeat: -1 });
       this.gatherPoints.push({ sprite, type: pt.type, label });
-    }
-  }
-
-  private checkGatherProximity(): void {
-    if (this.isInDialogue) return;
-    for (const pt of this.gatherPoints) {
-      const idx = this.gatherPoints.indexOf(pt);
-      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, pt.sprite.x, pt.sprite.y);
-      if (dist < 55 && Phaser.Input.Keyboard.JustDown(this.interactKey)) {
-        // 客户端活动任务进度（UI 用，两种模式都更新）
-        GameState.updateQuestProgress('collect', pt.type, 1);
-        if (this.gameRoom) {
-          // 联机：采集走服务端权威，背包/节点隐藏由 worldSync 下发，反馈由 intentResult
-          if (!requestGather(GameState.zone, idx, Math.round(this.player.x), Math.round(this.player.y))) return;
-          this.isInDialogue = true;
-          this.time.delayedCall(300, () => { this.isInDialogue = false; });
-          return;
-        }
-        // 单机：本地采集
-        this.isInDialogue = true;
-        const matName = NODE_TO_MATERIAL[pt.type] || pt.type;
-        Inventory.addItem({ id: matId(matName), name: matName, type: 'material', desc: '\u91ce\u5916\u91c7\u96c6\u83b7\u5f97', quantity: 1 });
-        pt.sprite.setVisible(false); pt.label.setVisible(false);
-        this.time.delayedCall(30000, () => { pt.sprite.setVisible(true); pt.label.setVisible(true); });
-        const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, `\u83b7\u5f97\uff1a${matName}`, { fontSize: '18px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 16, y: 8 } }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
-        this.tweens.add({ targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 100, duration: 1500, onComplete: () => notif.destroy() });
-        this.time.delayedCall(300, () => { this.isInDialogue = false; });
-        return;
-      }
     }
   }
 
