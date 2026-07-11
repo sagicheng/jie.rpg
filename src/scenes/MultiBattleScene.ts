@@ -34,7 +34,7 @@ interface Button {
   setEnable: (b: boolean) => void;
 }
 
-interface ClientLoadout {
+export interface ClientLoadout {
   skills: string[];
   kidos: KidoNode[];
   items: Item[];
@@ -69,6 +69,12 @@ export class MultiBattleScene extends Phaser.Scene {
   private endReported = false;         // 防止 victory/defeat 重复回写
   private intentionalLeave = false;    // 主动点「返回地图」时置真，避免 onLeave 误弹「连接断开」
 
+  // 副本战斗上下文：非零表示本场为某副本某阶战斗；returnScene 指定胜利后回写的场景
+  private dungeonId = 0;
+  private dungeonStage = 0;
+  private dungeonRoomId = '';
+  private returnScene = 'GameScene';
+
   // 进房携带的可用技能/鬼道/道具/玩家真实属性（服务端据其做权威校验与结算）
   private loadout: ClientLoadout = { skills: [], kidos: [], items: [] };
 
@@ -87,13 +93,17 @@ export class MultiBattleScene extends Phaser.Scene {
     super({ key: 'MultiBattleScene' });
   }
 
-  init(data: { playerName?: string; mode?: 'vkey' | 'map'; enemyData?: any; enemyParty?: EnemyData[]; monsterId?: string; loadout?: ClientLoadout }): void {
+  init(data: { playerName?: string; mode?: 'vkey' | 'map'; enemyData?: any; enemyParty?: EnemyData[]; monsterId?: string; loadout?: ClientLoadout; dungeonId?: number; dungeonStage?: number; dungeonRoomId?: string; returnScene?: string }): void {
     this.playerName = data?.playerName || '玩家';
     this.mode = data?.mode || 'vkey';
     this.enemyData = data?.enemyData || null;
     this.enemyParty = data?.enemyParty || [];
     this.monsterId = data?.monsterId || '';
     this.loadout = data?.loadout || { skills: [], kidos: [], items: [] };
+    this.dungeonId = data?.dungeonId || 0;
+    this.dungeonStage = data?.dungeonStage || 0;
+    this.dungeonRoomId = data?.dungeonRoomId || '';
+    this.returnScene = data?.returnScene || 'GameScene';
     // 重置（场景复用同一实例时避免脏状态）
     this.room = null;
     this.mySessionId = '';
@@ -147,12 +157,15 @@ export class MultiBattleScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.menu) { this.menu.destroy(true); this.menu = null; this.menuOpen = false; }
       if (this.room) { this.room.leave(); this.room = null; }
-      if (this.scene.isPaused('GameScene')) this.scene.resume('GameScene');
+      // 恢复被本场战斗暂停的底层场景（地图 → GameScene；副本 → DungeonScene）
+      if (this.scene.isPaused(this.returnScene)) this.scene.resume(this.returnScene);
     });
   }
 
   // ——— 连接权威战斗房间 ———
   private connect(): void {
+    // 副本战斗：monsterId 用 `dungeon:ID:阶` 便于多人同阶同场（filterBy 同源隔离）
+    const battleMonsterId = this.dungeonStage > 0 ? `dungeon:${this.dungeonId}:${this.dungeonStage}` : this.monsterId;
     // monsterId 保留原值：map 模式为具体怪 id，V键组队为 ''（filterBy 据此匹配同房）
     const serverLoadout = {
       skills: this.loadout.skills,
@@ -173,9 +186,12 @@ export class MultiBattleScene extends Phaser.Scene {
       ownerSessionId: (this.scene.get('GameScene') as any)?.mySessionId || '',
       enemyData: this.enemyData ?? undefined,
       enemyParty: this.enemyParty,
-      monsterId: this.monsterId,
+      monsterId: battleMonsterId,
       loadout: serverLoadout,
       playerStats: this.loadout.playerStats,
+      dungeonId: this.dungeonStage > 0 ? this.dungeonId : undefined,
+      dungeonStage: this.dungeonStage > 0 ? this.dungeonStage : undefined,
+      dungeonRoomId: this.dungeonStage > 0 ? this.dungeonRoomId : undefined,
     })
       .then((room: any) => {
         this.room = room;
@@ -194,10 +210,10 @@ export class MultiBattleScene extends Phaser.Scene {
         // 服务端权威战斗奖励（gold/exp/loot），供结算报告使用；若胜利已回写后再到，则刷新报告真实数值
         room.onMessage('battleReward', (r: any) => {
           this.lastReward = { exp: r?.exp ?? 0, gold: r?.gold ?? 0, loot: Array.isArray(r?.loot) ? r.loot : [], leveled: !!r?.leveled };
-          if (this.mode === 'map' && this.endReported) {
-            const gs = this.scene.get('GameScene') as any;
-            if (gs && typeof gs.onMultiBattleEnd === 'function') {
-              gs.onMultiBattleEnd('victory', this.monsterId, this.enemyData, this.lastReward);
+          if (this.endReported) {
+            const target = this.scene.get(this.returnScene) as any;
+            if (target && typeof target.onMultiBattleEnd === 'function') {
+              target.onMultiBattleEnd('victory', this.monsterId, this.enemyData, this.lastReward);
             }
           }
         });
@@ -426,12 +442,12 @@ export class MultiBattleScene extends Phaser.Scene {
     if (s.phase === 'victory' || s.phase === 'defeat' || s.phase === 'fled') {
       const title = s.phase === 'victory' ? '胜 利 ！' : s.phase === 'defeat' ? '战 斗 失 败' : '脱 逃 成 功';
       this.showResult(title);
-      // 地图怪模式：权威战斗结束 → 回写 GameScene（奖励结算 + 怪物 kill/unlock/复原），仅触发一次
-      if (this.mode === 'map' && !this.endReported) {
-        const gs = this.scene.get('GameScene') as any;
-        if (gs && typeof gs.onMultiBattleEnd === 'function') {
+      // 权威战斗结束 → 回写目标场景（地图怪回写 GameScene；副本回写 DungeonScene），仅触发一次
+      if (!this.endReported) {
+        const target = this.scene.get(this.returnScene) as any;
+        if (target && typeof target.onMultiBattleEnd === 'function') {
           this.endReported = true;
-          gs.onMultiBattleEnd(s.phase, this.monsterId, this.enemyData, this.lastReward ?? undefined);
+          target.onMultiBattleEnd(s.phase, this.monsterId, this.enemyData, this.lastReward ?? undefined);
         }
       }
     }
@@ -529,7 +545,7 @@ export class MultiBattleScene extends Phaser.Scene {
     const t = this.add.text(0, -90, title, {
       fontSize: '40px', color: title.includes('胜利') ? '#88ff88' : title.includes('脱') ? '#ffdd66' : '#ff8866', fontStyle: 'bold',
     }).setOrigin(0.5);
-    const btn = this.add.text(0, 80, '返回地图', {
+    const btn = this.add.text(0, 80, this.returnScene === 'GameScene' ? '返回地图' : '返回副本', {
       fontSize: '22px', color: '#d4c5a0', padding: { x: 24, y: 10 }, backgroundColor: '#2a2a3e',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     btn.on('pointerover', () => btn.setColor('#ffe8b0'));

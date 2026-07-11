@@ -22,6 +22,8 @@ import type { EquipSlot } from '../src/systems/Inventory';
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1080;
 const GATHER_RESPAWN_MS = 30000;
+/** 副本每周可参加次数（全部副本共享）。 */
+const DUNGEON_WEEKLY_CAP = 3;
 
 // ——— 强化 / 精炼 / 分解 纯逻辑（镜像自 src/systems/EnhanceSystem，去全局耦合）———
 const ENHANCE_RATES: number[] = [1, 1, 1, 1, 1, 0.85, 0.70, 0.55, 0.42, 0.30];
@@ -53,6 +55,11 @@ export interface WorldItem {
   enhanceLevel?: number; refineStats?: Array<{ key: string; value: number }>;
 }
 
+/** 副本进行中的活动副本（联机权威，断连不丢；用于周次计次的"续打免计费"判定）。 */
+export interface ActiveDungeon {
+  dungeonId: number;
+}
+
 export interface PlayerWorld {
   inventory: WorldItem[];
   equipment: Record<EquipSlot, WorldItem | null>;
@@ -63,6 +70,10 @@ export interface PlayerWorld {
   gatherNodes: Record<string, { consumed: boolean; respawnAt: number }>;
   dailyClaimed: { date: string; ids: string[] };
   weeklyClaimed: { week: string; ids: string[] };
+  /** 副本周共享进入次数（全部副本共享 3 次/周，按"进入"计）。 */
+  dungeonWeekly: { week: string; count: number };
+  /** 当前活动副本（null=本周无进行中的副本）。用于"续打同副本不重复计次"。 */
+  dungeon: ActiveDungeon | null;
 }
 
 export interface OpResult { ok: boolean; msg: string; data?: any; }
@@ -81,6 +92,7 @@ function seedWorld(): PlayerWorld {
     gold: 200, level: 1, exp: 0,
     quests: {}, completedQuests: [], bestiary: {}, gatherNodes: {},
     dailyClaimed: { date: '', ids: [] }, weeklyClaimed: { week: '', ids: [] },
+    dungeonWeekly: { week: '', count: 0 }, dungeon: null,
   };
 }
 
@@ -191,6 +203,35 @@ export class WorldService {
     if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
     pw.completedQuests.push(questId);
     return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, data: r };
+  }
+
+  // ───────────────── 副本（独立实例·周共享3次） ─────────────────
+  /**
+   * 进入副本：按日历周 + 上限判定（全部副本共享 3 次/周，按"进入"计次）。
+   * - 若已有同副本活动进度 → 视为续打，免费（不计次）。
+   * - 否则若本周次数已用完 → 拒绝。
+   * - 否则计 1 次并设为活动副本。
+   * 例：进2次副本1 + 1次副本2 = 3 次（满）。
+   */
+  enterDungeon(pw: PlayerWorld, dungeonId: number): OpResult {
+    const w = weekStr();
+    if (pw.dungeonWeekly.week !== w) pw.dungeonWeekly = { week: w, count: 0 };
+    // 续打同副本：免费
+    if (pw.dungeon && pw.dungeon.dungeonId === dungeonId) {
+      return { ok: true, msg: '继续副本', data: { resumed: true, remaining: DUNGEON_WEEKLY_CAP - pw.dungeonWeekly.count } };
+    }
+    // 新进入：计次
+    if (pw.dungeonWeekly.count >= DUNGEON_WEEKLY_CAP) {
+      return { ok: false, msg: '本周副本次数已用完（共享3次）' };
+    }
+    pw.dungeonWeekly.count += 1;
+    pw.dungeon = { dungeonId };
+    return { ok: true, msg: '进入副本', data: { resumed: false, remaining: DUNGEON_WEEKLY_CAP - pw.dungeonWeekly.count } };
+  }
+
+  /** 副本全部 3 阶通关：清除活动副本（下次进入重新计次）。 */
+  completeDungeon(pw: PlayerWorld, dungeonId: number): void {
+    if (pw.dungeon && pw.dungeon.dungeonId === dungeonId) pw.dungeon = null;
   }
 
   // ───────────────── 装备 / 卸下 ─────────────────

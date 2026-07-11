@@ -7,14 +7,14 @@ import { EnemyData, createEnemyData, expForLevel, generateLoot } from '../system
 import { getEnemyData, NAMED_ENEMIES } from '../systems/BestiaryData';
 import { Inventory } from '../systems/Inventory';
 import { SaveManager } from '../systems/SaveManager';
-import { ZONE_CONFIGS } from '../systems/Zones';
+import { ZONE_CONFIGS, getDungeonPortal } from '../systems/Zones';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
 import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 import { getClient } from '../net/Net';
-import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest } from '../systems/WorldClient';
+import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -33,6 +33,12 @@ export class GameScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private interactKey!: Phaser.Input.Keyboard.Key;
+  /** 是否已进入副本（防止重复进入）。 */
+  private inDungeon = false;
+  /** 是否站在副本传送阵附近（F 键进入）。 */
+  private nearbyDungeon = false;
+  /** 当前区域副本传送阵世界坐标（渲染 + 小地图 +  proximity 用）。 */
+  private dungeonPortalPos: { x: number; y: number } | null = null;
   private ctrlKey!: Phaser.Input.Keyboard.Key;
   public dialogueBox!: DialogueBox;
   public isInDialogue = false;
@@ -343,7 +349,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.player.setVelocity(vx, vy);
     if (vx < 0) this.player.setFlipX(true); else if (vx > 0) this.player.setFlipX(false);
-    this.checkNPCProximity(); this.checkGatherProximity(); this.checkZoneExit();
+    this.checkNPCProximity(); this.checkGatherProximity(); this.checkZoneExit(); this.checkDungeonPortal();
     this.checkInteract(); this.updateMiniMap(); this.checkEnemyCollision();
     GameState.x = this.player.x; GameState.y = this.player.y;
     if (this.battleCooldown > 0) this.battleCooldown--;
@@ -388,7 +394,27 @@ export class GameScene extends Phaser.Scene {
     if (this.canInteract && this.currentNPC) { this.promptText.setText(`按 F 与 ${this.currentNPC.name} 对话`); this.promptText.setPosition(this.currentNPC.sprite.x, this.currentNPC.sprite.y - 50); this.promptText.setVisible(true); }
     else { this.promptText.setVisible(false); }
   }
-  private checkInteract(): void { if (Phaser.Input.Keyboard.JustDown(this.interactKey) && this.canInteract && this.currentNPC) this.startDialogue(this.currentNPC); }
+  private checkInteract(): void {
+    if (Phaser.Input.Keyboard.JustDown(this.interactKey) && this.canInteract && this.currentNPC) { this.startDialogue(this.currentNPC); return; }
+    // 副本传送阵：F 进入
+    if (Phaser.Input.Keyboard.JustDown(this.interactKey) && this.nearbyDungeon && !this.inDungeon) { this.enterDungeon(GameState.zone); }
+  }
+
+  /** 副本传送阵 proximity：站在传送阵附近时显示进入提示。 */
+  private checkDungeonPortal(): void {
+    if (!this.dungeonPortalPos) { this.nearbyDungeon = false; return; }
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.dungeonPortalPos.x, this.dungeonPortalPos.y);
+    if (dist < 60 && !this.inDungeon) {
+      this.nearbyDungeon = true;
+      const remaining = Math.max(0, DUNGEON_WEEKLY_CAP - dungeonWeekly.count);
+      const active = dungeonProgress && dungeonProgress.dungeonId === GameState.zone;
+      this.promptText.setText(active ? `按 F 继续副本${GameState.zone}` : `按 F 进入副本${GameState.zone}（本周剩余 ${remaining} 次）`);
+      this.promptText.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60);
+      this.promptText.setVisible(true);
+    } else {
+      this.nearbyDungeon = false;
+    }
+  }
   private startDialogue(npc: NPCData): void {
     this.isInDialogue = true; this.player.setVelocity(0, 0); this.promptText.setVisible(false);
     GameState.updateQuestProgress('talk', npc.name, 1);
@@ -661,6 +687,19 @@ export class GameScene extends Phaser.Scene {
       const arrow = this.add.text(ex, ey, arrowMap[exit.edge] || '\u2192', { fontSize: '22px', color: '#88ddff', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(4);
       this.tweens.add({ targets: arrow, alpha: 0.4, duration: 1000, yoyo: true, repeat: -1 });
     }
+
+    // 副本传送阵（每区域一个入口，进入独立副本实例）
+    const dp = getDungeonPortal(GameState.zone);
+    const dx = dp.x * mapW, dy = dp.y * mapH;
+    this.dungeonPortalPos = { x: dx, y: dy };
+    const portal = this.add.graphics();
+    portal.fillStyle(0xaa66ff, 0.15); portal.fillCircle(dx, dy, 38);
+    portal.fillStyle(0xaa66ff, 0.32); portal.fillCircle(dx, dy, 24);
+    portal.lineStyle(2, 0xcc99ff, 0.9); portal.strokeCircle(dx, dy, 32);
+    portal.setDepth(3);
+    this.tweens.add({ targets: portal, alpha: 0.35, duration: 1100, yoyo: true, repeat: -1 });
+    const tag = this.add.text(dx, dy - 46, '\u25C6 副本' + GameState.zone, { fontSize: '12px', color: '#d9b3ff', fontStyle: 'bold', backgroundColor: '#221133cc', padding: { x: 5, y: 2 } }).setOrigin(0.5).setDepth(6);
+    this.tweens.add({ targets: tag, y: dy - 52, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
   }
 
   private createNPCs(): void {
@@ -826,6 +865,13 @@ export class GameScene extends Phaser.Scene {
         this.miniMap.fillStyle(0x88ddff, flash); this.miniMap.fillCircle(dotX, dotY, 3);
         this.miniMap.lineStyle(1, 0xffffff, 0.8); this.miniMap.strokeCircle(dotX, dotY, 4);
       }
+      // 副本传送阵光标（紫色菱形，便于在右上角小地图定位）
+      const dp = getDungeonPortal(GameState.zone);
+      const ddx = mmX + dp.x * mmW, ddy = mmY + dp.y * mmH;
+      const dflash = Math.sin(this.time.now / 250) * 0.3 + 0.7;
+      this.miniMap.fillStyle(0xaa66ff, dflash * 0.4); this.miniMap.fillCircle(ddx, ddy, 7);
+      this.miniMap.fillStyle(0xcc99ff, dflash); this.miniMap.fillCircle(ddx, ddy, 3.5);
+      this.miniMap.lineStyle(1, 0xffffff, 0.8); this.miniMap.strokeCircle(ddx, ddy, 5);
     }
     this.miniMap.fillStyle(0x44aaff, 1);
     this.miniMap.fillCircle(mmX + this.player.x * sx, mmY + this.player.y * sy, 3);
@@ -1126,6 +1172,21 @@ export class GameScene extends Phaser.Scene {
     const dummy: EnemyData = createEnemyData('虚', '杂妖', '火', GameState.zone);
     this.scene.launch('MultiBattleScene', { playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), enemyParty: this.buildEncounterParty(dummy) });
     this.scene.pause();
+  }
+
+  /** 进入副本：暂停地图，启动独立副本场景（DungeonScene）。 */
+  private enterDungeon(zone: number): void {
+    this.inDungeon = true;
+    this.promptText.setVisible(false);
+    this.scene.launch('DungeonScene', { dungeonId: zone, fromZone: zone });
+    this.scene.pause();
+  }
+
+  /** DungeonScene 退出时复位标记并恢复地图（由 DungeonScene 在 shutdown 调用）。 */
+  public exitDungeon(): void {
+    this.inDungeon = false;
+    this.nearbyDungeon = false;
+    if (this.scene.isPaused('GameScene')) this.scene.resume('GameScene');
   }
 
   /** 组装联机权威战斗的可用技能/鬼道/道具清单，传给战斗房间做权威校验。 */

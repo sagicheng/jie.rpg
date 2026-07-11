@@ -194,6 +194,22 @@ export function generateLoot(type: EnemyType, zone: number): Item[] {
   return loot;
 }
 
+/** 副本某阶通关奖励（gold/exp/loot），按区域PL与阶数缩放。stage: 1=小怪 2=精英 3=BOSS。 */
+export function dungeonStageReward(dungeonId: number, stage: number): { gold: number; exp: number; loot: Item[] } {
+  const pl = ZONE_PL[dungeonId] || 10;
+  const goldMul = [0, 8, 16, 40][stage] ?? 20;
+  const expMul = [0, 12, 24, 60][stage] ?? 30;
+  const gold = Math.round(pl * goldMul);
+  const exp = Math.round(pl * expMul);
+  // 掉落品质随阶提升（stage3=BOSS 用妖王品质）
+  const type: EnemyType = stage >= 3 ? '妖王' : stage === 2 ? '妖将' : '恶妖';
+  const loot = generateLoot(type, dungeonId);
+  if (loot.length === 0) {
+    loot.push({ id: matId('铁矿石'), name: '铁矿石', type: 'material', desc: '副本材料', quantity: 1 } as Item);
+  }
+  return { gold, exp, loot };
+}
+
 /** 伤害计算（04文档公式） */
 export function calcDamage(atk: number, def: number, power: number, elementBonus = 1.0): { damage: number; crit: boolean } {
   let damage = atk * power - def * 0.4;

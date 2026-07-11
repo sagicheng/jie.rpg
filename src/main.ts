@@ -6,6 +6,7 @@ import { GameScene } from './scenes/GameScene';
 import { CreateCharacterScene } from './scenes/CreateCharacterScene';
 import { BattleScene } from './scenes/BattleScene';
 import { MultiBattleScene } from './scenes/MultiBattleScene';
+import { DungeonScene } from './scenes/DungeonScene';
 import { UIScene } from './scenes/UIScene';
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -21,7 +22,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, TitleScene, CreateCharacterScene, GameScene, BattleScene, MultiBattleScene, UIScene],
+  scene: [BootScene, TitleScene, CreateCharacterScene, GameScene, BattleScene, MultiBattleScene, DungeonScene, UIScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

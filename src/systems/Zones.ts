@@ -36,6 +36,8 @@ export interface ZoneConfig {
   enemies: ZoneEnemy[];
   gathering: ZoneGather[];
   exits: Array<{ edge: 'east'|'west'|'north'|'south'|'northwest'|'northeast'|'southwest'|'southeast'; x: number; y: number; targetZone: number; targetX: number; targetY: number }>;
+  /** 副本传送阵坐标（每区域一个入口；可选，缺省用统一默认位置）。 */
+  dungeonPortal?: { x: number; y: number };
 }
 
 // ── 商店物品生成辅助 ──
@@ -2655,3 +2657,10 @@ export const ZONE_CONFIGS: Record<number, ZoneConfig> = {
     ],
   },
 };
+
+/** 副本传送阵坐标（每区域一个入口；未显式配置则用统一默认位置，避免逐一硬编码21区）。 */
+export function getDungeonPortal(zone: number): { x: number; y: number } {
+  const cfg = ZONE_CONFIGS[zone];
+  if (cfg && cfg.dungeonPortal) return cfg.dungeonPortal;
+  return { x: 0.1, y: 0.12 };
+}

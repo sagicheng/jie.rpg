@@ -13,6 +13,7 @@ import { Server } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { GameRoom } from './rooms/GameRoom';
 import { BattleRoom } from './rooms/BattleRoom';
+import { DungeonRoom } from './rooms/DungeonRoom';
 
 const PORT = Number(process.env.PORT) || 2567;
 
@@ -24,6 +25,8 @@ const gameServer = new Server({
 gameServer.define('game', GameRoom);
 // battle 房按 monsterId 隔离：A 撞怪1 / B 撞怪2 各自独立房；V键组队 monsterId='' 仍同房
 gameServer.define('battle', BattleRoom).filterBy(['monsterId']);
+// dungeon 房按 dungeonId 隔离：每副本一个独立实例，多人同场；续打复用同实例
+gameServer.define('dungeon', DungeonRoom).filterBy(['dungeonId']);
 
 gameServer.listen(PORT).then(() => {
   console.log(`[联机] Colyseus 权威游戏服已启动：ws://localhost:${PORT}`);

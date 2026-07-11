@@ -8,8 +8,9 @@
  */
 import { Room, Client } from '@colyseus/core';
 import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage } from '../schema';
-import { createEnemyData, calcDamage, calcMagicDamage, generateLoot } from '../../src/systems/BattleData';
+import { createEnemyData, calcDamage, calcMagicDamage, generateLoot, dungeonStageReward } from '../../src/systems/BattleData';
 import { world } from '../world';
+import { DungeonRegistry } from '../DungeonRegistry';
 import type { EnemyData } from '../../src/systems/BattleData';
 import { SKILL_BY_NAME, getSkillTargetType } from '../../src/systems/Skills';
 import { CONSUMABLES } from '../../src/systems/ConsumableSystem';
@@ -53,6 +54,10 @@ export class BattleRoom extends Room<BattleRoomState> {
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
   /** 当前玩家回合决策截止时间（epoch ms），与 schema.turnExpiresAt 同步。 */
   private turnExpiresAt = 0;
+  /** 副本战斗上下文：非 0 表示本场为某副本某阶战斗（复用权威结算，胜利改发副本奖励）。 */
+  private dungeonId = 0;
+  private dungeonStage = 0;
+  private dungeonRoomId = '';
 
   onCreate(options: { monsterId?: string }) {
     // matchmaking：按 monsterId 隔离房间（地图怪各自独立，V键组队统一 ''）
@@ -69,6 +74,9 @@ export class BattleRoom extends Room<BattleRoomState> {
     monsterId?: string;
     loadout?: { skills?: string[]; kidos?: KidoLoadoutDTO[]; items?: string[] };
     playerStats?: { hp?: number; maxHp?: number; mp?: number; maxMp?: number; atk?: number; def?: number; matk?: number; mdef?: number; spd?: number };
+    dungeonId?: number;
+    dungeonStage?: number;
+    dungeonRoomId?: string;
   }) {
     const p = new CombatPlayer();
     p.sessionId = client.sessionId;
@@ -89,6 +97,12 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.state.players.set(client.sessionId, p);
     // 记录稳定身份：默认用战斗房 sid，若客户端传来游戏房 sid 则用它作为权威世界主键
     this.ownerSids.set(client.sessionId, (options as any).ownerSessionId || client.sessionId);
+    // 副本战斗上下文（仅首个加入者携带即生效；后续同场玩家沿用房间值）
+    if (typeof options?.dungeonId === 'number' && options.dungeonId > 0) {
+      this.dungeonId = options.dungeonId;
+      this.dungeonStage = typeof options.dungeonStage === 'number' ? options.dungeonStage : 0;
+      this.dungeonRoomId = options.dungeonRoomId || '';
+    }
 
     // 记录玩家可用技能/鬼道/道具，供后续意图权威校验与结算
     const lo: PlayerLoadout = { skills: new Set(), kidos: new Map(), items: new Set() };
@@ -478,6 +492,26 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.state.phase = 'victory';
     this.state.winner = 'players';
     this.clearTurnTimer();
+
+    // 副本战斗：发副本阶段奖励（gold/exp/loot），并通知 DungeonRoom 推进阶进度
+    if (this.dungeonStage > 0) {
+      const rw = dungeonStageReward(this.dungeonId, this.dungeonStage);
+      const lootNames = rw.loot.map((i) => i.name).join('、') || '无';
+      this.logMsg('system', `副本第${this.dungeonStage}阶通关！获得 金币${rw.gold} 经验${rw.exp}（${lootNames}）`);
+      const gameSids = [...this.clients].map((c: Client) => this.ownerSids.get(c.sessionId) || c.sessionId);
+      this.clients.forEach((c: Client) => {
+        const pw = world.get(this.ownerSids.get(c.sessionId) || c.sessionId);
+        world.grantLoot(pw, rw.loot);
+        const leveled = world.gainExp(pw, rw.exp) > 0;
+        world.addGold(pw, rw.gold);
+        if (this.dungeonStage >= 3) world.completeDungeon(pw, this.dungeonId);
+        c.send('battleReward', { exp: rw.exp, gold: rw.gold, loot: rw.loot.map((i) => i.name), leveled });
+      });
+      // 推进副本实例阶进度（断连恢复：进度存 WorldService，不影响此处推进）
+      DungeonRegistry.get(this.dungeonRoomId)?.onStageCleared(this.dungeonStage, gameSids);
+      return true;
+    }
+
     const loot = generateLoot(this.enemyDef.type, this.enemyDef.zone);
     const lootNames = loot.map((i) => i.name).join('、') || '无';
     this.logMsg('system', `胜利！获得战利品：${lootNames}`);

@@ -81,3 +81,20 @@ export class BattleRoomState extends Schema {
   @type([ChatMessage]) log = new ArraySchema<ChatMessage>();
   @type('string') winner = '';
 }
+
+/** 副本房间：独立实例（每副本一个，多人可同场）。
+ *  仅维护轻量进度与在场玩家；实际战斗由 BattleRoom 承载（复用权威结算骨架）。 */
+export class DungeonPlayer extends Schema {
+  @type('string') dungeonSid = '';
+  @type('string') gameSid = '';
+  @type('string') name = '';
+}
+
+export class DungeonRoomState extends Schema {
+  @type('number') dungeonId = 1;
+  /** 副本当前进行到的阶（1|2|3，全队共享进度）。 */
+  @type('number') stage = 1;
+  /** lobby（进行中）| clear（3阶全通） */
+  @type('string') phase = 'lobby';
+  @type({ map: DungeonPlayer }) players = new MapSchema<DungeonPlayer>();
+}

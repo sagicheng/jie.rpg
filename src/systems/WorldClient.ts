@@ -27,7 +27,14 @@ export interface PlayerWorld {
   gatherNodes: Record<string, { consumed: boolean; respawnAt: number }>;
   dailyClaimed?: { date: string; ids: string[] };
   weeklyClaimed?: { week: string; ids: string[] };
+  dungeonWeekly?: { week: string; count: number };
+  dungeon?: { dungeonId: number } | null;
 }
+
+/** 副本进度客户端镜像（供地图传送阵提示使用）。 */
+export let dungeonProgress: { dungeonId: number } | null = null;
+export let dungeonWeekly: { week: string; count: number } = { week: '', count: 0 };
+export const DUNGEON_WEEKLY_CAP = 3;
 
 let activeRoom: any = null;
 let disconnectNotifier: ((msg: string) => void) | null = null;
@@ -134,6 +141,10 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
   // 每日 / 周常 按本地日期刷新（联机下以服务端 worldSync 到达为基准）
   GameState.ensureDailyRefresh();
   GameState.ensureWeeklyRefresh();
+
+  // 副本进度镜像（地图传送阵提示用）
+  dungeonProgress = pw.dungeon ? { dungeonId: pw.dungeon.dungeonId } : null;
+  dungeonWeekly = pw.dungeonWeekly ? { week: pw.dungeonWeekly.week, count: pw.dungeonWeekly.count } : { week: '', count: 0 };
 
   // 通知 UIScene 更新数值栏
   if (scene && scene.scene) scene.scene.get('UIScene').events.emit('updateStats');
