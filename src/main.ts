@@ -6,8 +6,9 @@ import { GameScene } from './scenes/GameScene';
 import { CreateCharacterScene } from './scenes/CreateCharacterScene';
 import { BattleScene } from './scenes/BattleScene';
 import { MultiBattleScene } from './scenes/MultiBattleScene';
-import { DungeonScene } from './scenes/DungeonScene';
+import { DungeonMapScene } from './scenes/DungeonMapScene';
 import { UIScene } from './scenes/UIScene';
+import { GameState } from './systems/GameState';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -22,7 +23,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, TitleScene, CreateCharacterScene, GameScene, BattleScene, MultiBattleScene, DungeonScene, UIScene],
+  scene: [BootScene, TitleScene, CreateCharacterScene, GameScene, BattleScene, MultiBattleScene, DungeonMapScene, UIScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -43,6 +44,10 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
+(window as any).__game = game; // DEBUG HOOK (Playwright 验证用，上线前清理)
+(window as any).__gameState = GameState; // DEBUG HOOK (Playwright 验证用，上线前清理)
+
+
 
 // 联机：切除"窗口失焦/隐藏即暂停渲染"的监听，让后台窗口也持续重绘。
 // 否则 Alt+Tab 切到另一个浏览器窗口时，本窗口 loop.inFocus=false、step() 直接 return，

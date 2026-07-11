@@ -1199,19 +1199,21 @@ export class GameScene extends Phaser.Scene {
     this.scene.pause();
   }
 
-  /** 进入副本：暂停地图，启动独立副本场景（DungeonScene）。 */
+  /** 进入副本：停止当前地图，切换到独立副本地图场景（镜像地图方案，无 overlay 嵌套）。 */
   private enterDungeon(zone: number): void {
     this.inDungeon = true;
     this.promptText.setVisible(false);
-    this.scene.launch('DungeonScene', { dungeonId: zone, fromZone: zone });
-    this.scene.pause();
+    this.cameras.main.fadeOut(400, 0, 0, 0);
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      this.scene.stop('GameScene');
+      this.scene.start('DungeonMapScene', { dungeonId: zone, fromZone: zone });
+    });
   }
 
-  /** DungeonScene 退出时复位标记并恢复地图（由 DungeonScene 在 shutdown 调用）。 */
+  /** 兼容保留（DungeonMapScene 通过 scene.start('GameScene') 直接返回，不经此方法）。 */
   public exitDungeon(): void {
     this.inDungeon = false;
     this.nearbyDungeon = false;
-    if (this.scene.isPaused('GameScene')) this.scene.resume('GameScene');
   }
 
   /** 组装联机权威战斗的可用技能/鬼道/道具清单，传给战斗房间做权威校验。 */

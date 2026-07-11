@@ -78,3 +78,38 @@ export function buildDungeonParty(dungeonId: number, stage: number): EnemyData[]
   }
   return party;
 }
+
+// ════════════════ 镜像地图方案：副本地图层视觉配置 ════════════════
+
+export interface DungeonStageVisual {
+  title: string;
+  subtitle: string;
+  groundColor: number;
+  roadColor: number;
+  treeColor: number;
+  decorations: any[];
+}
+
+const STAGE_LABELS = ['', '第 1 阶 · 清剿小怪', '第 2 阶 · 击破精英', '第 3 阶 · 讨伐 BOSS'];
+const STAGE_DESCS = [
+  '',
+  '击败本区域的小怪群，击败后前往中央领取第 1 阶奖励。',
+  '击败精英怪，击败后前往中央领取第 2 阶奖励。',
+  '击败区域 BOSS（含随从），击败后前往中央领取第 3 阶奖励（副本通关）。',
+];
+
+/**
+ * 副本地图每层的视觉配置。复用对应区域的地面/道路/树木配色与装饰，
+ * 仅叠加层标题与层描述，保持与原地图风格一致。
+ */
+export function getDungeonStageVisual(dungeonId: number, stage: number): DungeonStageVisual {
+  const zone = ZONE_CONFIGS[dungeonId] || ZONE_CONFIGS[1];
+  return {
+    title: `副本 ${dungeonId} · ${zone.name} — ${STAGE_LABELS[stage] || ''}`,
+    subtitle: STAGE_DESCS[stage] || '',
+    groundColor: zone.groundColor,
+    roadColor: zone.roadColor,
+    treeColor: zone.treeColor,
+    decorations: zone.decorations || [],
+  };
+}

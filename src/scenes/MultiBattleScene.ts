@@ -152,12 +152,19 @@ export class MultiBattleScene extends Phaser.Scene {
     this.turnCountdownText = this.add.text(w / 2, 138, '', { fontSize: '16px', color: '#ffcc66', fontStyle: 'bold' }).setOrigin(0.5).setDepth(10);
     this.time.addEvent({ delay: 200, loop: true, callback: () => this.updateCountdown() });
 
+    // ESC：战斗中也可主动退出（返回副本/地图），避免卡死时无法退出
+    this.input.keyboard!.on('keydown-ESC', () => {
+      if (this.resultPanel) return;
+      this.intentionalLeave = true;
+      this.scene.stop();
+    });
+
     this.connect();
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.menu) { this.menu.destroy(true); this.menu = null; this.menuOpen = false; }
       if (this.room) { this.room.leave(); this.room = null; }
-      // 恢复被本场战斗暂停的底层场景（地图 → GameScene；副本 → DungeonScene）
+      // 恢复被本场战斗暂停的底层场景（地图 → GameScene；副本 → DungeonMapScene）
       if (this.scene.isPaused(this.returnScene)) this.scene.resume(this.returnScene);
     });
   }
@@ -179,6 +186,16 @@ export class MultiBattleScene extends Phaser.Scene {
       })),
       items: this.loadout.items.map((i) => i.id),
     };
+
+    // 连接超时兜底：joinOrCreate 既不 resolve 也不 reject（个别网络/浏览器）时，
+    // 8s 后主动弹「无法连接」并返回，避免永久卡在「连接中…」
+    const failTimer = this.time.delayedCall(8000, () => {
+      if (!this.room) {
+        console.warn('[battle] 连接超时（8s 未连上）');
+        this.showResult('无法连接战斗服务器');
+      }
+    });
+
     getClient().joinOrCreate('battle', {
       name: this.playerName,
       // 传递游戏房(GameRoom) sessionId 作为稳定身份：BattleRoom 据此把奖励写入玩家本体世界，
@@ -194,6 +211,7 @@ export class MultiBattleScene extends Phaser.Scene {
       dungeonRoomId: this.dungeonStage > 0 ? this.dungeonRoomId : undefined,
     })
       .then((room: any) => {
+        failTimer.remove();
         this.room = room;
         this.mySessionId = room.sessionId;
         const myRoom = room; // 闭包捕获，避免场景复用单例下旧房间异步离开误判
@@ -224,8 +242,17 @@ export class MultiBattleScene extends Phaser.Scene {
             this.room.send('startbattle');
           }
         });
+        // 状态同步兜底：若 onStateChange 未推送初始状态（个别浏览器/网络抖动），
+        // 3s 后若仍显示「连接中…」则强制重绘一次，避免画面卡在连接态。
+        this.time.delayedCall(3000, () => {
+          if (this.room && this.room.state && this.turnText && this.turnText.text === '连接中…') {
+            console.warn('[battle] 初始状态未推送，强制重绘');
+            this.renderState();
+          }
+        });
       })
       .catch((e: any) => {
+        failTimer.remove();
         console.error('[battle] 连接失败', e);
         this.showResult('无法连接战斗服务器');
       });
@@ -442,7 +469,7 @@ export class MultiBattleScene extends Phaser.Scene {
     if (s.phase === 'victory' || s.phase === 'defeat' || s.phase === 'fled') {
       const title = s.phase === 'victory' ? '胜 利 ！' : s.phase === 'defeat' ? '战 斗 失 败' : '脱 逃 成 功';
       this.showResult(title);
-      // 权威战斗结束 → 回写目标场景（地图怪回写 GameScene；副本回写 DungeonScene），仅触发一次
+      // 权威战斗结束 → 回写目标场景（地图怪回写 GameScene；副本回写 DungeonMapScene），仅触发一次
       if (!this.endReported) {
         const target = this.scene.get(this.returnScene) as any;
         if (target && typeof target.onMultiBattleEnd === 'function') {
