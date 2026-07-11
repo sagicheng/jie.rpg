@@ -395,9 +395,11 @@ export class GameScene extends Phaser.Scene {
     else { this.promptText.setVisible(false); }
   }
   private checkInteract(): void {
-    if (Phaser.Input.Keyboard.JustDown(this.interactKey) && this.canInteract && this.currentNPC) { this.startDialogue(this.currentNPC); return; }
+    // 注意：JustDown 会消费按下标志，必须只取一次给两个分支共用，否则第二处永远为 false
+    const fDown = Phaser.Input.Keyboard.JustDown(this.interactKey);
+    if (fDown && this.canInteract && this.currentNPC) { this.startDialogue(this.currentNPC); return; }
     // 副本传送阵：F 进入
-    if (Phaser.Input.Keyboard.JustDown(this.interactKey) && this.nearbyDungeon && !this.inDungeon) { this.enterDungeon(GameState.zone); }
+    if (fDown && this.nearbyDungeon && !this.inDungeon) { this.enterDungeon(GameState.zone); }
   }
 
   /** 副本传送阵 proximity：站在传送阵附近时显示进入提示。 */
@@ -427,6 +429,11 @@ export class GameScene extends Phaser.Scene {
   // ═══ Zone ═══
   private checkZoneExit(): void {
     const cfg = ZONE_CONFIGS[GameState.zone]; if (!cfg) return;
+    // 站在副本传送阵上时把 F 让给副本进入逻辑，避免传送阵与区域出口位置重叠时互相抢键
+    if (this.dungeonPortalPos) {
+      const dpDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.dungeonPortalPos.x, this.dungeonPortalPos.y);
+      if (dpDist < 60) return;
+    }
     for (const exit of cfg.exits) { const ex = exit.x * GAME_WIDTH * 3, ey = exit.y * GAME_HEIGHT * 2; const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, ex, ey); if (dist < 60) { this.promptText.setText(`按 F 前往 ${ZONE_NAMES[exit.targetZone]}`); this.promptText.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60); this.promptText.setVisible(true); if (Phaser.Input.Keyboard.JustDown(this.interactKey)) this.transitionToZone(exit.targetZone, exit.targetX * GAME_WIDTH * 3, exit.targetY * GAME_HEIGHT * 2); return; } }
     if (!this.canInteract) this.promptText.setVisible(false);
   }
