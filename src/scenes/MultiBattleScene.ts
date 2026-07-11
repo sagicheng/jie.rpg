@@ -196,6 +196,18 @@ export class MultiBattleScene extends Phaser.Scene {
       }
     });
 
+    // 副本模式：enterBattle 时若 DungeonRoom 尚未连上，dungeonRoomId 可能为空快照，
+    // 导致胜利后 BattleRoom 找不到 DungeonRoom、阶不推进（旧 RACE bug）。
+    // 此处从源场景实时读取已连接的 roomId：副本房连接在战斗场景启动前就已发起，几乎必然先连上，
+    // 战斗房连接又多一轮往返，故此时读取基本必为有效值。以此封死 RACE，同时允许玩家即时进战斗（不再硬挡碰撞）。
+    if (this.dungeonStage > 0 && this.returnScene) {
+      const src = this.scene.get(this.returnScene) as any;
+      if (src && src.dungeonRoomId) {
+        this.dungeonRoomId = src.dungeonRoomId;
+        console.log(`[DUNGEON-BATTLE] 实时补 dungeonRoomId=${this.dungeonRoomId}（源场景）`);
+      }
+    }
+
     getClient().joinOrCreate('battle', {
       name: this.playerName,
       // 传递游戏房(GameRoom) sessionId 作为稳定身份：BattleRoom 据此把奖励写入玩家本体世界，

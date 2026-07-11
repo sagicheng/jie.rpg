@@ -252,18 +252,28 @@ export class DungeonMapScene extends Phaser.Scene {
     this.coordText.setText(`X:${Math.round(this.player.x)}  Y:${Math.round(this.player.y)}`);
   }
 
+  private lastCollDiag = 0;
   private checkEnemyCollision(): void {
     if (this.battleCooldown > 0 || this.isTransitioning) return;
-    if (!this.dungeonRoomId) return; // 副本房未连上完成前暂不进战斗，避免 dungeonRoomId 传空导致进度不推进
+    let nearest = Infinity;
     for (const en of this.enemies) {
-      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y) < 40) {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y);
+      if (d < nearest) nearest = d;
+      if (d < 40) {
+        console.log(`[DUNGEON-COLLISION] 命中! dist=${Math.round(d)} -> enterBattle()`);
         this.enterBattle();
         return;
       }
     }
+    const now = this.time.now;
+    if (now - this.lastCollDiag > 1500) {
+      console.log(`[DUNGEON-COLLISION] 未命中: nearest=${Math.round(nearest)} enemies=${this.enemies.length} roomId=${this.dungeonRoomId || '空(战斗时实时补)'}`);
+      this.lastCollDiag = now;
+    }
   }
 
   private enterBattle(): void {
+    console.log(`[DUNGEON-BATTLE] enterBattle() roomId=${this.dungeonRoomId} stage=${this.localStage} enemies=${this.enemies.length}`);
     this.battleCooldown = 180;
     this.scene.pause();
     this.scene.launch('MultiBattleScene', {
@@ -385,11 +395,12 @@ export class DungeonMapScene extends Phaser.Scene {
     }).then((room: any) => {
       this.dungeonRoom = room;
       this.dungeonRoomId = room.roomId;
+      console.log(`[DUNGEON-CONN] 副本房已连接 roomId=${room.roomId} dungeonId=${this.dungeonId}`);
       room.onStateChange((s: any) => this.onDungeonStateChange(s));
       room.onMessage('dungeonError', (m: any) => this.showNotif(m?.msg || '无法进入副本'));
       this.onDungeonStateChange(room.state);
     }).catch((e: any) => {
-      console.error('[dungeon] 连接失败', e);
+      console.error('[DUNGEON-CONN] 连接失败', e);
       this.showNotif('无法连接副本服务器');
     });
   }
