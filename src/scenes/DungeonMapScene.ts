@@ -159,9 +159,9 @@ export class DungeonMapScene extends Phaser.Scene {
         sprite.setScale(1.6).setTint(0xffcc44);
         this.tweens.add({ targets: sprite, scaleX: 1.65, scaleY: 1.55, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       } else {
-        const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, GAME_WIDTH * 3 - 30);
-        const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, GAME_HEIGHT * 2 - 30);
-        this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        // 普通怪原地不动（与全游「明雷」一致）：之前加了位置游走 tween，玩家走过去时怪会闪躲，
+        // 导致碰撞判定最近距离常 >31px 擦肩而过、不进战斗。改为原地轻微呼吸动画保留生命感。
+        this.tweens.add({ targets: sprite, scaleX: 1.05, scaleY: 0.97, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       }
       const label = this.add.text(ex, ey - sprite.height / 2 - 10, isBoss ? `【BOSS】${data.name}` : data.name, {
         fontSize: '11px', color: isBoss ? '#ffcc44' : data.type === '恶妖' ? '#ff8866' : '#aaaabb',
@@ -256,7 +256,7 @@ export class DungeonMapScene extends Phaser.Scene {
     if (this.battleCooldown > 0 || this.isTransitioning) return;
     if (!this.dungeonRoomId) return; // 副本房未连上完成前暂不进战斗，避免 dungeonRoomId 传空导致进度不推进
     for (const en of this.enemies) {
-      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y) < 31) {
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y) < 40) {
         this.enterBattle();
         return;
       }
