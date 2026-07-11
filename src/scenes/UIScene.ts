@@ -197,7 +197,7 @@ export class UIScene extends Phaser.Scene {
       if (y > yStart + maxH - 30) break;
 
       const isCompleted = GameState.questCompleted.includes(questId);
-      const isActive = GameState.activeQuest === questId;
+      const isActive = GameState.isQuestActive(questId);
       // 锁定（前置未完成或区域未到达）→ 隐藏
       const isLocked = quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)
         || (quest.zoneRequired && !GameState.discoveredZones.includes(quest.zoneRequired));
@@ -216,7 +216,7 @@ export class UIScene extends Phaser.Scene {
       if (isActive) {
         y += 20;
         for (const obj of quest.objectives) {
-          const prog = GameState.questObjProgress[obj.target] || 0;
+          const prog = GameState.questProgress[questId]?.[obj.target] || 0;
           const done = prog >= obj.count ? '✓' : `${prog}/${obj.count}`;
           const pColor = prog >= obj.count ? '#448844' : '#aaaacc';
           container.add(this.add.text(px + 50, y, `  ↳ ${obj.desc} ${done}`, {
@@ -260,7 +260,7 @@ export class UIScene extends Phaser.Scene {
       for (const quest of zoneQuests) {
         if (y > yStart + maxH - 20) break;
         const isCompleted = GameState.questCompleted.includes(quest.id);
-        const isActive = GameState.activeQuest === quest.id;
+        const isActive = GameState.isQuestActive(quest.id);
         let icon: string, color: string;
         if (isCompleted) { icon = '✓'; color = '#448844'; }
         else if (isActive) { icon = '★'; color = '#ffcc44'; }

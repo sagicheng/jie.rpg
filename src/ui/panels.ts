@@ -7,7 +7,7 @@ import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierP
 import { Inventory, EquipSlot, Item } from '../systems/Inventory';
 import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
 import { createPlayerStatus } from '../systems/StatusSystem';
-import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
+import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS, getQuestDef, rollDailyPool, rollWeeklyPool, DAILY_CAP, WEEKLY_CAP } from '../systems/QuestData';
 import { SHIKAI_SKILLS, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { Kido, KIDO_NODES, KidoSchool, TIER_LOCK } from '../systems/Kido';
 import {
@@ -17,7 +17,7 @@ import {
   getEnhanceLabel, getEnhanceGlow,
 } from '../systems/EnhanceSystem';
 import {
-  requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset,
+  requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest,
 } from '../systems/WorldClient';
 
 // ═══════════════════════════════════════════
@@ -1040,37 +1040,37 @@ export function renderQuestLogPanel(scene: GameScene): void {
       .on('pointerout', function (this: any) { this.setColor('#cc6666'); })
       .on('pointerdown', () => toggleQuestLog(scene)));
 
-    // 当前任务
+    // 当前任务（多任务队列）
     let cy = oy + th + 20;
     p.add(scene.add.text(ox + 30, cy, '\u5f53\u524d\u4efb\u52a1', { fontSize: '16px', color: '#88aacc', fontStyle: 'bold', padding: { y: 3 } }));
     cy += 30;
-    if (GameState.activeQuest) {
-      const q = GameState.getActiveQuestDef();
-      if (q) {
-        p.add(scene.add.text(ox + 30, cy, `\u2605 ${q.name}`, { fontSize: '15px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
-        cy += 24;
-        p.add(scene.add.text(ox + 30, cy, q.desc, { fontSize: '12px', color: '#aaaacc', padding: { y: 1 } }));
+    if (GameState.activeQuests.length === 0) {
+      p.add(scene.add.text(ox + 30, cy, '\u65e0\u6d3b\u8dc3\u4efb\u52a1\uff0c\u53bb\u627eNPC\u5bf9\u8bdd\u6216\u4efb\u52a1\u677f\u63a5\u53d6\u4efb\u52a1\u5427\u3002', { fontSize: '13px', color: '#667788', padding: { y: 2 } }));
+      cy += 24;
+    } else {
+      for (const aid of GameState.activeQuests) {
+        const q = getQuestDef(aid);
+        if (!q) continue;
+        const ready = GameState.isQuestReady(aid);
+        p.add(scene.add.text(ox + 30, cy, `${ready ? '\u2713' : '\u2605'} ${q.name}`, { fontSize: '15px', color: ready ? '#88cc88' : '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
         cy += 22;
+        const prog = GameState.questProgress[aid] || {};
         for (const obj of q.objectives) {
-          const prog = GameState.questObjProgress[obj.target] || 0;
-          const done = prog >= obj.count;
-          p.add(scene.add.text(ox + 50, cy, `${done ? '\u2713' : '\u25cb'} ${obj.desc} ${prog}/${obj.count}`, {
+          const pv = prog[obj.target] || 0;
+          const done = pv >= obj.count;
+          p.add(scene.add.text(ox + 50, cy, `${done ? '\u2713' : '\u25cb'} ${obj.desc} ${Math.min(pv, obj.count)}/${obj.count}`, {
             fontSize: '12px', color: done ? '#88cc88' : '#ccccdd', padding: { y: 1 } }));
-          cy += 20;
+          cy += 19;
         }
-        cy += 10;
-        // 奖励预览
+        cy += 4;
         let rewardStr = '\u5956\u52b1: ';
         if (q.rewards.gold) rewardStr += `${q.rewards.gold}\u91d1\u5e01 `;
         if (q.rewards.exp) rewardStr += `${q.rewards.exp}\u7ecf\u9a8c `;
         if (q.rewards.items) rewardStr += q.rewards.items.map(it => `${it.name}\u00d7${it.count}`).join(' ');
         if (q.rewards.unlock) rewardStr += `\u89e3\u9501:${q.rewards.unlock}`;
         p.add(scene.add.text(ox + 30, cy, rewardStr, { fontSize: '11px', color: '#ffcc44', padding: { y: 1 } }));
-        cy += 24;
+        cy += 22;
       }
-    } else {
-      p.add(scene.add.text(ox + 30, cy, '\u65e0\u6d3b\u8dc3\u4efb\u52a1\uff0c\u53bb\u627eNPC\u5bf9\u8bdd\u63a5\u53d6\u4efb\u52a1\u5427\u3002', { fontSize: '13px', color: '#667788', padding: { y: 2 } }));
-      cy += 24;
     }
 
     // 分割线
@@ -1087,7 +1087,7 @@ export function renderQuestLogPanel(scene: GameScene): void {
       const quest = MAIN_QUESTS[questId];
       if (!quest) continue;
       const isCompleted = GameState.questCompleted.includes(questId);
-      const isActive = GameState.activeQuest === questId;
+      const isActive = GameState.isQuestActive(questId);
       const isAvailable = !isCompleted && !isActive && (!quest.prerequisite || GameState.questCompleted.includes(quest.prerequisite));
       const col = mainIdx % 2, row = Math.floor(mainIdx / 2);
       const mx = ox + 30 + col * colW2, my = cy + row * 22;
@@ -1112,7 +1112,7 @@ export function renderQuestLogPanel(scene: GameScene): void {
     const sideQuests = Object.values(SIDE_QUESTS);
     sideQuests.forEach((sq, i) => {
       const isCompleted = GameState.questCompleted.includes(sq.id);
-      const isActive = GameState.activeQuest === sq.id;
+      const isActive = GameState.isQuestActive(sq.id);
       const isAvailable = !isCompleted && !isActive && (!sq.prerequisite || GameState.questCompleted.includes(sq.prerequisite));
       const col = i % 2, row = Math.floor(i / 2);
       const sx2 = ox + 30 + col * colW2, sy2 = cy + row * 22;
@@ -1129,6 +1129,94 @@ export function renderQuestLogPanel(scene: GameScene): void {
     p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, 'L\u952e \u5f00\u5173  |  ESC \u5173\u95ed  |  \u2605\u8fdb\u884c\u4e2d  \u2713\u5b8c\u6210  \u25cb\u53ef\u63a5\u53d6  \u25a6\u9501\u5b9a', {
       fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
   }
+
+// ═══ 任务板（每日 / 周常）═══
+export function renderQuestBoardPanel(scene: GameScene): void {
+  // 刷新日期状态（跨天清空进行中与今日已领）
+  GameState.ensureDailyRefresh();
+  GameState.ensureWeeklyRefresh();
+  // 刷新时销毁旧面板，避免叠加
+  if (scene.questLogPanel) { scene.questLogPanel.destroy(true); scene.questLogPanel = null; }
+  const cam = scene.cameras.main;
+  const p = scene.add.container(Math.round(cam.scrollX), Math.round(cam.scrollY)).setDepth(300);
+  scene.questLogPanel = p;
+  const ov = scene.add.graphics(); ov.fillStyle(0, 0.8); ov.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  ov.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains); p.add(ov);
+  const ox = 30, oy = 20, ow = GAME_WIDTH - 60, oh = GAME_HEIGHT - 40;
+  const mb = scene.add.graphics(); mb.fillStyle(0x121222, 0.98); mb.fillRoundedRect(ox, oy, ow, oh, 12);
+  mb.lineStyle(2, 0x4a5a8a, 0.6); mb.strokeRoundedRect(ox, oy, ow, oh, 12); p.add(mb);
+  p.add(scene.add.text(GAME_WIDTH / 2, oy + 27, '◆  任 务 板  ◆', { fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+  const closeBtn = scene.add.text(ox + ow - 40, oy + 27, '✕', { fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+  closeBtn.on('pointerover', function (this: any) { this.setColor('#ff8888'); });
+  closeBtn.on('pointerout', function (this: any) { this.setColor('#cc6666'); });
+  closeBtn.on('pointerdown', () => { p.destroy(true); scene.questLogPanel = null; scene.resumeFromMenu(); });
+  p.add(closeBtn);
+
+  let cy = oy + 70;
+  cy = renderBoardSection(scene, p, ox, ow, cy, '每日任务', rollDailyPool(), GameState.dailyState.completed, DAILY_CAP);
+  cy += 10;
+  cy = renderBoardSection(scene, p, ox, ow, cy, '每周任务', rollWeeklyPool(), GameState.weeklyState.completed, WEEKLY_CAP);
+
+  const fy = oy + oh - 28; const ft = scene.add.graphics();
+  ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
+  p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, `每日上限${DAILY_CAP} · 每周上限${WEEKLY_CAP} · 进度自动累计 · ESC关闭`, { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+}
+
+function renderBoardSection(scene: GameScene, p: Phaser.GameObjects.Container, ox: number, ow: number, startY: number, title: string, poolIds: string[], completedToday: string[], cap: number): number {
+  let cy = startY;
+  p.add(scene.add.text(ox + 30, cy, title, { fontSize: '16px', color: '#88aacc', fontStyle: 'bold', padding: { y: 3 } }));
+  cy += 26;
+  for (const id of poolIds) {
+    const q = getQuestDef(id);
+    if (!q) continue;
+    const active = GameState.isQuestActive(id);
+    const done = completedToday.includes(id);
+    const ready = active && GameState.isQuestReady(id);
+    const prog = GameState.questProgress[id] || {};
+    p.add(scene.add.text(ox + 30, cy, `◆ ${q.name}`, { fontSize: '14px', color: done ? '#667788' : '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
+    const statusText = done ? '今日已完成' : ready ? '可领取' : active ? '进行中' : (completedToday.length >= cap ? '今日已达上限' : '可接取');
+    p.add(scene.add.text(ox + ow - 250, cy, statusText, { fontSize: '12px', color: ready ? '#88ff88' : done ? '#667788' : '#aaaacc', padding: { y: 2 } }));
+    const objText = q.objectives.map(o => `${o.desc} ${Math.min(prog[o.target] || 0, o.count)}/${o.count}`).join('  ');
+    p.add(scene.add.text(ox + 50, cy + 18, objText, { fontSize: '11px', color: '#aaaacc', padding: { y: 1 } }));
+    let rewardStr = '奖励: ';
+    if (q.rewards.gold) rewardStr += `${q.rewards.gold}金 `;
+    if (q.rewards.exp) rewardStr += `${q.rewards.exp}经 `;
+    if (q.rewards.items) rewardStr += q.rewards.items.map(it => `${it.name}×${it.count}`).join(' ');
+    p.add(scene.add.text(ox + 50, cy + 34, rewardStr, { fontSize: '11px', color: '#ffcc44', padding: { y: 1 } }));
+    const btnX = ox + ow - 110;
+    if (ready) {
+      const b = scene.add.text(btnX, cy + 8, '[领取]', { fontSize: '13px', color: '#44cc44', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#11221188' }).setInteractive({ useHandCursor: true });
+      b.on('pointerover', () => b.setColor('#88ff88')); b.on('pointerout', () => b.setColor('#44cc44'));
+      b.on('pointerdown', () => { claimBoardQuest(scene, id); });
+      p.add(b);
+    } else if (!done && !active && completedToday.length < cap) {
+      const b = scene.add.text(btnX, cy + 8, '[接受]', { fontSize: '13px', color: '#88ccff', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#11223388' }).setInteractive({ useHandCursor: true });
+      b.on('pointerover', () => b.setColor('#aaddff')); b.on('pointerout', () => b.setColor('#88ccff'));
+      b.on('pointerdown', () => { GameState.acceptQuestById(id); renderQuestBoardPanel(scene); });
+      p.add(b);
+    }
+    cy += 58;
+  }
+  return cy;
+}
+
+function claimBoardQuest(scene: GameScene, id: string): void {
+  const q = getQuestDef(id);
+  if (!q || !GameState.isQuestActive(id) || !GameState.isQuestReady(id)) return;
+  GameState.completeActiveQuest(id);
+  if (scene.gameRoom) {
+    requestClaimQuest(id);
+    scene.showWorldNotif(`任务完成：${q.name}（奖励稍后到账）`, true);
+  } else {
+    let msg = '';
+    if (q.rewards.gold) { GameState.gold += q.rewards.gold; msg += `金币+${q.rewards.gold} `; }
+    if (q.rewards.exp) { const lv = GameState.gainExp(q.rewards.exp); msg += `经验+${q.rewards.exp}`; if (lv) msg += ` 升级!`; }
+    if (q.rewards.items) { for (const it of q.rewards.items) { Inventory.addItem({ id: it.id, name: it.name, type: 'consumable' as any, desc: '', quantity: it.count }); msg += ` ${it.name}×${it.count}`; } }
+    scene.showWorldNotif(`领取成功：${msg}`, true);
+    scene.scene.get('UIScene').events.emit('updateStats');
+  }
+  renderQuestBoardPanel(scene);
+}
 
 export function toggleBestiaryPanel(scene: GameScene): void { if (scene.bestiaryPanel) { closeBestiaryPanel(scene); return; } scene.pauseForMenu(); renderBestiaryPanel(scene); }
 

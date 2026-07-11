@@ -2,7 +2,7 @@
  * 任务系统 — Bleach原著世界观
  */
 
-export type QuestType = 'main' | 'side' | 'daily';
+export type QuestType = 'main' | 'side' | 'daily' | 'weekly';
 export type QuestObjective = 'kill' | 'collect' | 'talk' | 'reach' | 'craft' | 'custom';
 
 export interface QuestObjectiveDef {
@@ -548,3 +548,88 @@ export const SIDE_QUESTS: Record<string, QuestDef> = {
 };
 
 export const SIDE_QUEST_IDS = Object.keys(SIDE_QUESTS);
+
+// ═══ 日常 / 周常 任务 ═══
+// 设计：每天从 DAILY_QUESTS 池确定性抽取 3 个，每周从 WEEKLY_QUESTS 池抽 3 个（date 种子，
+// 联机下所有玩家同天同池，保证公平）。日完成上限 DAILY_CAP、周上限 WEEKLY_CAP。
+export const DAILY_CAP = 5;
+export const WEEKLY_CAP = 3;
+
+export const DAILY_QUESTS: Record<string, QuestDef> = {
+  daily_hunt_low:     { id: 'daily_hunt_low',     name: '清剿虚群',   type: 'daily', chapter: 0, desc: '空座町周边的虚出没频繁，清除它们。', objectives: [{ type: 'kill', target: '低级虚', count: 5, desc: '击败低级虚' }], rewards: { gold: 200, exp: 80 }, zoneRequired: 1 },
+  daily_patrol_rukon: { id: 'daily_patrol_rukon', name: '流魂街巡逻', type: 'daily', chapter: 0, desc: '流魂街的强盗又在作乱，去巡逻清场。', objectives: [{ type: 'kill', target: '流魂街强盗', count: 5, desc: '击败流魂街强盗' }], rewards: { gold: 300, exp: 120 }, zoneRequired: 4 },
+  daily_sweep_hueco:  { id: 'daily_sweep_hueco',  name: '虚圈扫荡',   type: 'daily', chapter: 0, desc: '虚圈的低级破面四处游荡，镇压它们。', objectives: [{ type: 'kill', target: '破面·下级', count: 5, desc: '击败破面·下级' }], rewards: { gold: 400, exp: 150 }, zoneRequired: 10 },
+  daily_herb:         { id: 'daily_herb',         name: '药草采集',   type: 'daily', chapter: 0, desc: '浦原商店需要补充药草库存。', objectives: [{ type: 'collect', target: '药草', count: 5, desc: '采集药草' }], rewards: { gold: 150, exp: 60 }, zoneRequired: 1 },
+  daily_wood:         { id: 'daily_wood',         name: '灵木伐採',   type: 'daily', chapter: 0, desc: '流魂街的匠人缺少灵木。', objectives: [{ type: 'collect', target: '灵木', count: 5, desc: '采集灵木' }], rewards: { gold: 180, exp: 70 }, zoneRequired: 4 },
+  daily_ore:          { id: 'daily_ore',          name: '矿脉发掘',   type: 'daily', chapter: 0, desc: '空座町·归的矿工需要矿石。', objectives: [{ type: 'collect', target: '矿脉', count: 5, desc: '采集矿脉' }], rewards: { gold: 200, exp: 80 }, zoneRequired: 13 },
+  daily_craft_weapon: { id: 'daily_craft_weapon', name: '铁匠委托·武器', type: 'daily', chapter: 0, desc: '为铁匠锻造一把铁剑。', objectives: [{ type: 'craft', target: '铁剑', count: 1, desc: '制造铁剑' }], rewards: { gold: 200, exp: 100 }, zoneRequired: 1 },
+  daily_craft_armor:  { id: 'daily_craft_armor',  name: '铁匠委托·护甲', type: 'daily', chapter: 0, desc: '为铁匠锻造一件铁甲。', objectives: [{ type: 'craft', target: '铁甲', count: 1, desc: '制造铁甲' }], rewards: { gold: 260, exp: 120 }, zoneRequired: 1 },
+  daily_craft_bracer: { id: 'daily_craft_bracer', name: '铁匠委托·手甲', type: 'daily', chapter: 0, desc: '为铁匠锻造一副铁手甲。', objectives: [{ type: 'craft', target: '铁手甲', count: 1, desc: '制造铁手甲' }], rewards: { gold: 180, exp: 90 }, zoneRequired: 1 },
+};
+
+export const WEEKLY_QUESTS: Record<string, QuestDef> = {
+  weekly_hunt_low:    { id: 'weekly_hunt_low',    name: '周常·虚群清剿', type: 'weekly', chapter: 0, desc: '一周的和平需要持续清剿虚群。', objectives: [{ type: 'kill', target: '低级虚', count: 15, desc: '击败低级虚' }], rewards: { gold: 1000, exp: 400 }, zoneRequired: 1 },
+  weekly_patrol_rukon:{ id: 'weekly_patrol_rukon',name: '周常·流魂街维安', type: 'weekly', chapter: 0, desc: '维持流魂街一周的治安。', objectives: [{ type: 'kill', target: '流魂街强盗', count: 15, desc: '击败流魂街强盗' }], rewards: { gold: 1500, exp: 600 }, zoneRequired: 4 },
+  weekly_sweep_hueco: { id: 'weekly_sweep_hueco', name: '周常·虚圈镇压', type: 'weekly', chapter: 0, desc: '压制虚圈一周的破面活动。', objectives: [{ type: 'kill', target: '破面·下级', count: 15, desc: '击败破面·下级' }], rewards: { gold: 2000, exp: 750 }, zoneRequired: 10 },
+  weekly_wood:        { id: 'weekly_wood',        name: '周常·灵木收集', type: 'weekly', chapter: 0, desc: '为匠人们储备一周的灵木。', objectives: [{ type: 'collect', target: '灵木', count: 15, desc: '采集灵木' }], rewards: { gold: 900, exp: 350 }, zoneRequired: 4 },
+  weekly_ore:         { id: 'weekly_ore',         name: '周常·矿脉开采', type: 'weekly', chapter: 0, desc: '为铁匠储备一周的矿石。', objectives: [{ type: 'collect', target: '矿脉', count: 15, desc: '采集矿脉' }], rewards: { gold: 1000, exp: 400 }, zoneRequired: 13 },
+  weekly_craft:       { id: 'weekly_craft',       name: '周常·锻造精进', type: 'weekly', chapter: 0, desc: '一周内持续精进锻造技艺。', objectives: [{ type: 'craft', target: '铁剑', count: 3, desc: '制造铁剑' }], rewards: { gold: 1000, exp: 500 }, zoneRequired: 1 },
+};
+
+/** 全任务索引（主线 + 支线 + 日常 + 周常）。 */
+export const ALL_QUESTS: Record<string, QuestDef> = {
+  ...MAIN_QUESTS, ...SIDE_QUESTS, ...DAILY_QUESTS, ...WEEKLY_QUESTS,
+};
+
+export function getQuestDef(id: string): QuestDef | null {
+  return ALL_QUESTS[id] || null;
+}
+
+// ——— 确定性日期种子（保证同一天/周所有玩家池一致，联机公平）———
+function pad2(n: number): string { return `${n}`.padStart(2, '0'); }
+
+/** 本地日期串 YYYY-MM-DD（用于每日刷新判定）。 */
+export function todayStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** 本周周一的日期串（同一周恒定，用于每周刷新判定）。 */
+export function weekStr(d: Date = new Date()): string {
+  const x = new Date(d);
+  const dow = (x.getDay() + 6) % 7; // 周一=0
+  x.setDate(x.getDate() - dow);
+  return todayStr(x);
+}
+
+function hashStr(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/** 基于种子做确定性洗牌（mulberry32），取前 n 个。 */
+function seededPick(keys: string[], seed: string, n: number): string[] {
+  let a = hashStr(seed);
+  const rand = () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const arr = keys.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr.slice(0, n);
+}
+
+/** 今天的日常任务池（3 个，确定性）。 */
+export function rollDailyPool(): string[] {
+  return seededPick(Object.keys(DAILY_QUESTS), todayStr(), 3);
+}
+
+/** 本周的周常任务池（3 个，确定性）。 */
+export function rollWeeklyPool(): string[] {
+  return seededPick(Object.keys(WEEKLY_QUESTS), weekStr(), 3);
+}

@@ -12,7 +12,7 @@ import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
-import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
+import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 import { getClient } from '../net/Net';
 import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest } from '../systems/WorldClient';
 
@@ -145,6 +145,9 @@ export class GameScene extends Phaser.Scene {
       backgroundColor: '#00000066', padding: { x: 4, y: 1 },
     }).setOrigin(0.5, 1).setDepth(11);
     this.syncPlayerTags();
+    // 每日/周常按本地日期刷新（确保 dailyState.weeklyState 日期在任意交互前就位）
+    GameState.ensureDailyRefresh();
+    GameState.ensureWeeklyRefresh();
     this.connectGameRoom();
 
     // 相机跟随玩家
@@ -667,7 +670,7 @@ export class GameScene extends Phaser.Scene {
       const npc = this.physics.add.sprite(nx, ny, 'npc').setImmovable(true).setDepth(5);
       const tag = this.add.text(nx, ny - 30, c.name, {
         fontSize: '11px',
-        color: c.role === 'merchant' ? '#ffdd88' : c.role === 'return_point' ? '#88ccff' : c.role === 'craft' ? '#aa88ff' : c.role === 'enhance' ? '#ff8844' : '#ffe8b0',
+        color: c.role === 'merchant' ? '#ffdd88' : c.role === 'return_point' ? '#88ccff' : c.role === 'craft' ? '#aa88ff' : c.role === 'enhance' ? '#ff8844' : c.role === 'quest_board' ? '#ffcc66' : '#ffe8b0',
         backgroundColor: '#00000088', padding: { x: 4, y: 2 },
       }).setOrigin(0.5).setDepth(6);
       this.tweens.add({ targets: npc, scaleY: 1.03, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
@@ -684,6 +687,7 @@ export class GameScene extends Phaser.Scene {
               else if (ch.callback === 'closeDialogue') this.isInDialogue = false;
               else if (ch.callback === 'openReturn') this.openReturn();
               else if (ch.callback === 'openCraft') this.openCraft();
+              else if (ch.callback === 'openQuestBoard') { this.isInDialogue = false; renderQuestBoardPanel(this); }
               else if (ch.callback === 'openEnhance') { this.isInDialogue = false; toggleEnhancePanel(this); }
               else { this.isInDialogue = false; }
             },
@@ -699,30 +703,34 @@ export class GameScene extends Phaser.Scene {
         const quest = MAIN_QUESTS[questId];
         if (!quest || quest.acceptFrom !== c.name) continue;
         if (GameState.questCompleted.includes(questId)) continue;
-        if (GameState.activeQuest === questId) continue;
+        if (GameState.isQuestActive(questId)) continue;
         if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) continue;
         questChoices.push({ text: `接受任务：${quest.name}`, callback: () => this.acceptQuestFromNPC(c.name) });
         break;
       }
-      // 检查是否有可完成的任务
-      if (GameState.activeQuest) {
-        const activeDef = GameState.getActiveQuestDef();
-        if (activeDef && activeDef.completeAt === c.name) {
-          if (GameState.questReadyToComplete) {
-            questChoices.push({ text: `完成任务：${activeDef.name}`, callback: () => this.completeQuestFromNPC(c.name) });
-          } else {
-            // 任务进行中，在对话文本中显示进度
-            if (dialogueLines.length > 0) {
-              dialogueLines[0].text += `\n\n任务进度：${GameState.getQuestTrackText()}`;
-            }
-          }
+      // 检查是否有可完成的任务（本NPC completeAt 且已就绪）
+      const readyId = GameState.activeQuests.find(id => {
+        const q = GameState.getQuestDef(id);
+        return !!q && q.completeAt === c.name && GameState.isQuestReady(id);
+      });
+      if (readyId) {
+        const q = GameState.getQuestDef(readyId)!;
+        questChoices.push({ text: `完成任务：${q.name}`, callback: () => this.completeQuestFromNPC(c.name) });
+      } else {
+        // 任务进行中，在对话文本中显示进度
+        const activeId = GameState.activeQuests.find(id => {
+          const q = GameState.getQuestDef(id);
+          return !!q && q.completeAt === c.name;
+        });
+        if (activeId && dialogueLines.length > 0) {
+          dialogueLines[0].text += `\n\n任务进度：${GameState.getQuestTrackFor(activeId)}`;
         }
       }
       // 检查支线任务
       for (const sq of Object.values(SIDE_QUESTS)) {
         if (sq.acceptFrom !== c.name) continue;
         if (GameState.questCompleted.includes(sq.id)) continue;
-        if (GameState.activeQuest === sq.id) continue;
+        if (GameState.isQuestActive(sq.id)) continue;
         if (sq.prerequisite && !GameState.questCompleted.includes(sq.prerequisite)) continue;
         questChoices.push({ text: `接受支线：${sq.name}`, callback: () => this.acceptQuestFromNPC(c.name) });
         break;
@@ -823,7 +831,7 @@ export class GameScene extends Phaser.Scene {
     this.miniMap.fillCircle(mmX + this.player.x * sx, mmY + this.player.y * sy, 3);
     this.npcList.forEach(npc => {
       const ndx = mmX + npc.x * sx, ndy = mmY + npc.y * sy;
-      const color = npc.role === 'merchant' ? 0xffdd44 : npc.role === 'return_point' ? 0x88ccff : npc.role === 'craft' ? 0xaa88ff : npc.role === 'enhance' ? 0xff8844 : 0x44cc44;
+      const color = npc.role === 'merchant' ? 0xffdd44 : npc.role === 'return_point' ? 0x88ccff : npc.role === 'craft' ? 0xaa88ff : npc.role === 'enhance' ? 0xff8844 : npc.role === 'quest_board' ? 0xffcc44 : 0x44cc44;
       this.miniMap.fillStyle(color, 0.8); this.miniMap.fillCircle(ndx, ndy, 2);
     });
   }
@@ -833,7 +841,7 @@ export class GameScene extends Phaser.Scene {
       const quest = MAIN_QUESTS[questId];
       if (!quest || quest.acceptFrom !== npcName) continue;
       if (GameState.questCompleted.includes(questId)) { this.isInDialogue = false; return; }
-      if (GameState.activeQuest === questId) { this.isInDialogue = false; return; }
+      if (GameState.isQuestActive(questId)) { this.isInDialogue = false; return; }
       if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) { this.isInDialogue = false; return; }
       GameState.acceptQuest(quest);
       this.dialogueBox.show({ speaker: npcName, text: `已接取任务：${quest.name}\n${quest.desc}` }, () => { this.isInDialogue = false; });
@@ -843,7 +851,7 @@ export class GameScene extends Phaser.Scene {
     for (const quest of Object.values(SIDE_QUESTS)) {
       if (quest.acceptFrom !== npcName) continue;
       if (GameState.questCompleted.includes(quest.id)) { this.isInDialogue = false; return; }
-      if (GameState.activeQuest === quest.id) { this.isInDialogue = false; return; }
+      if (GameState.isQuestActive(quest.id)) { this.isInDialogue = false; return; }
       if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) { this.isInDialogue = false; return; }
       GameState.acceptQuest(quest);
       this.dialogueBox.show({ speaker: npcName, text: `已接取支线：${quest.name}\n${quest.desc}` }, () => { this.isInDialogue = false; });
@@ -854,14 +862,25 @@ export class GameScene extends Phaser.Scene {
 
   /** 通过NPC对话选项完成任务 */
   private completeQuestFromNPC(npcName: string): void {
-    if (!GameState.activeQuest) { this.isInDialogue = false; return; }
-    const q = GameState.getActiveQuestDef();
-    if (!q || q.completeAt !== npcName) { this.isInDialogue = false; return; }
-    if (!GameState.questReadyToComplete) {
-      this.dialogueBox.show({ speaker: npcName, text: `任务还未完成。\n${GameState.getQuestTrackText()}` }, () => { this.isInDialogue = false; });
+    // 找本NPC处已就绪的活动任务
+    const readyId = GameState.activeQuests.find(id => {
+      const q = GameState.getQuestDef(id);
+      return !!q && q.completeAt === npcName && GameState.isQuestReady(id);
+    });
+    if (!readyId) {
+      const activeId = GameState.activeQuests.find(id => {
+        const q = GameState.getQuestDef(id);
+        return !!q && q.completeAt === npcName;
+      });
+      if (activeId) {
+        this.dialogueBox.show({ speaker: npcName, text: `任务还未完成。\n${GameState.getQuestTrackFor(activeId)}` }, () => { this.isInDialogue = false; });
+      } else {
+        this.isInDialogue = false;
+      }
       return;
     }
-    GameState.completeQuest(q.id); // 标记完成、清理活动任务（UI 需要）
+    const q = GameState.getQuestDef(readyId)!;
+    GameState.completeActiveQuest(readyId);
     if (this.gameRoom) {
       // 联机：奖励由服务端权威发放（worldSync 到账），反馈由 intentResult 显示
       requestClaimQuest(q.id);
@@ -899,7 +918,7 @@ export class GameScene extends Phaser.Scene {
 
 
   public tryAutoStartNextQuest(): void {
-    if (GameState.activeQuest) return; // 已有活跃任务
+    if (GameState.hasActiveMainQuest()) return; // 已有活跃主线（日常/周常不影响自动接取链）
     for (const questId of MAIN_QUEST_ORDER) {
       if (GameState.questCompleted.includes(questId)) continue;
       const quest = MAIN_QUESTS[questId];
@@ -919,10 +938,12 @@ export class GameScene extends Phaser.Scene {
   if (this.gameRoom) {
     // 联机：制造走服务端权威（扣材料/产装备），成功由 worldSync 刷新背包，结果由 intentResult 提示
     if (!requestCraft(r.name)) return;
+    GameState.updateQuestProgress('craft', r.name, 1);
     panel.destroy(true); this.openCraft(); return;
   }
   Object.entries(r.cost).forEach(([k, v]) => { const it = Inventory.items.find(i2 => i2.name === k); if (it) it.quantity = Math.max(0, (it.quantity || 0) - v); });
   Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green' });
+  GameState.updateQuestProgress('craft', r.name, 1);
   panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats');
   const cn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, `制造成功：${r.name}`, { fontSize: '16px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
   this.tweens.add({ targets: cn, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => cn.destroy() });

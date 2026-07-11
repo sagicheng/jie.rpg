@@ -25,6 +25,8 @@ export interface PlayerWorld {
   completedQuests: string[];
   bestiary: Record<string, number>;
   gatherNodes: Record<string, { consumed: boolean; respawnAt: number }>;
+  dailyClaimed?: { date: string; ids: string[] };
+  weeklyClaimed?: { week: string; ids: string[] };
 }
 
 let activeRoom: any = null;
@@ -128,6 +130,10 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
 
   // 刷新打开中的面板（实时同步金币/背包/装备）
   if (scene && typeof scene.refreshOpenPanels === 'function') scene.refreshOpenPanels();
+
+  // 每日 / 周常 按本地日期刷新（联机下以服务端 worldSync 到达为基准）
+  GameState.ensureDailyRefresh();
+  GameState.ensureWeeklyRefresh();
 
   // 通知 UIScene 更新数值栏
   if (scene && scene.scene) scene.scene.get('UIScene').events.emit('updateStats');

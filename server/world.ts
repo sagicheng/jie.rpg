@@ -15,7 +15,7 @@
  */
 import { ZONE_CONFIGS } from '../src/systems/Zones';
 import { NODE_TO_MATERIAL, matId } from '../src/data/materials';
-import { MAIN_QUESTS, SIDE_QUESTS } from '../src/systems/QuestData';
+import { MAIN_QUESTS, SIDE_QUESTS, DAILY_QUESTS, WEEKLY_QUESTS, DAILY_CAP, WEEKLY_CAP, todayStr, weekStr } from '../src/systems/QuestData';
 import { expForLevel } from '../src/systems/BattleData';
 import type { EquipSlot } from '../src/systems/Inventory';
 
@@ -61,11 +61,13 @@ export interface PlayerWorld {
   completedQuests: string[];
   bestiary: Record<string, number>;
   gatherNodes: Record<string, { consumed: boolean; respawnAt: number }>;
+  dailyClaimed: { date: string; ids: string[] };
+  weeklyClaimed: { week: string; ids: string[] };
 }
 
 export interface OpResult { ok: boolean; msg: string; data?: any; }
 
-const ALL_QUESTS = { ...MAIN_QUESTS, ...SIDE_QUESTS };
+const ALL_QUESTS = { ...MAIN_QUESTS, ...SIDE_QUESTS, ...DAILY_QUESTS, ...WEEKLY_QUESTS };
 
 function seedWorld(): PlayerWorld {
   return {
@@ -78,6 +80,7 @@ function seedWorld(): PlayerWorld {
     equipment: { head: null, body: null, bracer: null, boots: null, belt: null, ring: null, necklace: null, charm: null, pendant: null },
     gold: 200, level: 1, exp: 0,
     quests: {}, completedQuests: [], bestiary: {}, gatherNodes: {},
+    dailyClaimed: { date: '', ids: [] }, weeklyClaimed: { week: '', ids: [] },
   };
 }
 
@@ -154,6 +157,33 @@ export class WorldService {
   claimQuest(pw: PlayerWorld, questId: string): OpResult {
     const q = ALL_QUESTS[questId];
     if (!q) return { ok: false, msg: '未知任务' };
+    // 日常：按日期字符串判定（非 completedQuests，因可重复）
+    if (q.type === 'daily') {
+      const t = todayStr();
+      if (pw.dailyClaimed.date !== t) pw.dailyClaimed = { date: t, ids: [] };
+      if (pw.dailyClaimed.ids.includes(questId)) return { ok: false, msg: '今日已完成' };
+      if (pw.dailyClaimed.ids.length >= DAILY_CAP) return { ok: false, msg: '今日完成上限' };
+      const r = q.rewards || {};
+      if (r.gold) this.addGold(pw, r.gold);
+      if (r.exp) this.gainExp(pw, r.exp);
+      if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
+      pw.dailyClaimed.ids.push(questId);
+      return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, data: r };
+    }
+    // 周常：按本周字符串判定
+    if (q.type === 'weekly') {
+      const w = weekStr();
+      if (pw.weeklyClaimed.week !== w) pw.weeklyClaimed = { week: w, ids: [] };
+      if (pw.weeklyClaimed.ids.includes(questId)) return { ok: false, msg: '本周已完成' };
+      if (pw.weeklyClaimed.ids.length >= WEEKLY_CAP) return { ok: false, msg: '本周完成上限' };
+      const r = q.rewards || {};
+      if (r.gold) this.addGold(pw, r.gold);
+      if (r.exp) this.gainExp(pw, r.exp);
+      if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
+      pw.weeklyClaimed.ids.push(questId);
+      return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, data: r };
+    }
+    // 主线 / 支线
     if (pw.completedQuests.includes(questId)) return { ok: false, msg: '已完成' };
     const r = q.rewards || {};
     if (r.gold) this.addGold(pw, r.gold);
