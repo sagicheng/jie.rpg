@@ -27,6 +27,7 @@ interface Card {
   name: Phaser.GameObjects.Text;
   hpBar: Phaser.GameObjects.Graphics;
   hpText: Phaser.GameObjects.Text;
+  hl: Phaser.GameObjects.Graphics; // 待选目标高亮边框
 }
 
 interface Button {
@@ -83,6 +84,9 @@ export class MultiBattleScene extends Phaser.Scene {
   private menuOpen = false;
   private lastIsMyTurn = false;
 
+  // 待释放的单体意图（攻击 / 敌方单体技能 / 伤害型鬼道）：选中后不再弹选怪框，直接点敌人卡片释放
+  private pendingAction: { type: string; id?: string } | null = null;
+
   // 20s 决策倒计时显示（截止时间来自服务端 schema.turnExpiresAt，自己/队友回合都显示）
   private turnCountdownText!: Phaser.GameObjects.Text;
 
@@ -114,6 +118,7 @@ export class MultiBattleScene extends Phaser.Scene {
     this.intentionalLeave = false;
     this.menu = null;
     this.menuOpen = false;
+    this.pendingAction = null;
     this.lastReward = null;
   }
 
@@ -204,7 +209,6 @@ export class MultiBattleScene extends Phaser.Scene {
       const src = this.scene.get(this.returnScene) as any;
       if (src && src.dungeonRoomId) {
         this.dungeonRoomId = src.dungeonRoomId;
-        console.log(`[DUNGEON-BATTLE] 实时补 dungeonRoomId=${this.dungeonRoomId}（源场景）`);
       }
     }
 
@@ -278,12 +282,12 @@ export class MultiBattleScene extends Phaser.Scene {
     this.room.send('action', action);
   }
 
-  // ——— 攻击：多怪时选目标，单怪直接打 ———
+  // ——— 攻击：单怪直接打；多怪设待释放意图，点敌人卡片释放 ———
   private onAttack(): void {
     if (!this.room || !this.room.state) return;
     const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
     if (enemies.length === 1) this.send({ type: 'attack', targetId: enemies[0].id });
-    else this.openTargetSelect('attack', undefined);
+    else this.setPendingTarget('attack');
   }
 
   // ——— 技能子菜单 ———
@@ -315,8 +319,11 @@ export class MultiBattleScene extends Phaser.Scene {
   private onPickSkill(sk?: SkillData): void {
     if (!sk) return;
     const tt = getSkillTargetType(sk);
-    if (tt === 'enemy') this.openTargetSelect('skill', sk.name);
-    else this.send({ type: 'skill', id: sk.name }); // self / ally / ally-all / enemy-all 无需选怪
+    if (tt === 'enemy') {
+      const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
+      if (enemies.length === 1) this.send({ type: 'skill', id: sk.name, targetId: enemies[0].id });
+      else this.setPendingTarget('skill', sk.name); // 多怪：点敌人卡片释放
+    } else this.send({ type: 'skill', id: sk.name }); // self / ally / ally-all / enemy-all 无需选怪
   }
 
   // ——— 鬼道子菜单 ———
@@ -340,8 +347,11 @@ export class MultiBattleScene extends Phaser.Scene {
 
   private onPickKido(k: KidoNode): void {
     const eff = k.effect.type;
-    if (eff === 'damage' || eff === 'control') this.openTargetSelect('kido', k.id);
-    else this.send({ type: 'kido', id: k.id }); // heal / revive / cleanse / shield 作用于自身或队友
+    if (eff === 'damage' || eff === 'control') {
+      const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
+      if (enemies.length === 1) this.send({ type: 'kido', id: k.id, targetId: enemies[0].id });
+      else this.setPendingTarget('kido', k.id); // 多怪：点敌人卡片释放
+    } else this.send({ type: 'kido', id: k.id }); // heal / revive / cleanse / shield 作用于自身或队友
   }
 
   // ——— 道具子菜单（道具作用于自身，无需选怪）———
@@ -355,17 +365,26 @@ export class MultiBattleScene extends Phaser.Scene {
     this.openList('使用道具', entries);
   }
 
-  // ——— 目标选择（攻击 / 敌方单体技能 / 伤害型鬼道）———
-  private openTargetSelect(type: string, id?: string): void {
+  // ——— 目标选择：不再弹额外选怪框，改为高亮敌人、点击敌人卡片直接释放 ———
+  private setPendingTarget(type: string, id?: string): void {
     if (!this.room || !this.room.state) return;
     const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
     if (enemies.length === 0) return;
-    if (enemies.length === 1) { this.send({ type, id, targetId: enemies[0].id }); return; }
-    const entries: MenuEntry[] = enemies.map((e: any) => ({
-      label: `目标·${e.name}  HP ${Math.max(0, Math.round(e.hp))}/${Math.round(e.maxHp)}`,
-      onClick: () => this.send({ type, id, targetId: e.id }),
-    }));
-    this.openList('选择目标', entries);
+    this.pendingAction = { type, id };
+    this.closeMenu();
+    this.flashMessage('请点击要攻击的敌人');
+    this.syncCards(this.enemyCards, this.room.state.enemies, false); // 刷新高亮
+  }
+
+  // 敌人卡片被点击：若有待释放意图则直接发送（全局适用：主场景与镜像场景共用此场景）
+  private onEnemyCardClicked(enemyId: string): void {
+    if (!this.pendingAction) return;
+    if (!this.room || !this.room.state) return;
+    if (this.room.state.phase !== 'combat' || this.room.state.currentTurn !== this.mySessionId) return;
+    const action = { type: this.pendingAction.type, id: this.pendingAction.id, targetId: enemyId };
+    this.pendingAction = null;
+    this.send(action);
+    this.syncCards(this.enemyCards, this.room.state.enemies, false); // 清除高亮
   }
 
   // ——— 通用弹层（子菜单 / 目标选择共用）———
@@ -499,10 +518,25 @@ export class MultiBattleScene extends Phaser.Scene {
       const id = c.sessionId || c.id;
       const y = 170 + i * 120;
       let card = map.get(id);
-      if (!card) { card = this.makeCard(baseX, y, isPlayer); map.set(id, card); }
+      if (!card) {
+        card = this.makeCard(baseX, y, isPlayer);
+        map.set(id, card);
+        // 敌人卡片可点击：有待释放意图时点击直接释放（主/镜像场景共用本场景，全局生效）
+        if (!isPlayer) {
+          card.root.setSize(380, 96).setInteractive({ useHandCursor: true });
+          card.root.on('pointerdown', () => this.onEnemyCardClicked(id));
+        }
+      }
       card.name.setText(`${c.name}${c.alive ? '' : '（倒下）'}`);
       this.drawHpBar(card, c.hp, c.maxHp);
       card.root.setAlpha(c.alive ? 1 : 0.4);
+      // 高亮：多怪且有待释放意图时，存活敌人边框发光提示「点我释放」
+      const highlight = !isPlayer && !!this.pendingAction && c.alive;
+      card.hl.clear();
+      if (highlight) {
+        card.hl.lineStyle(3, 0xffe066, 1);
+        card.hl.strokeRoundedRect(-190, -50, 380, 100, 10);
+      }
     });
     for (const [id, card] of map) {
       if (![...src.values()].some((c: any) => (c.sessionId || c.id) === id)) {
@@ -524,8 +558,9 @@ export class MultiBattleScene extends Phaser.Scene {
     const name = this.add.text(-w / 2 + 16, -h / 2 + 12, '', { fontSize: '16px', color: isPlayer ? '#aaffaa' : '#ffaaaa', fontStyle: 'bold' });
     const hpBar = this.add.graphics();
     const hpText = this.add.text(-w / 2 + 16, barY + 4, '', { fontSize: '12px', color: '#dddddd' });
-    root.add([bg, name, hpBar, hpText]);
-    return { root, name, hpBar, hpText };
+    const hl = this.add.graphics(); // 待选目标高亮（默认隐藏）
+    root.add([bg, name, hpBar, hpText, hl]);
+    return { root, name, hpBar, hpText, hl };
   }
 
   private drawHpBar(card: Card, hp: number, maxHp: number): void {

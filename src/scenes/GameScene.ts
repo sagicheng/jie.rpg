@@ -231,6 +231,13 @@ export class GameScene extends Phaser.Scene {
     this.events.on(Phaser.Scenes.Events.RESUME, () => {
       this.setBattling(false);
       this.flushBattleReport();
+      // 从副本返回：清除副本标记并相机淡入（enterDungeon 暂停前已淡出到黑，恢复时须淡回）
+      if (this.inDungeon) {
+        this.inDungeon = false;
+        this.nearbyDungeon = false;
+        this.promptText.setVisible(false);
+        this.cameras.main.fadeIn(400, 0, 0, 0);
+      }
     });
 
     // Dev cheats
@@ -1210,7 +1217,11 @@ export class GameScene extends Phaser.Scene {
     this.promptText.setVisible(false);
     this.cameras.main.fadeOut(400, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      this.scene.stop('GameScene');
+      // 关键修复（bug1/bug2 根因）：暂停而非停止 GameScene，保留联机连接与 sessionId 稳定，
+      // 服务端权威世界（金币/经验/背包/等级）不被清空，副本奖励与升级才会同步回主场景。
+      // 若用 scene.stop 会触发 SHUTDOWN → gameRoom.leave() → 服务端 world.remove(sessionId)
+      // 清空玩家整个权威世界，出副本后奖励/等级全部丢失。
+      this.scene.pause('GameScene');
       this.scene.start('DungeonMapScene', { dungeonId: zone, fromZone: zone });
     });
   }

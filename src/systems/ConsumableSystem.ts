@@ -292,6 +292,7 @@ export function getConsumableEffect(itemId: string, itemName?: string): Consumab
       return { type: 'heal_hp', hpAmount: 100 };
     }
   }
-  // 默认回退
-  return { type: 'heal_hp', hpAmount: 100 };
+  // 未知物品（如材料/装备）不再兜底成血药，返回 null 由调用方安全处理，
+  // 避免「铁矿石被当血药」之类 bug（副本掉落按真实 type 下发，绝不应作为道具使用）。
+  return null;
 }

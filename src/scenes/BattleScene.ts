@@ -1236,9 +1236,14 @@ export class BattleScene extends Phaser.Scene {
         this.clearTurnTimer();
         this.phase = 'executing';
 
-        // 应用消耗品效果
-        const effectiveEffect = effect || { type: 'heal_hp' as const, hpAmount: 100 };
-        const result = applyConsumable(effectiveEffect, {
+        // 应用消耗品效果（非消耗品 effect 为 null，不可作为道具使用，直接退回）
+        if (!effect) {
+          this.logText.setText(`${item.name} 不是可用道具`);
+          this.phase = 'playerTurn';
+          this.time.delayedCall(600, () => this.showPlayerCommands());
+          return;
+        }
+        const result = applyConsumable(effect, {
           hp: this.playerHp,
           maxHp: this.playerMaxHp,
           mp: this.playerMp,

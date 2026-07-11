@@ -8,7 +8,6 @@ import { BattleScene } from './scenes/BattleScene';
 import { MultiBattleScene } from './scenes/MultiBattleScene';
 import { DungeonMapScene } from './scenes/DungeonMapScene';
 import { UIScene } from './scenes/UIScene';
-import { GameState } from './systems/GameState';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -44,8 +43,6 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
-(window as any).__game = game; // DEBUG HOOK (Playwright 验证用，上线前清理)
-(window as any).__gameState = GameState; // DEBUG HOOK (Playwright 验证用，上线前清理)
 
 
 

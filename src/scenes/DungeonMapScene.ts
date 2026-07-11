@@ -324,28 +324,18 @@ export class DungeonMapScene extends Phaser.Scene {
     this.coordText.setText(`X:${Math.round(this.player.x)}  Y:${Math.round(this.player.y)}`);
   }
 
-  private lastCollDiag = 0;
   private checkEnemyCollision(): void {
     if (this.battleCooldown > 0 || this.isTransitioning) return;
-    let nearest = Infinity;
     for (const en of this.enemies) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y);
-      if (d < nearest) nearest = d;
       if (d < 52) {
-        console.log(`[DUNGEON-COLLISION] 命中! dist=${Math.round(d)} -> enterBattle()`);
         this.enterBattle();
         return;
       }
     }
-    const now = this.time.now;
-    if (now - this.lastCollDiag > 1500) {
-      console.log(`[DUNGEON-COLLISION] 未命中: nearest=${Math.round(nearest)} enemies=${this.enemies.length} roomId=${this.dungeonRoomId || '空(战斗时实时补)'}`);
-      this.lastCollDiag = now;
-    }
   }
 
   private enterBattle(): void {
-    console.log(`[DUNGEON-BATTLE] enterBattle() roomId=${this.dungeonRoomId} stage=${this.localStage} enemies=${this.enemies.length}`);
     this.battleCooldown = 180;
     this.scene.pause();
     this.scene.launch('MultiBattleScene', {
@@ -454,7 +444,11 @@ export class DungeonMapScene extends Phaser.Scene {
   private exitToGame(): void {
     if (this.isTransitioning) return;
     GameState.zone = this.fromZone;
-    this.scene.start('GameScene', { zone: this.fromZone });
+    // 恢复被暂停的主场景（保留其联机连接与权威世界），再关闭副本场景自身。
+    // 必须 resume 而非 start —— start 会重启 GameScene 并重新连房拿到新 sessionId，
+    // 导致服务端权威世界被清空、副本奖励/等级丢失（bug1/bug2 根因之一）。
+    this.scene.resume('GameScene');
+    this.scene.stop();
   }
 
   // ═══ DungeonRoom 状态同步（权威 stage/phase 驱动地图刷新）═══
@@ -467,7 +461,6 @@ export class DungeonMapScene extends Phaser.Scene {
     }).then((room: any) => {
       this.dungeonRoom = room;
       this.dungeonRoomId = room.roomId;
-      console.log(`[DUNGEON-CONN] 副本房已连接 roomId=${room.roomId} dungeonId=${this.dungeonId}`);
       room.onStateChange((s: any) => this.onDungeonStateChange(s));
       room.onMessage('dungeonError', (m: any) => this.showNotif(m?.msg || '无法进入副本'));
       this.onDungeonStateChange(room.state);
@@ -512,14 +505,13 @@ export class DungeonMapScene extends Phaser.Scene {
     this.showNotif(`第 ${clearedStage} 阶已通关！前往中央领取奖励`);
   }
 
-  // ═══ 战斗结束回调（MultiBattleScene 胜利后回写奖励到本地 GameState）═══
+  // ═══ 战斗结束回调（MultiBattleScene 胜利后触发）═══
   onMultiBattleEnd(result: string, _monsterId: string, _enemyData: any, reward?: RewardInfo): void {
+    // 注意：副本奖励已由服务端权威写入 WorldService（金币/经验/掉落），并随每秒 worldSync
+    // 全量 reconcile 到客户端 GameState.Inventory（掉落按真实 type 下发，铁矿石=材料）。
+    // 此处【不再】本地双写——旧实现曾把掉落错写成 type:'consumable'，既导致重复写入，
+    // 又使铁矿石混入战斗道具栏被当血药（bug3 源头）。仅保留 lastReward 供领奖 UI 文案。
     if (result === 'victory' && reward) {
-      GameState.gold += reward.gold;
-      GameState.gainExp(reward.exp);
-      for (const name of reward.loot) {
-        Inventory.addItem({ id: name, name, type: 'consumable', desc: '副本奖励', quantity: 1 });
-      }
       this.lastReward = reward;
     }
   }
