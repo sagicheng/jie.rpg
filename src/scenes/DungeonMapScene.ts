@@ -259,7 +259,7 @@ export class DungeonMapScene extends Phaser.Scene {
     for (const en of this.enemies) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y);
       if (d < nearest) nearest = d;
-      if (d < 40) {
+      if (d < 52) {
         console.log(`[DUNGEON-COLLISION] 命中! dist=${Math.round(d)} -> enterBattle()`);
         this.enterBattle();
         return;
