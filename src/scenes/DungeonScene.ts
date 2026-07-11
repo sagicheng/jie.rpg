@@ -16,6 +16,7 @@ export class DungeonScene extends Phaser.Scene {
   private room: any = null;
   private stage = 1;
   private phase: string = 'lobby';
+  private synced = false; // dungeon 房连接完成（拿到 roomId）前禁止开打，避免空 roomId 导致 stage 不推进
   private stageText!: Phaser.GameObjects.Text;
   private infoText!: Phaser.GameObjects.Text;
   private promptText!: Phaser.GameObjects.Text;
@@ -56,6 +57,7 @@ export class DungeonScene extends Phaser.Scene {
     this.exitKey = this.input.keyboard!.addKey('ESC');
 
     this.connect();
+    this.refresh(); // 连接完成前显示「副本连接中…」
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.room) { this.room.leave(); this.room = null; }
@@ -71,6 +73,7 @@ export class DungeonScene extends Phaser.Scene {
       name: GameState.playerName || '勇者',
     }).then((room: any) => {
       this.room = room;
+      this.synced = true;
       room.onStateChange((s: any) => this.onState(s));
       room.onMessage('dungeonError', (m: any) => this.onError(m?.msg || '无法进入副本'));
       this.onState(room.state);
@@ -93,6 +96,12 @@ export class DungeonScene extends Phaser.Scene {
       this.stageText.setText('★ 副本已完成 ★');
       this.infoText.setText('你已通关全部 3 阶，奖励已发放。\n按 ESC 返回地图。');
       this.promptText.setText('按 ESC 返回地图');
+      return;
+    }
+    if (!this.synced) {
+      this.stageText.setText('副本连接中…');
+      this.infoText.setText('正在与副本服务器同步，请稍候。');
+      this.promptText.setText('连接中…');
       return;
     }
     const labels = ['', '第 1 阶 · 清剿小怪', '第 2 阶 · 击破精英', '第 3 阶 · 讨伐 BOSS'];
@@ -120,6 +129,7 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private startStageBattle(): void {
+    if (!this.room || !this.room.roomId) { this.showNotif('副本同步中，请稍候…'); return; }
     const stage = this.stage;
     const enemyParty = buildDungeonParty(this.dungeonId, stage);
     this.scene.launch('MultiBattleScene', {
