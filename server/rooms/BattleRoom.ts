@@ -504,7 +504,7 @@ export class BattleRoom extends Room<BattleRoomState> {
         world.grantLoot(pw, rw.loot);
         const leveled = world.gainExp(pw, rw.exp) > 0;
         world.addGold(pw, rw.gold);
-        if (this.dungeonStage >= 3) world.completeDungeon(pw, this.dungeonId);
+        if (this.dungeonStage >= 7) world.completeDungeon(pw, this.dungeonId);
         c.send('battleReward', { exp: rw.exp, gold: rw.gold, loot: rw.loot.map((i) => i.name), leveled });
       });
       // 推进副本实例阶进度（断连恢复：进度存 WorldService，不影响此处推进）

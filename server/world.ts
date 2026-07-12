@@ -17,6 +17,7 @@ import { ZONE_CONFIGS } from '../src/systems/Zones';
 import { NODE_TO_MATERIAL, matId } from '../src/data/materials';
 import { MAIN_QUESTS, SIDE_QUESTS, DAILY_QUESTS, WEEKLY_QUESTS, DAILY_CAP, WEEKLY_CAP, todayStr, weekStr } from '../src/systems/QuestData';
 import { expForLevel } from '../src/systems/BattleData';
+import { POINTS_PER_LEVEL } from '../src/config';
 import type { EquipSlot } from '../src/systems/Inventory';
 
 const GAME_WIDTH = 1920;
@@ -63,7 +64,7 @@ export interface ActiveDungeon {
 export interface PlayerWorld {
   inventory: WorldItem[];
   equipment: Record<EquipSlot, WorldItem | null>;
-  gold: number; level: number; exp: number;
+  gold: number; level: number; exp: number; statPoints: number;
   quests: Record<string, number>;
   completedQuests: string[];
   bestiary: Record<string, number>;
@@ -89,7 +90,7 @@ function seedWorld(): PlayerWorld {
       { id: 'antidote', name: '解毒药', type: 'consumable', desc: '解除中毒·寄生·灼烧', quantity: 2 },
     ],
     equipment: { head: null, body: null, bracer: null, boots: null, belt: null, ring: null, necklace: null, charm: null, pendant: null },
-    gold: 200, level: 1, exp: 0,
+    gold: 200, level: 1, exp: 0, statPoints: 0,
     quests: {}, completedQuests: [], bestiary: {}, gatherNodes: {},
     dailyClaimed: { date: '', ids: [] }, weeklyClaimed: { week: '', ids: [] },
     dungeonWeekly: { week: '', count: 0 }, dungeon: null,
@@ -157,6 +158,7 @@ export class WorldService {
     while (pw.exp >= expForLevel(pw.level + 1)) {
       pw.exp -= expForLevel(pw.level + 1);
       pw.level += 1; leveled += 1;
+      pw.statPoints += POINTS_PER_LEVEL;
     }
     return leveled;
   }

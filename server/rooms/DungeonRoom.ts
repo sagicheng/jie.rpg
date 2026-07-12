@@ -46,11 +46,11 @@ export class DungeonRoom extends Room<DungeonRoomState> {
     DungeonRegistry.unregister(this.roomId);
   }
 
-  /** 由 BattleRoom 在副本某阶战斗胜利后调用：推进全局阶进度。 */
+  /** 由 BattleRoom 在副本某波战斗胜利后调用：推进全局波次进度（共 7 波：4 普通 + 2 精英 + 1 BOSS）。 */
   onStageCleared(stage: number, _gameSids: string[]): void {
-    if (stage >= this.state.stage && this.state.stage < 3) {
+    if (stage >= this.state.stage && this.state.stage < 7) {
       this.state.stage = this.state.stage + 1;
     }
-    if (stage >= 3) this.state.phase = 'clear';
+    if (stage >= 7) this.state.phase = 'clear';
   }
 }

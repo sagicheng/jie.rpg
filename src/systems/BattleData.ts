@@ -194,15 +194,16 @@ export function generateLoot(type: EnemyType, zone: number): Item[] {
   return loot;
 }
 
-/** 副本某阶通关奖励（gold/exp/loot），按区域PL与阶数缩放。stage: 1=小怪 2=精英 3=BOSS。 */
+/** 副本某波通关奖励（gold/exp/loot），按区域PL与波次缩放。7 波：4 普通 + 2 精英 + 1 BOSS。 */
 export function dungeonStageReward(dungeonId: number, stage: number): { gold: number; exp: number; loot: Item[] } {
   const pl = ZONE_PL[dungeonId] || 10;
-  const goldMul = [0, 8, 16, 40][stage] ?? 20;
-  const expMul = [0, 12, 24, 60][stage] ?? 30;
+  // 奖励曲线：普通波(1-4) 温和递增、精英波(5-6) 跃升、BOSS波(7) 最高
+  const goldMul = [0, 10, 14, 18, 22, 34, 42, 70][stage] ?? 40;
+  const expMul = [0, 15, 21, 28, 36, 52, 64, 110][stage] ?? 60;
   const gold = Math.round(pl * goldMul);
   const exp = Math.round(pl * expMul);
-  // 掉落品质随阶提升（stage3=BOSS 用妖王品质）
-  const type: EnemyType = stage >= 3 ? '妖王' : stage === 2 ? '妖将' : '恶妖';
+  // 掉落品质：BOSS波用妖王品质，精英波用妖将，普通波用恶妖
+  const type: EnemyType = stage >= 7 ? '妖王' : stage >= 5 ? '妖将' : '恶妖';
   const loot = generateLoot(type, dungeonId);
   if (loot.length === 0) {
     loot.push({ id: matId('铁矿石'), name: '铁矿石', type: 'material', desc: '副本材料', quantity: 1 } as Item);

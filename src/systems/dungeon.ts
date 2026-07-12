@@ -30,16 +30,17 @@ export function buildClientBattleLoadout(): ClientLoadout {
 }
 
 /**
- * 按副本阶数组装敌人阵容：
- *  - stage 1：本区域小怪（杂妖/恶妖）成组 2~4 只
- *  - stage 2：本区域精英（妖将非Boss，无则最强恶妖）2~3 只
- *  - stage 3：本区域 BOSS（isBoss/妖将妖王）+ 2~3 随从
+ * 按副本波次组装敌人阵容（共 7 波：4 普通 + 2 精英 + 1 BOSS）：
+ *  - stage 1~4：本区域小怪（杂妖/恶妖）成组 2~3 只（每波独立一场战斗）
+ *  - stage 5~6：本区域精英（妖将非Boss，无则最强恶妖）每波 2 只
+ *  - stage 7：本区域 BOSS（isBoss/妖将妖王）+ 2~3 随从
  */
 export function buildDungeonParty(dungeonId: number, stage: number): EnemyData[] {
   const cfg = ZONE_CONFIGS[dungeonId];
   const enemies = cfg?.enemies || [];
 
-  if (stage >= 3) {
+  // 第 7 波：区域 BOSS + 随从
+  if (stage >= 7) {
     const boss = enemies.find((e) => e.isBoss)
       || enemies.find((e) => e.type === '妖将' || e.type === '妖王')
       || { name: '副本守卫', type: '妖王' as const, element: '无', x: 0.5, y: 0.5 };
@@ -54,23 +55,23 @@ export function buildDungeonParty(dungeonId: number, stage: number): EnemyData[]
     return [party[0], ...pick];
   }
 
-  if (stage === 2) {
+  // 第 5~6 波：精英妖将（每波 2 只）
+  if (stage >= 5) {
     let elites = enemies.filter((e) => e.type === '妖将' && !e.isBoss);
     if (elites.length === 0) elites = enemies.filter((e) => e.type === '恶妖');
     if (elites.length === 0) elites = [{ name: '副本精英', type: '恶妖' as const, element: '无', x: 0.5, y: 0.5 }];
-    const n = Math.min(3, Math.max(2, elites.length));
     const party: EnemyData[] = [];
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < 2; i++) {
       const e = elites[i % elites.length];
       party.push(createEnemyData(e.name, e.type, e.element, dungeonId));
     }
     return party;
   }
 
-  // stage 1：小怪成组
+  // stage 1~4：普通妖群（每波 2~3 只）
   let mobs = enemies.filter((e) => e.type === '杂妖' || e.type === '恶妖');
   if (mobs.length === 0) mobs = [{ name: '副本虚', type: '杂妖' as const, element: '无', x: 0.5, y: 0.5 }];
-  const n = 2 + Math.floor(Math.random() * 3); // 2~4
+  const n = 2 + Math.floor(Math.random() * 2); // 2~3
   const party: EnemyData[] = [];
   for (let i = 0; i < n; i++) {
     const e = mobs[i % mobs.length];
@@ -90,12 +91,19 @@ export interface DungeonStageVisual {
   decorations: any[];
 }
 
-const STAGE_LABELS = ['', '第 1 阶 · 清剿小怪', '第 2 阶 · 击破精英', '第 3 阶 · 讨伐 BOSS'];
+const STAGE_LABELS = ['',
+  '第 1 波 · 普通妖群', '第 2 波 · 普通妖群', '第 3 波 · 普通妖群', '第 4 波 · 普通妖群',
+  '第 5 波 · 精英妖将', '第 6 波 · 精英妖将',
+  '第 7 波 · 区域 BOSS'];
 const STAGE_DESCS = [
   '',
-  '击败本区域的小怪群，击败后前往中央领取第 1 阶奖励。',
-  '击败精英怪，击败后前往中央领取第 2 阶奖励。',
-  '击败区域 BOSS（含随从），击败后前往中央领取第 3 阶奖励（副本通关）。',
+  '击败本波普通妖群（2~3 只），清剿后前往中央领取奖励。',
+  '击败本波普通妖群（2~3 只），清剿后前往中央领取奖励。',
+  '击败本波普通妖群（2~3 只），清剿后前往中央领取奖励。',
+  '击败本波普通妖群（2~3 只），清剿后前往中央领取奖励。',
+  '击败本波精英妖将（2 只），击破后前往中央领取奖励。',
+  '击败本波精英妖将（2 只），击破后前往中央领取奖励。',
+  '击败区域 BOSS（含随从），通关副本后可返回原地图。',
 ];
 
 /**

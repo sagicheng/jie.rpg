@@ -10,6 +10,7 @@
  */
 import { Inventory } from './Inventory';
 import { GameState } from './GameState';
+import { POINTS_PER_LEVEL } from '../config';
 
 /** 服务端 PlayerWorld 的客户端镜像类型（与 server/world.ts 保持一致，独立声明避免把服务端代码打进客户端包）。 */
 export interface WorldItem {
@@ -20,7 +21,7 @@ export interface WorldItem {
 export interface PlayerWorld {
   inventory: WorldItem[];
   equipment: Record<string, WorldItem | null>;
-  gold: number; level: number; exp: number;
+  gold: number; level: number; exp: number; statPoints: number;
   quests: Record<string, number>;
   completedQuests: string[];
   bestiary: Record<string, number>;
@@ -104,8 +105,15 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
 
   // 金币 / 等级 / 经验
   GameState.gold = pw.gold;
+  // 升级增量补属性点：用「升级前 level」与「服务端 level」的差额补 statPoints，
+  // 而非整量覆盖 GameState.statPoints——否则每秒 worldSync 会把玩家在 C 界面已
+  // 分配掉的点数反复「还原」，导致属性点可无限刷（联机下经验由服务端给，
+  // 客户端 GameState.gainExp 不触发；本地分配只改 GameState.statPoints/allocated*）。
+  const prevLevel = GameState.level;
   GameState.level = pw.level;
   GameState.exp = pw.exp;
+  const lvEarned = (pw.level - prevLevel) * POINTS_PER_LEVEL;
+  if (lvEarned > 0) GameState.statPoints += lvEarned;
 
   // 图鉴击杀（服务端权威）
   GameState.bestiaryKilled = { ...pw.bestiary };
