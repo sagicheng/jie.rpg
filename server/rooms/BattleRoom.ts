@@ -25,7 +25,7 @@ const EMPTY_LOADOUT: PlayerLoadout = { skills: new Set(), kidos: new Map(), item
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
 const BASE_PLAYER = { hp: 220, atk: 42, def: 18, matk: 36, mdef: 16, spd: 12, mp: 120, maxMp: 120 };
-const COMMAND_SECONDS = 30;
+const COMMAND_SECONDS = 20;
 /** 执行阶段动作间隔（ms），让客户端有时间播动画 */
 const EXEC_DELAY_MS = 800;
 
@@ -191,7 +191,7 @@ export class BattleRoom extends Room<BattleRoomState> {
       return;
     }
     const alivePlayers = [...this.state.players.values()].filter((pl) => pl.alive);
-    const waited = Date.now() - this.commandStartedAt >= 3000;
+    const waited = Date.now() - this.commandStartedAt >= 1000;
     if (waited && this.pendingActions.size >= alivePlayers.length) {
       if (this.commandCheckInterval) { clearInterval(this.commandCheckInterval); this.commandCheckInterval = null; }
       this.clearCommandTimer();
@@ -343,7 +343,7 @@ export class BattleRoom extends Room<BattleRoomState> {
       case 'item': {
         const itemId = action.itemId || '';
         if (!lo.items.has(itemId)) { this.scheduleExecuteNext(); return; }
-        this.executeItem(p, itemId);
+        this.executeItem(p, itemId, action.targetId);
         break;
       }
       case 'defend':
@@ -448,34 +448,41 @@ export class BattleRoom extends Room<BattleRoomState> {
     }
   }
 
-  private executeItem(p: CombatPlayer, itemId: string): void {
+  private executeItem(p: CombatPlayer, itemId: string, targetId?: string): void {
     const def = CONSUMABLES[itemId];
     if (!def) return;
+    // 确定目标：若 targetId 指向存活玩家则用该玩家，否则默认自己
+    let target: CombatPlayer = p;
+    if (targetId && this.state.players.has(targetId)) {
+      const t = this.state.players.get(targetId);
+      if (t && t.alive) target = t;
+    }
     const eff = def.effect;
     let msg = '';
     switch (eff.type) {
-      case 'heal_hp': { const h = Math.min(p.maxHp, p.hp + (eff.hpAmount || 0)); msg = `+${h - p.hp} HP`; p.hp = h; break; }
-      case 'heal_mp': { const m = Math.min(p.maxMp, p.mp + (eff.mpAmount || 0)); msg = `+${m - p.mp} MP`; p.mp = m; break; }
-      case 'heal_both': { const h = Math.min(p.maxHp, p.hp + (eff.hpAmount || 0)); const m = Math.min(p.maxMp, p.mp + (eff.mpAmount || 0)); msg = `+${h - p.hp} HP +${m - p.mp} MP`; p.hp = h; p.mp = m; break; }
-      case 'full_heal': { p.hp = p.maxHp; p.mp = p.maxMp; msg = 'HP·MP 完全回复'; break; }
+      case 'heal_hp': { const h = Math.min(target.maxHp, target.hp + (eff.hpAmount || 0)); msg = `+${h - target.hp} HP`; target.hp = h; break; }
+      case 'heal_mp': { const m = Math.min(target.maxMp, target.mp + (eff.mpAmount || 0)); msg = `+${m - target.mp} MP`; target.mp = m; break; }
+      case 'heal_both': { const h = Math.min(target.maxHp, target.hp + (eff.hpAmount || 0)); const m = Math.min(target.maxMp, target.mp + (eff.mpAmount || 0)); msg = `+${h - target.hp} HP +${m - target.mp} MP`; target.hp = h; target.mp = m; break; }
+      case 'full_heal': { target.hp = target.maxHp; target.mp = target.maxMp; msg = 'HP·MP 完全回复'; break; }
       case 'revive': {
-        if (!p.alive) { p.hp = Math.round(p.maxHp * (eff.reviveHpPercent || 50) / 100); p.alive = true; msg = `复活(${eff.reviveHpPercent}%)`; }
-        else { const h = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.3)); msg = `+${h - p.hp} HP`; p.hp = h; }
+        if (!target.alive) { target.hp = Math.round(target.maxHp * (eff.reviveHpPercent || 50) / 100); target.alive = true; msg = `复活(${eff.reviveHpPercent}%)`; }
+        else { const h = Math.min(target.maxHp, target.hp + Math.round(target.maxHp * 0.3)); msg = `+${h - target.hp} HP`; target.hp = h; }
         break;
       }
       case 'buff_temp': {
         const stat = eff.buffStat || 'atk'; const v = eff.buffValue || 0;
-        if (stat === 'atk') p.atk = Math.round(p.atk * (1 + v));
-        else if (stat === 'def') p.def = Math.round(p.def * (1 + v));
-        else if (stat === 'matk') p.matk = Math.round(p.matk * (1 + v));
-        else if (stat === 'mdef') p.mdef = Math.round(p.mdef * (1 + v));
-        else if (stat === 'spd') p.spd = Math.round(p.spd * (1 + v));
+        if (stat === 'atk') target.atk = Math.round(target.atk * (1 + v));
+        else if (stat === 'def') target.def = Math.round(target.def * (1 + v));
+        else if (stat === 'matk') target.matk = Math.round(target.matk * (1 + v));
+        else if (stat === 'mdef') target.mdef = Math.round(target.mdef * (1 + v));
+        else if (stat === 'spd') target.spd = Math.round(target.spd * (1 + v));
         msg = `${stat}↑`;
         break;
       }
       default: msg = '使用道具';
     }
-    this.logMsg(p.name, `${p.name} 使用「${def.name}」${msg}`);
+    const who = target.sessionId === p.sessionId ? p.name : `${p.name}→${target.name}`;
+    this.logMsg(p.name, `${who} 使用「${def.name}」${msg}`);
   }
 
   // ══════════════════════════════════════════════════

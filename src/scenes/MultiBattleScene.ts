@@ -367,26 +367,33 @@ export class MultiBattleScene extends Phaser.Scene {
     } else this.send({ type: 'kido', id: k.id }); // heal / revive / cleanse / shield 作用于自身或队友
   }
 
-  // ——— 道具子菜单（道具作用于自身，无需选怪）———
+  // ——— 道具子菜单（选道具→选目标，可对队友使用）———
   private openItemMenu(): void {
     if (this.loadout.items.length === 0) { this.flashMessage('没有可用道具'); return; }
     const entries: MenuEntry[] = this.loadout.items.map((it) => ({
       label: `道具·${it.name}`,
       sub: it.desc,
-      onClick: () => this.send({ type: 'item', id: it.id }),
+      onClick: () => this.setPendingTarget('item', it.id),
     }));
-    this.openList('使用道具', entries);
+    this.openList('使用道具（再选目标）', entries);
   }
 
-  // ——— 目标选择：不再弹额外选怪框，改为高亮敌人、点击敌人卡片直接释放 ———
+  // ——— 目标选择：道具选队友，攻击/技能/鬼道选敌人 ———
   private setPendingTarget(type: string, id?: string): void {
     if (!this.room || !this.room.state) return;
-    const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
-    if (enemies.length === 0) return;
     this.pendingAction = { type, id };
     this.closeMenu();
-    this.flashMessage('请点击要攻击的敌人');
-    this.syncCards(this.enemyCards, this.room.state.enemies, false); // 刷新高亮
+    if (type === 'item') {
+      this.flashMessage('请点击目标（自己或队友）');
+    } else {
+      const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
+      if (enemies.length === 0) return;
+      this.flashMessage('请点击要攻击的敌人');
+    }
+    // 重绘：敌人高亮 + 玩家卡片可点击
+    const s = this.room.state;
+    this.syncCards(this.enemyCards, s.enemies, false);
+    this.syncCards(this.playerCards, s.players, true);
   }
 
   // 敌人卡片被点击：若有待释放意图则直接发送（全局适用：主场景与镜像场景共用此场景）
@@ -399,6 +406,20 @@ export class MultiBattleScene extends Phaser.Scene {
     this.pendingAction = null;
     this.send(action);
     this.syncCards(this.enemyCards, this.room.state.enemies, false); // 清除高亮
+  }
+
+  // 玩家卡片被点击：道具选目标（对自己或队友使用）
+  private onPlayerCardClicked(playerId: string): void {
+    if (!this.pendingAction || this.pendingAction.type !== 'item') return;
+    if (!this.room || !this.room.state) return;
+    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command' || this.lastActionSent) return;
+    const action = { type: this.pendingAction.type, id: this.pendingAction.id, targetId: playerId };
+    this.pendingAction = null;
+    this.send(action);
+    // 刷新卡片状态（清除高亮、禁用点击）
+    const s = this.room.state;
+    this.syncCards(this.enemyCards, s.enemies, false);
+    this.syncCards(this.playerCards, s.players, true);
   }
 
   // ——— 通用弹层（子菜单 / 目标选择共用）———
@@ -551,11 +572,19 @@ export class MultiBattleScene extends Phaser.Scene {
       if (!card) {
         card = this.makeCard(baseX, y, isPlayer);
         map.set(id, card);
-        // 敌人卡片可点击：有待释放意图时点击直接释放（主/镜像场景共用本场景，全局生效）
+        // 敌人卡片可点击：攻击/技能/鬼道选怪时高亮并接受点击
         if (!isPlayer) {
           card.root.setSize(380, 96).setInteractive({ useHandCursor: true });
           card.root.on('pointerdown', () => this.onEnemyCardClicked(id));
         }
+      }
+      // 玩家卡片：道具选目标时可点击
+      if (isPlayer && this.pendingAction && this.pendingAction.type === 'item') {
+        card.root.setSize(380, 96).setInteractive({ useHandCursor: true });
+        card.root.off('pointerdown');
+        card.root.on('pointerdown', () => this.onPlayerCardClicked(id));
+      } else if (isPlayer && !(this.pendingAction && this.pendingAction.type === 'item')) {
+        card.root.disableInteractive();
       }
       card.name.setText(`${c.name}${c.alive ? '' : '（倒下）'}`);
       this.drawHpBar(card, c.hp, c.maxHp);
