@@ -19,6 +19,8 @@ import { MAIN_QUESTS, SIDE_QUESTS, DAILY_QUESTS, WEEKLY_QUESTS, DAILY_CAP, WEEKL
 import { expForLevel } from '../src/systems/BattleData';
 import { POINTS_PER_LEVEL } from '../src/config';
 import type { EquipSlot } from '../src/systems/Inventory';
+import { KIDO_NODES, TIER_LOCK, ALL_KIDO_NODES } from '../src/systems/Kido';
+import { getBestiaryTierReached, BESTIARY_TIERS, BESTIARY_TITLES, NAMED_ENEMIES } from '../src/systems/BestiaryData';
 
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1080;
@@ -65,6 +67,7 @@ export interface PlayerWorld {
   inventory: WorldItem[];
   equipment: Record<EquipSlot, WorldItem | null>;
   gold: number; level: number; exp: number; statPoints: number;
+  allocatedHP: number; allocatedMP: number; allocatedATK: number; allocatedDEF: number; allocatedMATK: number; allocatedMDEF: number; allocatedSPD: number;
   quests: Record<string, number>;
   completedQuests: string[];
   bestiary: Record<string, number>;
@@ -75,6 +78,17 @@ export interface PlayerWorld {
   dungeonWeekly: { week: string; count: number };
   /** 当前活动副本（null=本周无进行中的副本）。用于"续打同副本不重复计次"。 */
   dungeon: ActiveDungeon | null;
+  // 六大力量体系解锁（始解/卍解/虚化/完现术/圣文字/狱解）
+  unlocks: string[];
+  // 鬼道（服务端权威 + 持久化，与背包/金币同等重要）
+  kidoSchool: string | null;
+  kidoNodes: Record<string, number>;
+  kidoEquipped: string[];
+  kidoPoints: number;
+  // 图鉴层级奖励已领 + 称号（服务端权威 + 持久化）
+  bestiaryTierClaimed: number[];
+  unlockedTitles: string[];
+  activeTitle: string | null;
 }
 
 export interface OpResult { ok: boolean; msg: string; data?: any; }
@@ -90,10 +104,12 @@ function seedWorld(): PlayerWorld {
       { id: 'antidote', name: '解毒药', type: 'consumable', desc: '解除中毒·寄生·灼烧', quantity: 2 },
     ],
     equipment: { head: null, body: null, bracer: null, boots: null, belt: null, ring: null, necklace: null, charm: null, pendant: null },
-    gold: 200, level: 1, exp: 0, statPoints: 0,
+    gold: 200, level: 1, exp: 0, statPoints: 0, allocatedHP: 0, allocatedMP: 0, allocatedATK: 0, allocatedDEF: 0, allocatedMATK: 0, allocatedMDEF: 0, allocatedSPD: 0,
     quests: {}, completedQuests: [], bestiary: {}, gatherNodes: {},
     dailyClaimed: { date: '', ids: [] }, weeklyClaimed: { week: '', ids: [] },
     dungeonWeekly: { week: '', count: 0 }, dungeon: null,
+    unlocks: [], kidoSchool: null, kidoNodes: {}, kidoEquipped: [], kidoPoints: 0,
+    bestiaryTierClaimed: [], unlockedTitles: [], activeTitle: null,
   };
 }
 
@@ -117,6 +133,13 @@ export class WorldService {
     if (typeof data.level === 'number') w.level = data.level;
     if (typeof data.exp === 'number') w.exp = data.exp;
     if (typeof data.statPoints === 'number') w.statPoints = data.statPoints;
+    if (typeof data.allocatedHP === 'number') w.allocatedHP = data.allocatedHP;
+    if (typeof data.allocatedMP === 'number') w.allocatedMP = data.allocatedMP;
+    if (typeof data.allocatedATK === 'number') w.allocatedATK = data.allocatedATK;
+    if (typeof data.allocatedDEF === 'number') w.allocatedDEF = data.allocatedDEF;
+    if (typeof data.allocatedMATK === 'number') w.allocatedMATK = data.allocatedMATK;
+    if (typeof data.allocatedMDEF === 'number') w.allocatedMDEF = data.allocatedMDEF;
+    if (typeof data.allocatedSPD === 'number') w.allocatedSPD = data.allocatedSPD;
     if (data.quests) w.quests = data.quests;
     if (data.completedQuests) w.completedQuests = data.completedQuests;
     if (data.bestiary) w.bestiary = data.bestiary;
@@ -125,8 +148,116 @@ export class WorldService {
     if (data.weeklyClaimed) w.weeklyClaimed = data.weeklyClaimed;
     if (data.dungeonWeekly) w.dungeonWeekly = data.dungeonWeekly;
     if (data.dungeon !== undefined) w.dungeon = data.dungeon;
+    if (Array.isArray(data.unlocks)) w.unlocks = data.unlocks;
+    if (typeof data.kidoSchool === 'string' || data.kidoSchool === null) w.kidoSchool = data.kidoSchool;
+    if (data.kidoNodes) w.kidoNodes = data.kidoNodes;
+    if (Array.isArray(data.kidoEquipped)) w.kidoEquipped = data.kidoEquipped;
+    if (typeof data.kidoPoints === 'number') w.kidoPoints = data.kidoPoints;
+    if (Array.isArray(data.bestiaryTierClaimed)) w.bestiaryTierClaimed = data.bestiaryTierClaimed;
+    if (Array.isArray(data.unlockedTitles)) w.unlockedTitles = data.unlockedTitles;
+    if (typeof data.activeTitle === 'string' || data.activeTitle === null) w.activeTitle = data.activeTitle;
     this.worlds.set(sid, w);
     return w;
+  }
+
+  /** 分配属性点（服务端权威）。校验剩余点数，写入已分配字段并扣减 statPoints。attr in {HP,MP,ATK,DEF,MATK,MDEF,SPD}。 */
+  allocateStat(pw: PlayerWorld, attr: string): OpResult {
+    const MAP: Record<string, 'allocatedHP' | 'allocatedMP' | 'allocatedATK' | 'allocatedDEF' | 'allocatedMATK' | 'allocatedMDEF' | 'allocatedSPD'> = {
+      HP: 'allocatedHP', MP: 'allocatedMP', ATK: 'allocatedATK', DEF: 'allocatedDEF',
+      MATK: 'allocatedMATK', MDEF: 'allocatedMDEF', SPD: 'allocatedSPD',
+    };
+    const field = MAP[attr];
+    if (!field) return { ok: false, msg: 'invalid attr' };
+    if (pw.statPoints <= 0) return { ok: false, msg: 'no stat points' };
+    (pw as any)[field] = ((pw as any)[field] || 0) + 1;
+    pw.statPoints -= 1;
+    return { ok: true, msg: 'ok' };
+  }
+
+  /** 重新评估称号解锁（服务端权威）。基于 pw.bestiary（击杀）作为已收集集合。返回新解锁称号名。 */
+  private evaluateTitles(pw: PlayerWorld): string[] {
+    const newly: string[] = [];
+    const collected = Object.keys(pw.bestiary).length;
+    const generals = Object.values(NAMED_ENEMIES).filter(e => e.type === '妖将');
+    const generalsKilled = generals.filter(e => (pw.bestiary[e.name] || 0) > 0).length;
+    for (const def of BESTIARY_TITLES) {
+      if (pw.unlockedTitles.includes((def as any).id)) continue;
+      let unlocked = false;
+      if ((def as any).requireFull) {
+        const names = Object.keys(NAMED_ENEMIES);
+        unlocked = names.length > 0 && names.every(n => (pw.bestiary[n] || 0) > 0);
+      } else if ((def as any).requireAllGenerals) {
+        unlocked = collected >= ((def as any).requiredCollected || 0) && generalsKilled === generals.length;
+      } else {
+        unlocked = collected >= ((def as any).requiredCollected || 0);
+      }
+      if (unlocked) { pw.unlockedTitles.push((def as any).id); newly.push((def as any).name); }
+    }
+    return newly;
+  }
+
+  /** 解锁六大力量体系之一（始解/卍解/虚化…）。 */
+  addUnlock(pw: PlayerWorld, key: string): OpResult {
+    if (pw.unlocks.includes(key)) return { ok: false, msg: 'already' };
+    pw.unlocks.push(key);
+    return { ok: true, msg: 'ok' };
+  }
+
+  /** 设置鬼道主修系别（即面板当前查看系别，可切换）。 */
+  kidoSetSchool(pw: PlayerWorld, school: string): OpResult {
+    pw.kidoSchool = school;
+    return { ok: true, msg: 'ok' };
+  }
+
+  /** 鬼道节点加点（服务端权威 + 持久化）。校验可用点数与层级锁。 */
+  kidoAllocate(pw: PlayerWorld, nodeId: string): OpResult {
+    const node = KIDO_NODES[nodeId];
+    if (!node) return { ok: false, msg: 'unknown node' };
+    const spent = Object.values(pw.kidoNodes).reduce((a, b) => a + b, 0);
+    const avail = (pw.kidoPoints || 0) - spent;
+    if (avail <= 0) return { ok: false, msg: 'no kido points' };
+    if ((pw.kidoNodes[nodeId] || 0) >= node.maxPoints) return { ok: false, msg: 'maxed' };
+    const inSchool = ALL_KIDO_NODES
+      .filter(n => n.school === node.school)
+      .reduce((s, n) => s + (pw.kidoNodes[n.id] || 0), 0);
+    if (inSchool < (TIER_LOCK[node.tier] || 0)) return { ok: false, msg: 'tier locked' };
+    pw.kidoNodes[nodeId] = (pw.kidoNodes[nodeId] || 0) + 1;
+    return { ok: true, msg: 'ok' };
+  }
+
+  /** 装备/卸下鬼道主动技能（最多4个，服务端权威）。 */
+  kidoEquip(pw: PlayerWorld, nodeId: string): OpResult {
+    const node = KIDO_NODES[nodeId];
+    if (!node || (pw.kidoNodes[nodeId] || 0) <= 0 || node.passive) return { ok: false, msg: 'not learned' };
+    if (pw.kidoEquipped.includes(nodeId)) {
+      pw.kidoEquipped = pw.kidoEquipped.filter(id => id !== nodeId);
+    } else {
+      if (pw.kidoEquipped.length >= 4) pw.kidoEquipped.pop();
+      pw.kidoEquipped.push(nodeId);
+    }
+    return { ok: true, msg: 'ok' };
+  }
+
+  /** 图鉴层级奖励领取（服务端权威 + 持久化）。防重复领取 + 即时发奖。 */
+  claimBestiaryTier(pw: PlayerWorld, tierId: number): OpResult {
+    if (pw.bestiaryTierClaimed.includes(tierId)) return { ok: false, msg: 'already claimed' };
+    const reached = getBestiaryTierReached(pw.bestiary);
+    if (reached < tierId) return { ok: false, msg: 'not reached' };
+    const tier = BESTIARY_TIERS.find(t => t.id === tierId);
+    if (!tier) return { ok: false, msg: 'unknown tier' };
+    pw.bestiaryTierClaimed.push(tierId);
+    if (tier.reward.statPoints) pw.statPoints += tier.reward.statPoints;
+    if (tier.reward.gold) pw.gold += tier.reward.gold;
+    if (tier.reward.exp) pw.exp += tier.reward.exp;
+    this.evaluateTitles(pw);
+    return { ok: true, msg: 'ok' };
+  }
+
+  /** 装备/卸下称号（服务端权威 + 持久化）。 */
+  setTitle(pw: PlayerWorld, id: string | null): OpResult {
+    if (id !== null && !pw.unlockedTitles.includes(id)) return { ok: false, msg: 'not unlocked' };
+    pw.activeTitle = (pw.activeTitle === id) ? null : id;
+    return { ok: true, msg: 'ok' };
   }
 
   remove(sid: string): void { this.worlds.delete(sid); }
@@ -171,7 +302,7 @@ export class WorldService {
     pw.gold -= amt; return true;
   }
   addGold(pw: PlayerWorld, amt: number): void { pw.gold += amt; }
-  recordKill(pw: PlayerWorld, name: string): void { pw.bestiary[name] = (pw.bestiary[name] || 0) + 1; }
+  recordKill(pw: PlayerWorld, name: string): void { pw.bestiary[name] = (pw.bestiary[name] || 0) + 1; this.evaluateTitles(pw); }
 
   /** 加经验并升级（与客户端 expForLevel 曲线一致）。 */
   gainExp(pw: PlayerWorld, amount: number): number {
@@ -181,6 +312,7 @@ export class WorldService {
       pw.exp -= expForLevel(pw.level + 1);
       pw.level += 1; leveled += 1;
       pw.statPoints += POINTS_PER_LEVEL;
+      pw.kidoPoints += 1;
     }
     return leveled;
   }
@@ -203,6 +335,7 @@ export class WorldService {
       if (r.gold) this.addGold(pw, r.gold);
       if (r.exp) this.gainExp(pw, r.exp);
       if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
+      if (r.unlock) this.addUnlock(pw, r.unlock);
       pw.dailyClaimed.ids.push(questId);
       return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, data: r };
     }
@@ -216,6 +349,7 @@ export class WorldService {
       if (r.gold) this.addGold(pw, r.gold);
       if (r.exp) this.gainExp(pw, r.exp);
       if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
+      if (r.unlock) this.addUnlock(pw, r.unlock);
       pw.weeklyClaimed.ids.push(questId);
       return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, data: r };
     }
@@ -225,6 +359,7 @@ export class WorldService {
     if (r.gold) this.addGold(pw, r.gold);
     if (r.exp) this.gainExp(pw, r.exp);
     if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
+    if (r.unlock) this.addUnlock(pw, r.unlock);
     pw.completedQuests.push(questId);
     return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, data: r };
   }

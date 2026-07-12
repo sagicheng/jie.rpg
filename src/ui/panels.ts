@@ -4,6 +4,7 @@ import { GAME_WIDTH, GAME_HEIGHT, ZANPAKUTO_GROWTH } from '../config';
 import { GameState } from '../systems/GameState';
 import { SaveManager } from '../systems/SaveManager';
 import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../systems/BestiaryData';
+import { expForLevel } from '../systems/BattleData';
 import { Inventory, EquipSlot, Item } from '../systems/Inventory';
 import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
 import { createPlayerStatus } from '../systems/StatusSystem';
@@ -17,7 +18,8 @@ import {
   getEnhanceLabel, getEnhanceGlow,
 } from '../systems/EnhanceSystem';
 import {
-  requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest,
+  requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestAllocateStat,
+  requestUnlock, requestKidoSetSchool, requestKidoAllocate, requestClaimBestiaryTier, requestSetTitle, isOnline,
 } from '../systems/WorldClient';
 
 // ═══════════════════════════════════════════
@@ -238,7 +240,7 @@ export function showShikaiSelection(scene: GameScene): void {
       sel.on('pointerover', () => { sel.setColor('#ffff88'); sel.setBackgroundColor('#443300aa'); });
       sel.on('pointerout', () => { sel.setColor('#ffcc44'); sel.setBackgroundColor('#33220088'); });
       sel.on('pointerdown', () => {
-        GameState.zanpakuto = zan; GameState.addUnlock('shikai');
+        GameState.zanpakuto = zan; if (isOnline()) requestUnlock('shikai'); else GameState.addUnlock('shikai');
         GameState.recalcStats();
         panel.destroy(true);
         scene.time.delayedCall(300, () => {
@@ -443,7 +445,13 @@ export function renderInventoryPanel(scene: GameScene): void {
 
 export function toggleStatPanel(scene: GameScene): void { if (scene.statPanel) { closeStatPanel(scene); return; } renderStatPanel(scene); }
 
-export function closeStatPanel(scene: GameScene): void { if (scene.statPanel) { scene.statPanel.destroy(true); scene.statPanel = null; scene.resumeFromMenu(); } }
+export function closeStatPanel(scene: GameScene): void {
+  if (scene.statPanel) {
+    const h = (scene as any)._statPanelUpdate;
+    if (h) { scene.scene.get('UIScene').events.off('updateStats', h); (scene as any)._statPanelUpdate = null; }
+    scene.statPanel.destroy(true); scene.statPanel = null; scene.resumeFromMenu();
+  }
+}
 
 export function renderStatPanel(scene: GameScene): void {
     scene.pauseForMenu(); const cam = scene.cameras.main;
@@ -486,18 +494,38 @@ export function renderStatPanel(scene: GameScene): void {
       }).setOrigin(0.5));
     });
 
-    // Stat points banner (prominent)
+    // ═══ Stat points + EXP block ═══
     const spY = unlockY + 54;
-    const spBg = scene.add.graphics(); spBg.fillStyle(0x2a1a0a, 0.8); spBg.fillRoundedRect(lx, spY, colW, 42, 6); spBg.lineStyle(1, 0x665533, 0.5); spBg.strokeRoundedRect(lx, spY, colW, 42, 6); p.add(spBg);
-    const sp = GameState.statPoints;
+    const allocatedTotal = () => (GameState.allocatedHP + GameState.allocatedMP + GameState.allocatedATK + GameState.allocatedDEF + GameState.allocatedMATK + GameState.allocatedMDEF + GameState.allocatedSPD);
+    const expNeed = () => expForLevel(GameState.level + 1);
+    const expPct = () => { const n = expNeed(); return n > 0 ? Math.floor((GameState.exp / n) * 100) : 0; };
+
+    // 剩余属性点 banner (prominent)
+    const spBg = scene.add.graphics(); spBg.fillStyle(0x2a1a0a, 0.8); spBg.fillRoundedRect(lx, spY, colW, 36, 6); spBg.lineStyle(1, 0x665533, 0.5); spBg.strokeRoundedRect(lx, spY, colW, 36, 6); p.add(spBg);
     let spText: Phaser.GameObjects.Text;
-    spText = scene.add.text(lx + 20, spY + 11, `剩余属性点: ${sp}`, {
-      fontSize: '20px', color: sp > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 }
+    spText = scene.add.text(lx + 20, spY + 7, `剩余属性点: ${GameState.statPoints}`, {
+      fontSize: '19px', color: GameState.statPoints > 0 ? '#ffcc44' : '#667788', fontStyle: 'bold', padding: { y: 2 }
     });
     p.add(spText);
-    p.add(scene.add.text(lx + colW - 20, spY + 14, 'HP+15 / MP+5 / 其他+1', {
+    p.add(scene.add.text(lx + colW - 20, spY + 10, 'HP+15 / MP+5 / 其他+1', {
       fontSize: '11px', color: '#556688', padding: { y: 1 }
     }).setOrigin(1, 0));
+
+    // 已分配点数 小行
+    const allocLineY = spY + 42;
+    let allocTotalText: Phaser.GameObjects.Text;
+    allocTotalText = scene.add.text(lx + 20, allocLineY, `已分配点数: ${allocatedTotal()}`, { fontSize: '13px', color: '#88ccff', padding: { y: 1 } });
+    p.add(allocTotalText);
+
+    // 经验 banner
+    const expY = spY + 66;
+    const expBg = scene.add.graphics(); expBg.fillStyle(0x0d1d2a, 0.8); expBg.fillRoundedRect(lx, expY, colW, 40, 6); expBg.lineStyle(1, 0x335566, 0.5); expBg.strokeRoundedRect(lx, expY, colW, 40, 6); p.add(expBg);
+    let expCurText: Phaser.GameObjects.Text;
+    let expPctText: Phaser.GameObjects.Text;
+    expCurText = scene.add.text(lx + 20, expY + 5, `当前经验: ${GameState.exp} / 升级所需: ${expNeed()}`, { fontSize: '13px', color: '#88ccff', padding: { y: 1 } });
+    p.add(expCurText);
+    expPctText = scene.add.text(lx + 20, expY + 22, `当前经验百分比: ${expPct()}%`, { fontSize: '13px', color: '#88ccff', padding: { y: 1 } });
+    p.add(expPctText);
 
     // ═══ Left column: Attributes ═══
     const attrs = [
@@ -506,24 +534,30 @@ export function renderStatPanel(scene: GameScene): void {
       { l: 'MATK', k: 'matk', a: 'allocatedMATK', per: 1 }, { l: 'MDEF', k: 'mdef', a: 'allocatedMDEF', per: 1 },
       { l: 'SPD', k: 'spd', a: 'allocatedSPD', per: 1 },
     ];
-    const atY = spY + 56;
-    const rowH = 56;
+    const atY = spY + 112;
+    const rowH = 50;
     const valTexts: Phaser.GameObjects.Text[] = [];
     const allocTexts: Phaser.GameObjects.Text[] = [];
     const addBtns: Phaser.GameObjects.Text[] = [];
-    const subBtns: Phaser.GameObjects.Text[] = [];
     const refreshDisplay = () => {
       spText.setText(`剩余属性点: ${GameState.statPoints}`);
       spText.setColor(GameState.statPoints > 0 ? '#ffcc44' : '#667788');
+      allocTotalText.setText(`已分配点数: ${allocatedTotal()}`);
+      expCurText.setText(`当前经验: ${GameState.exp} / 升级所需: ${expNeed()}`);
+      expPctText.setText(`当前经验百分比: ${expPct()}%`);
       attrs.forEach((at, i) => {
         const av = (GameState as any)[at.k] as number;
         const al = (GameState as any)[at.a] as number;
         valTexts[i].setText(`${av}`);
         allocTexts[i].setText(`(加点${al} × ${at.per} = +${al * at.per})`);
         addBtns[i].setColor(GameState.statPoints > 0 ? '#44cc44' : '#335533');
-        subBtns[i].setColor(al > 0 ? '#cc4444' : '#553333');
       });
     };
+
+    // 面板打开期间监听 worldSync 触发的 updateStats，实时刷新点数/经验
+    const onStatUpdate = () => refreshDisplay();
+    (scene as any)._statPanelUpdate = onStatUpdate;
+    scene.scene.get('UIScene').events.on('updateStats', onStatUpdate);
 
     attrs.forEach((at, i) => {
       const ay = atY + i * rowH;
@@ -542,17 +576,13 @@ export function renderStatPanel(scene: GameScene): void {
       ap.on('pointerover', () => { if (GameState.statPoints > 0) ap.setColor('#88ff88'); });
       ap.on('pointerout', () => { ap.setColor(GameState.statPoints > 0 ? '#44cc44' : '#335533'); });
       ap.on('pointerdown', () => {
-        if (GameState.statPoints > 0) { (GameState as any)[at.a]++; GameState.statPoints--; GameState.recalcStats(); refreshDisplay(); scene.scene.get('UIScene').events.emit('updateStats'); }
+        if (GameState.statPoints > 0) {
+          (GameState as any)[at.a]++; GameState.statPoints--; GameState.recalcStats(); refreshDisplay();
+          scene.scene.get('UIScene').events.emit('updateStats');
+          requestAllocateStat(at.l); // 服务端权威记账 + 持久化（乐观更新已先行）
+        }
       });
       p.add(ap); addBtns.push(ap);
-      // - button
-      const sp2 = scene.add.text(lx + colW - 60, ay + 8, '－', { fontSize: '24px', color: al > 0 ? '#cc4444' : '#553333', fontStyle: 'bold', padding: { x: 12, y: 6 } }).setInteractive({ useHandCursor: true });
-      sp2.on('pointerover', () => { if ((GameState as any)[at.a] > 0) sp2.setColor('#ff8888'); });
-      sp2.on('pointerout', () => { sp2.setColor((GameState as any)[at.a] > 0 ? '#cc4444' : '#553333'); });
-      sp2.on('pointerdown', () => {
-        if ((GameState as any)[at.a] > 0) { (GameState as any)[at.a]--; GameState.statPoints++; GameState.recalcStats(); refreshDisplay(); scene.scene.get('UIScene').events.emit('updateStats'); }
-      });
-      p.add(sp2); subBtns.push(sp2);
     });
 
     // ═══ Right column: Equipment grid ═══
@@ -627,7 +657,7 @@ export function renderStatPanel(scene: GameScene): void {
 
     // Footer
     const fy = oy + oh - 28; const ft = scene.add.graphics(); ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
-    p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, 'C键 开关  |  ESC 关闭  |  ＋/－ 加减属性点  |  卸下装备请开背包(B)', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+    p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, 'C键 开关  |  ESC 关闭  |  属性点一旦分配不可退回（洗点请待商城道具）  |  卸下装备请开背包(B)', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
   }
 
 export function showKidoPanel(scene: GameScene): void {
@@ -678,7 +708,7 @@ export function showKidoPanel(scene: GameScene): void {
       t.on('pointerover', () => { if (!isA) t.setColor('#888899'); });
       t.on('pointerout', () => { if (!isA) t.setColor('#555566'); });
       t.on('pointerdown', () => {
-        if (s.id !== activeTab) { Kido.school = s.id; closeKidoPanel(scene); showKidoPanel(scene); }
+        if (s.id !== activeTab) { if (isOnline()) requestKidoSetSchool(s.id); Kido.school = s.id; closeKidoPanel(scene); showKidoPanel(scene); }
       });
       p.add(t);
     });
@@ -780,7 +810,7 @@ export function showKidoPanel(scene: GameScene): void {
         z.on('pointerout', () => { if (scene.kidoTooltip) { scene.kidoTooltip.destroy(); scene.kidoTooltip = null; } });
         z.on('pointerdown', () => {
           if (canAdd) {
-            Kido.addPoint(n.id);
+            if (isOnline()) requestKidoAllocate(n.id); else Kido.addPoint(n.id);
             GameState.recalcStats();
             closeKidoPanel(scene); showKidoPanel(scene);
             scene.scene.get('UIScene').events.emit('updateStats');
@@ -1250,7 +1280,7 @@ export function renderTitlePanel(scene: GameScene): void {
         const btnLabel=isActive?'卸下':'装备';
         const ab=scene.add.text(listX+mw-48-72,ry+rowH/2-12,`[ ${btnLabel} ]`,{fontSize:'12px',color:isActive?'#ffcc66':'#88ccff',fontStyle:'bold',backgroundColor:isActive?'#3a2e00aa':'#002233aa',padding:{x:10,y:5}}).setOrigin(0,0.5).setInteractive({useHandCursor:true});
         ab.on('pointerover',()=>ab.setColor('#ffffff'));ab.on('pointerout',()=>ab.setColor(isActive?'#ffcc66':'#88ccff'));
-        ab.on('pointerdown',()=>{(GameState as any).setActiveTitle(def.id);scene.broadcastTitle();closeTitlePanel(scene);renderBestiaryPanel(scene);});
+        ab.on('pointerdown',()=>{ if(isOnline()) requestSetTitle(def.id); else (GameState as any).setActiveTitle(def.id); scene.broadcastTitle(); closeTitlePanel(scene); renderBestiaryPanel(scene); });
         c.add(ab);
       }else{
         c.add(scene.add.text(listX+mw-48-130,ry+rowH/2,st.progress,{fontSize:'11px',color:'#7788aa',padding:{y:1}}).setOrigin(0,0.5));
@@ -1260,7 +1290,7 @@ export function renderTitlePanel(scene: GameScene): void {
     const noneBtn=scene.add.text(mx+mw/2,ny+6,(GameState as any).activeTitle?'[ 卸下当前称号 ]':'（当前未装备称号）',{fontSize:'12px',color:(GameState as any).activeTitle?'#cc8888':'#556688',padding:{y:2}}).setOrigin(0.5).setInteractive({useHandCursor:(GameState as any).activeTitle?true:false});
     if((GameState as any).activeTitle){
       noneBtn.on('pointerover',()=>noneBtn.setColor('#ffaaaa'));noneBtn.on('pointerout',()=>noneBtn.setColor('#cc8888'));
-      noneBtn.on('pointerdown',()=>{(GameState as any).setActiveTitle(null);scene.broadcastTitle();closeTitlePanel(scene);renderBestiaryPanel(scene);});
+      noneBtn.on('pointerdown',()=>{ if(isOnline()) requestSetTitle(null); else (GameState as any).setActiveTitle(null); scene.broadcastTitle(); closeTitlePanel(scene); renderBestiaryPanel(scene); });
     }
     c.add(noneBtn);
   }
@@ -1275,7 +1305,7 @@ export function renderBestiaryPanel(scene: GameScene): void {
     c.add(scene.add.text(GAME_WIDTH/2,oy+th/2,'◆  妖 魔 图 鉴  ◆',{fontSize:'22px',color:'#e8d5a3',fontStyle:'bold',padding:{y:3}}).setOrigin(0.5));
     c.add(scene.add.text(ox+ow-40,oy+th/2,'✕',{fontSize:'22px',color:'#cc6666',padding:{x:8,y:4}}).setOrigin(0.5).setInteractive({useHandCursor:true}).on('pointerover',function(this:any){this.setColor('#ff8888');}).on('pointerout',function(this:any){this.setColor('#cc6666');}).on('pointerdown',()=>closeBestiaryPanel(scene)));
     const ty=oy+th+16;const cw=(ow-60)/4;const rd=getBestiaryTierReached(GameState.bestiaryKilled);const tn=Object.keys(NAMED_ENEMIES).length;
-    BESTIARY_TIERS.forEach((tr,ti)=>{const cx=ox+14+ti*(cw+12);const ir=rd>=tr.id;const ic=GameState.bestiaryTierClaimed.includes(tr.id);const pg=getBestiaryTierProgress(tr.id,GameState.bestiaryKilled);const pt=pg.total>0?pg.completed/pg.total:0;const cc=ir?parseInt(tr.color.replace('#',''),16):0x222244;const cb=scene.add.graphics();cb.fillStyle(cc,ir?0.18:0.12);cb.fillRoundedRect(cx,ty,cw,100,8);cb.lineStyle(1,cc,ir?0.6:0.25);cb.strokeRoundedRect(cx,ty,cw,100,8);c.add(cb);const ic2=ir?parseInt(tr.color.replace('#',''),16):0x444466;const ico=scene.add.graphics();ico.fillStyle(ic2,ir?1:0.5);ico.fillCircle(cx+20,ty+20,6);ico.lineStyle(2,ic2,0.7);ico.strokeCircle(cx+20,ty+20,9);c.add(ico);c.add(scene.add.text(cx+34,ty+11,tr.name,{fontSize:'14px',color:ir?tr.color:'#666688',fontStyle:'bold',padding:{y:2}}));c.add(scene.add.text(cx+34,ty+32,`全部×${tr.requiredKills}`,{fontSize:'10px',color:'#555577',padding:{y:1}}));const by2=ty+52,bw=cw-28;c.add(scene.add.rectangle(cx+14+bw/2,by2,bw,6,0x111122,0.9));if(pt>0){const fw=Math.max(2,bw*pt);c.add(scene.add.rectangle(cx+14+fw/2,by2,fw,5,ir?parseInt(tr.color.replace('#',''),16):0x334466,1));}const bty=ty+68;if(ic){c.add(scene.add.text(cx+cw/2,bty,'✔ 已领取',{fontSize:'12px',color:'#558855',fontStyle:'bold',padding:{y:1}}).setOrigin(0.5));}else if(ir){const bt=scene.add.text(cx+cw/2,bty,'[ 领取奖励 ]',{fontSize:'12px',color:'#ffcc44',fontStyle:'bold',backgroundColor:'#33220088',padding:{x:10,y:4}}).setOrigin(0.5).setInteractive({useHandCursor:true});bt.on('pointerover',()=>{bt.setColor('#ffff88');bt.setBackgroundColor('#443300aa');});bt.on('pointerout',()=>{bt.setColor('#ffcc44');bt.setBackgroundColor('#33220088');});bt.on('pointerdown',()=>{if(GameState.claimBestiaryTierReward(tr.id)){closeBestiaryPanel(scene);renderBestiaryPanel(scene);}});c.add(bt);}else{c.add(scene.add.text(cx+cw/2,bty,`${Math.round(pt*100)}% · ${pg.completed}/${pg.total}`,{fontSize:'10px',color:'#556688',padding:{y:1}}).setOrigin(0.5));c.add(scene.add.text(cx+cw/2,bty+16,tr.reward.desc,{fontSize:'9px',color:'#444466',padding:{y:1},wordWrap:{width:cw-10}}).setOrigin(0.5));}});
+    BESTIARY_TIERS.forEach((tr,ti)=>{const cx=ox+14+ti*(cw+12);const ir=rd>=tr.id;const ic=GameState.bestiaryTierClaimed.includes(tr.id);const pg=getBestiaryTierProgress(tr.id,GameState.bestiaryKilled);const pt=pg.total>0?pg.completed/pg.total:0;const cc=ir?parseInt(tr.color.replace('#',''),16):0x222244;const cb=scene.add.graphics();cb.fillStyle(cc,ir?0.18:0.12);cb.fillRoundedRect(cx,ty,cw,100,8);cb.lineStyle(1,cc,ir?0.6:0.25);cb.strokeRoundedRect(cx,ty,cw,100,8);c.add(cb);const ic2=ir?parseInt(tr.color.replace('#',''),16):0x444466;const ico=scene.add.graphics();ico.fillStyle(ic2,ir?1:0.5);ico.fillCircle(cx+20,ty+20,6);ico.lineStyle(2,ic2,0.7);ico.strokeCircle(cx+20,ty+20,9);c.add(ico);c.add(scene.add.text(cx+34,ty+11,tr.name,{fontSize:'14px',color:ir?tr.color:'#666688',fontStyle:'bold',padding:{y:2}}));c.add(scene.add.text(cx+34,ty+32,`全部×${tr.requiredKills}`,{fontSize:'10px',color:'#555577',padding:{y:1}}));const by2=ty+52,bw=cw-28;c.add(scene.add.rectangle(cx+14+bw/2,by2,bw,6,0x111122,0.9));if(pt>0){const fw=Math.max(2,bw*pt);c.add(scene.add.rectangle(cx+14+fw/2,by2,fw,5,ir?parseInt(tr.color.replace('#',''),16):0x334466,1));}const bty=ty+68;if(ic){c.add(scene.add.text(cx+cw/2,bty,'✔ 已领取',{fontSize:'12px',color:'#558855',fontStyle:'bold',padding:{y:1}}).setOrigin(0.5));}else if(ir){const bt=scene.add.text(cx+cw/2,bty,'[ 领取奖励 ]',{fontSize:'12px',color:'#ffcc44',fontStyle:'bold',backgroundColor:'#33220088',padding:{x:10,y:4}}).setOrigin(0.5).setInteractive({useHandCursor:true});bt.on('pointerover',()=>{bt.setColor('#ffff88');bt.setBackgroundColor('#443300aa');});bt.on('pointerout',()=>{bt.setColor('#ffcc44');bt.setBackgroundColor('#33220088');});bt.on('pointerdown',()=>{if(isOnline()) requestClaimBestiaryTier(tr.id); else GameState.claimBestiaryTierReward(tr.id); closeBestiaryPanel(scene); renderBestiaryPanel(scene);});c.add(bt);}else{c.add(scene.add.text(cx+cw/2,bty,`${Math.round(pt*100)}% · ${pg.completed}/${pg.total}`,{fontSize:'10px',color:'#556688',padding:{y:1}}).setOrigin(0.5));c.add(scene.add.text(cx+cw/2,bty+16,tr.reward.desc,{fontSize:'9px',color:'#444466',padding:{y:1},wordWrap:{width:cw-10}}).setOrigin(0.5));}});
     const sy2=ty+130;const sp=scene.add.graphics();sp.lineStyle(1,0x3a4a6a,0.5);sp.lineBetween(ox+14,sy2,ox+ow-14,sy2);c.add(sp);
     const bodyY=sy2+14,bh=oh-(sy2-oy)-36,lw=380,dw2=ow-lw-40,lx=ox+14,dx2=lx+lw+16;
     const lb=scene.add.graphics();lb.fillStyle(0x0e0e22,0.7);lb.fillRoundedRect(lx,bodyY,lw,bh,6);lb.lineStyle(1,0x334466,0.4);lb.strokeRoundedRect(lx,bodyY,lw,bh,6);c.add(lb);

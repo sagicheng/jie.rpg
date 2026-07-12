@@ -10,7 +10,7 @@
  */
 import { Inventory } from './Inventory';
 import { GameState } from './GameState';
-import { POINTS_PER_LEVEL } from '../config';
+import { Kido } from './Kido';
 
 /** 服务端 PlayerWorld 的客户端镜像类型（与 server/world.ts 保持一致，独立声明避免把服务端代码打进客户端包）。 */
 export interface WorldItem {
@@ -22,6 +22,7 @@ export interface PlayerWorld {
   inventory: WorldItem[];
   equipment: Record<string, WorldItem | null>;
   gold: number; level: number; exp: number; statPoints: number;
+  allocatedHP: number; allocatedMP: number; allocatedATK: number; allocatedDEF: number; allocatedMATK: number; allocatedMDEF: number; allocatedSPD: number;
   quests: Record<string, number>;
   completedQuests: string[];
   bestiary: Record<string, number>;
@@ -30,6 +31,14 @@ export interface PlayerWorld {
   weeklyClaimed?: { week: string; ids: string[] };
   dungeonWeekly?: { week: string; count: number };
   dungeon?: { dungeonId: number } | null;
+  unlocks?: string[];
+  kidoSchool?: string | null;
+  kidoNodes?: Record<string, number>;
+  kidoEquipped?: string[];
+  kidoPoints?: number;
+  bestiaryTierClaimed?: number[];
+  unlockedTitles?: string[];
+  activeTitle?: string | null;
 }
 
 /** 副本进度客户端镜像（供地图传送阵提示使用）。 */
@@ -78,9 +87,30 @@ export function requestDecompose(itemId: string): boolean {
 export function requestRefineReset(itemId: string): boolean {
   return sendIntent('refineReset', { itemId });
 }
+
+/** 分配属性点（联机时发送；服务端权威记账 + 持久化）。断连被拒。 */
+export function requestAllocateStat(attr: string): boolean {
+  return sendIntent('allocateStat', { attr });
+}
 export function requestClaimQuest(questId: string): boolean {
   return sendIntent('claimQuest', { questId });
 }
+
+/** 是否处于联机（已连接 game 房间）。用于「联机发意图 / 单机本地改」分支判断。 */
+export function isOnline(): boolean { return !!activeRoom; }
+
+/** 解锁六大力量体系（始解/卍解/虚化…）。 */
+export function requestUnlock(key: string): boolean { return sendIntent('unlock', { key }); }
+/** 设置鬼道主修系别。 */
+export function requestKidoSetSchool(school: string): boolean { return sendIntent('kidoSetSchool', { school }); }
+/** 鬼道节点加点。 */
+export function requestKidoAllocate(nodeId: string): boolean { return sendIntent('kidoAllocate', { nodeId }); }
+/** 装备/卸下鬼道主动技能。 */
+export function requestKidoEquip(nodeId: string): boolean { return sendIntent('kidoEquip', { nodeId }); }
+/** 图鉴层级奖励领取。 */
+export function requestClaimBestiaryTier(tierId: number): boolean { return sendIntent('claimBestiaryTier', { tierId }); }
+/** 装备/卸下称号。 */
+export function requestSetTitle(id: string | null): boolean { return sendIntent('setTitle', { id }); }
 
 function mapItem(w: WorldItem): any {
   return {
@@ -103,20 +133,39 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
   }
   Inventory.equipment = eq;
 
-  // 金币 / 等级 / 经验
+  // 金币 / 等级 / 经验 / 剩余属性点（服务端权威）
+  // pw.statPoints 已是「升级发放 - 手动分配」后的剩余值，并随 DB 持久化。
+  // 直接以服务端真相覆盖本地——否则重连时 GameState 从 level 1 重新计算升级差额，
+  // 会把剩余点数误算成「总获取点数」。升级时服务端 world.gainExp 已把点数计入
+  // pw.statPoints，客户端 GameState.gainExp 仅作即时反馈，最终以本处服务端值收口。
   GameState.gold = pw.gold;
-  // 升级增量补属性点：用「升级前 level」与「服务端 level」的差额补 statPoints，
-  // 而非整量覆盖 GameState.statPoints——否则每秒 worldSync 会把玩家在 C 界面已
-  // 分配掉的点数反复「还原」，导致属性点可无限刷（联机下经验由服务端给，
-  // 客户端 GameState.gainExp 不触发；本地分配只改 GameState.statPoints/allocated*）。
-  const prevLevel = GameState.level;
   GameState.level = pw.level;
   GameState.exp = pw.exp;
-  const lvEarned = (pw.level - prevLevel) * POINTS_PER_LEVEL;
-  if (lvEarned > 0) GameState.statPoints += lvEarned;
+  GameState.statPoints = pw.statPoints || 0;
+
+  // 已分配属性点（服务端权威 + 持久化）：以服务端真相覆盖本地，使分配在重连后保留，且因服务端不可减而天然不可退回。
+  GameState.allocatedHP = pw.allocatedHP || 0;
+  GameState.allocatedMP = pw.allocatedMP || 0;
+  GameState.allocatedATK = pw.allocatedATK || 0;
+  GameState.allocatedDEF = pw.allocatedDEF || 0;
+  GameState.allocatedMATK = pw.allocatedMATK || 0;
+  GameState.allocatedMDEF = pw.allocatedMDEF || 0;
+  GameState.allocatedSPD = pw.allocatedSPD || 0;
 
   // 图鉴击杀（服务端权威）
   GameState.bestiaryKilled = { ...pw.bestiary };
+
+  // 六大力量体系解锁（服务端权威）—— 联机下 combat 读取 GameState.unlocks 判断能否始解/卍解/虚化
+  GameState.unlocks = Array.isArray(pw.unlocks) ? [...pw.unlocks] : [];
+  // 鬼道（服务端权威 + 持久化）—— 覆盖 Kido 单例，recalcStats 据此算被动加成
+  if (pw.kidoSchool !== undefined) Kido.school = pw.kidoSchool as any;
+  if (pw.kidoNodes) Kido.nodes = { ...pw.kidoNodes };
+  if (pw.kidoEquipped) Kido.equipped = [...pw.kidoEquipped];
+  if (typeof pw.kidoPoints === 'number') Kido.totalPoints = pw.kidoPoints;
+  // 图鉴层级奖励已领 + 称号（服务端权威 + 持久化）
+  GameState.bestiaryTierClaimed = Array.isArray(pw.bestiaryTierClaimed) ? [...pw.bestiaryTierClaimed] : [];
+  GameState.unlockedTitles = Array.isArray(pw.unlockedTitles) ? [...pw.unlockedTitles] : [];
+  GameState.activeTitle = pw.activeTitle === undefined ? GameState.activeTitle : pw.activeTitle;
 
   // 已完成任务（服务端权威；与本地活动任务进度合并，避免本地标记丢失）
   const merged = new Set<string>([...GameState.questCompleted, ...pw.completedQuests]);

@@ -14,7 +14,7 @@ import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
 import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 import { getClient } from '../net/Net';
-import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
+import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -1025,6 +1025,7 @@ export class GameScene extends Phaser.Scene {
     if (this.gameRoom) {
       // 联机：奖励由服务端权威发放（worldSync 到账），反馈由 intentResult 显示
       requestClaimQuest(q.id);
+      if (q.rewards.unlock) requestUnlock(q.rewards.unlock);
       this.dialogueBox.show({ speaker: npcName, text: `任务完成：${q.name}\n奖励将稍后到账` }, () => { this.isInDialogue = false; this.tryAutoStartNextQuest(); });
       return;
     }

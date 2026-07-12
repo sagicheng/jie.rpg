@@ -220,6 +220,37 @@ export class GameRoom extends Room<GameRoomState> {
         case 'refine': res = world.refine(pw, String(data.itemId || '')); break;
         case 'decompose': res = world.decompose(pw, String(data.itemId || '')); break;
         case 'refineReset': res = world.refineReset(pw, String(data.itemId || '')); break;
+        case 'allocateStat':
+          res = world.allocateStat(pw, String(data.attr || ''));
+          if (res.ok) {
+            const cid = sessionCharMap.get(client.sessionId);
+            if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          }
+          break;
+        case 'unlock':
+          res = world.addUnlock(pw, String(data.key || ''));
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
+        case 'kidoSetSchool':
+          res = world.kidoSetSchool(pw, String(data.school || ''));
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
+        case 'kidoAllocate':
+          res = world.kidoAllocate(pw, String(data.nodeId || ''));
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
+        case 'kidoEquip':
+          res = world.kidoEquip(pw, String(data.nodeId || ''));
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
+        case 'claimBestiaryTier':
+          res = world.claimBestiaryTier(pw, Number(data.tierId) || 0);
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
+        case 'setTitle':
+          res = world.setTitle(pw, (data.id === undefined || data.id === null) ? null : String(data.id));
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
       }
       client.send('intentResult', res);
       client.send('worldSync', pw);
