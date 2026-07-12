@@ -107,6 +107,28 @@ export class WorldService {
     return w;
   }
 
+  /** 从 DB JSON 恢复世界状态（用于现有角色进房）。 */
+  loadFromJSON(sid: string, data: Partial<PlayerWorld>): PlayerWorld {
+    const w = seedWorld();
+    // 覆盖种子值
+    if (data.inventory) w.inventory = data.inventory;
+    if (data.equipment) w.equipment = data.equipment;
+    if (typeof data.gold === 'number') w.gold = data.gold;
+    if (typeof data.level === 'number') w.level = data.level;
+    if (typeof data.exp === 'number') w.exp = data.exp;
+    if (typeof data.statPoints === 'number') w.statPoints = data.statPoints;
+    if (data.quests) w.quests = data.quests;
+    if (data.completedQuests) w.completedQuests = data.completedQuests;
+    if (data.bestiary) w.bestiary = data.bestiary;
+    if (data.gatherNodes) w.gatherNodes = data.gatherNodes;
+    if (data.dailyClaimed) w.dailyClaimed = data.dailyClaimed;
+    if (data.weeklyClaimed) w.weeklyClaimed = data.weeklyClaimed;
+    if (data.dungeonWeekly) w.dungeonWeekly = data.dungeonWeekly;
+    if (data.dungeon !== undefined) w.dungeon = data.dungeon;
+    this.worlds.set(sid, w);
+    return w;
+  }
+
   remove(sid: string): void { this.worlds.delete(sid); }
 
   // ───────────────── 背包 ─────────────────

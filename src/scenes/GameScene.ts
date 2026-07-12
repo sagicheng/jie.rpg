@@ -51,6 +51,8 @@ export class GameScene extends Phaser.Scene {
   /** 联机 game 房间连接（panels.ts 等 UI 模块据其判读走服务端权威或本地逻辑）。 */
   public gameRoom: any = null;
   private mySessionId = '';
+  private authToken = '';
+  private characterId = 0;
   private remotePlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; tag: Phaser.GameObjects.Text; tx: number; ty: number; name: string; title: string }> = new Map();
   private lastSent = { x: -9999, y: -9999, t: 0 };
   private netHint!: Phaser.GameObjects.Text;
@@ -87,23 +89,44 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' });
   }
 
-  init(data?: { newGame?: boolean; name?: string; element?: string }): void {
+  init(data?: { newGame?: boolean; name?: string; element?: string; authToken?: string; characterId?: number; characterName?: string; characterElement?: string }): void {
+    this.authToken = data?.authToken || '';
+    this.characterId = data?.characterId || 0;
+
     if (data?.newGame) {
       GameState.reset();
       GameState.x = 400;
       GameState.y = 500;
       GameState.zone = 1;
       GameState.newGame = true;
-      // 恢复建角信息（来自 CreateCharacterScene，reset() 已清空 playerName/element/hasCreated）
-      if (data.name) {
-        GameState.playerName = data.name;
-        if (data.element) GameState.element = data.element;
+      // 恢复建角信息（来自服务端返回或 TitleScene 传入）
+      const chName = data.characterName || data.name || '';
+      const chElement = data.characterElement || data.element || '';
+      if (chName) {
+        GameState.playerName = chName;
+        if (chElement) GameState.element = chElement;
         GameState.hasCreated = true;
       }
       Inventory.addItem({ id: 'stop_blood_grass', name: '止血草', type: 'consumable', desc: '回复50HP', quantity: 5 });
       Inventory.addItem({ id: 'medicine_pill_s', name: '伤药(小)', type: 'consumable', desc: '回复150HP', quantity: 3 });
       Inventory.addItem({ id: 'spirit_water_s', name: '灵力水(小)', type: 'consumable', desc: '回复30MP', quantity: 3 });
       Inventory.addItem({ id: 'antidote', name: '解毒药', type: 'consumable', desc: '解除中毒·寄生·灼烧', quantity: 2 });
+    } else if (this.authToken && this.characterId) {
+      // Stage D：服务端加载角色，不以客户端 localStorage 为准
+      GameState.reset();
+      GameState.x = 400;
+      GameState.y = 500;
+      GameState.zone = 1;
+      GameState.newGame = false;
+      // 角色名/元素不在 worldSync 数据中（存在 DB characters 表），需从 TitleScene 传入
+      const chName = data?.characterName || data?.name || '';
+      const chElement = data?.characterElement || data?.element || '';
+      if (chName) {
+        GameState.playerName = chName;
+        if (chElement) GameState.element = chElement;
+        GameState.hasCreated = true;
+      }
+      // worldSync 会在连房后覆盖本地背包/金币/等级等缓存
     } else if (data?.newGame === false) {
       const loaded = SaveManager.load();
       if (!loaded.success) {
@@ -1079,21 +1102,30 @@ export class GameScene extends Phaser.Scene {
     getClient().joinOrCreate('game', {
       name: GameState.playerName || '玩家',
       title: GameState.getActiveTitleDef()?.name ?? '',
+      token: this.authToken,
+      characterId: this.characterId,
     })
       .then((room: any) => {
         this.gameRoom = room;
         this.mySessionId = room.sessionId;
         setActiveRoom(room);
-        // 进房即上报一次当前坐标，让其他客户端立刻看到自己
         room.send('move', { x: Math.round(this.player.x), y: Math.round(this.player.y) });
         room.onStateChange(() => this.syncRemotePlayers());
-        // 权威世界状态同步：服务端单一真相源，全量 reconcile 进本地缓存
+
+        // 权威世界状态同步
         room.onMessage('worldSync', (pw: any) => applyWorldSync(this, pw));
-        // 意图回执：即时反馈（获得/购买/强化结果等）
+
+        // Stage D：认证失败
+        room.onMessage('authError', (msg: string) => {
+          this.showWorldNotif(msg || '认证失败，返回标题画面', false);
+          this.time.delayedCall(2000, () => {
+            room.leave();
+            this.scene.start('TitleScene');
+          });
+        });
+
         room.onMessage('intentResult', (res: any) => this.onIntentResult(res));
-        // 共享怪物隐藏/恢复由每帧 pruneSharedMonsters 依据服务端状态机同步，无需 onAdd 钩子。
         room.onLeave(() => { this.clearRemotePlayers(); setActiveRoom(null); });
-        // 服务端 broadcast('system', ...) 的系统提示（进入地图等），客户端暂无需特殊处理，注册空处理器消除告警。
         room.onMessage('system', () => {});
         room.onError((code: number, msg: string) => console.warn('[game] 房间错误', code, msg));
       })

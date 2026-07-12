@@ -1,12 +1,21 @@
 /**
- * 共享地图房间：玩家移动同步 + 聊天。
- * 证明多客户端状态同步（Colyseus 自动 diff 广播）。
+ * 共享地图房间：玩家移动同步 + 聊天 + 权威世界状态。
+ *
+ * Stage D：接入 Token 验证 + DB 持久化。
+ * - onJoin 必须带 token + characterId，验证通过后才进房。
+ * - 角色数据从 DB 加载到 WorldService 内存。
+ * - onLeave 世界状态写回 DB，不清空（断线不丢进度）。
  */
+
 import { Room, Client } from '@colyseus/core';
 import { GameRoomState, GamePlayer, ChatMessage, MonsterState } from '../schema';
 import { world, type OpResult } from '../world';
+import { findAccountByToken, getCharacter, saveCharacterWorld } from '../db';
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
+
+/** sessionId → characterId 映射，留到 onLeave 时知道要保存哪个角色。 */
+const sessionCharMap = new Map<string, number>();
 
 export class GameRoom extends Room<GameRoomState> {
   onCreate() {
@@ -35,22 +44,17 @@ export class GameRoom extends Room<GameRoomState> {
       if (p) p.title = String(data.title ?? '').slice(0, 16);
     });
 
-    // 战斗中状态：进入/退出战斗时由客户端上报，用于远端名牌显示「战斗中」标签（便于组队系统识别谁在忙）
     this.onMessage('setBattling', (client, data: { v?: boolean }) => {
       const p = this.state.players.get(client.sessionId);
       if (p) p.battling = !!data.v;
     });
 
-    // —— 共享怪物状态机（锁定 / 击杀 / 复原 / 刷新）——
     this.onMessage('enterBattle', (client, data: { id?: string }) => this.lockMonster(client, data));
     this.onMessage('killMonster', (client, data: { id?: string; respawnMs?: number }) => this.killMonster(client, data));
     this.onMessage('unlockMonster', (client, data: { id?: string }) => this.unlockMonster(client, data));
 
-    // 每秒检查死亡怪物的刷新时间（从战斗结束计时）
     this.clock.setInterval(() => this.tickRespawn(), 1000);
 
-    // —— 权威世界状态：内容操作意图（采集/拾取/买卖/制造/强化/任务/装备…）——
-    // 客户端只发"意图"，服务端校验并改写 WorldService 单一真相源，再 worldSync 回广播。
     this.onMessage('intent', (client, data: any) => {
       const sid = client.sessionId;
       const pw = world.get(sid);
@@ -69,28 +73,30 @@ export class GameRoom extends Room<GameRoomState> {
         case 'decompose': res = world.decompose(pw, String(data.itemId || '')); break;
         case 'refineReset': res = world.refineReset(pw, String(data.itemId || '')); break;
       }
-      // 回执（即时提示）+ 权威状态同步
       client.send('intentResult', res);
       client.send('worldSync', pw);
     });
 
-    // 每秒把各玩家权威世界状态同步给其本人（确保 BattleRoom 写入的战利品也能到账）
+    // 每秒把各玩家权威世界状态同步给其本人
     this.clock.setInterval(() => {
       this.state.players.forEach((_p: any, sid: string) => {
         const c = this.clients.find((x: Client) => x.sessionId === sid);
         if (c) c.send('worldSync', world.get(sid));
       });
     }, 1000);
+
+    // 每 30 秒自动保存所有在线玩家世界到 DB
+    this.clock.setInterval(() => this.saveAllOnline(), 30000);
   }
 
-  /** 取/建怪物状态（懒创建，仅在被锁/被杀时出现于 map）。 */
+  // ─── 怪物状态机 ───
+
   private getMonster(id: string): MonsterState {
     let m = this.state.monsters.get(id);
     if (!m) { m = new MonsterState(); m.id = id; m.state = 'available'; this.state.monsters.set(id, m); }
     return m;
   }
 
-  /** 进入战斗：把怪锁定为 busy（对其余玩家消失）。已被锁/已死则忽略（防抢怪）。 */
   private lockMonster(client: Client, data: { id?: string }): void {
     if (!data || typeof data.id !== 'string') return;
     const id = data.id.slice(0, 64);
@@ -99,19 +105,17 @@ export class GameRoom extends Room<GameRoomState> {
     if (m.state === 'available') { m.state = 'busy'; m.owner = client.sessionId; m.respawnAt = 0; }
   }
 
-  /** 击杀：标记 dead 并按客户端上报的刷新时长计时（从战斗结束起）。他人战斗中不可误杀。 */
   private killMonster(client: Client, data: { id?: string; respawnMs?: number }): void {
     if (!data || typeof data.id !== 'string') return;
     const id = data.id.slice(0, 64);
     if (!id) return;
     const m = this.getMonster(id);
-    if (m.state === 'busy' && m.owner !== client.sessionId) return; // 别人正打着，不误杀
+    if (m.state === 'busy' && m.owner !== client.sessionId) return;
     m.state = 'dead';
     m.owner = '';
     m.respawnAt = Date.now() + (Number(data.respawnMs) || 30000);
   }
 
-  /** 失败复原：仅释放自己锁定的怪（立即 available），防误复活他人已杀的怪。 */
   private unlockMonster(client: Client, data: { id?: string }): void {
     if (!data || typeof data.id !== 'string') return;
     const id = data.id.slice(0, 64);
@@ -122,7 +126,6 @@ export class GameRoom extends Room<GameRoomState> {
     }
   }
 
-  /** 死亡怪物到点刷新为 available（按 respawnAt）。 */
   private tickRespawn(): void {
     const now = Date.now();
     this.state.monsters.forEach((m) => {
@@ -132,34 +135,92 @@ export class GameRoom extends Room<GameRoomState> {
     });
   }
 
-  onJoin(client: Client, options: { name?: string; title?: string }) {
+  // ─── 进房 / 离房（DB 持久化）───
+
+  onJoin(client: Client, options: { token?: string; characterId?: number; title?: string }) {
+    // Stage D：必须带 token + characterId
+    const token = options?.token;
+    const charId = options?.characterId;
+    if (!token || !charId) {
+      client.send('authError', '缺少 token 或角色ID');
+      setTimeout(() => client.leave(), 100);
+      return;
+    }
+
+    const acc = findAccountByToken(token);
+    if (!acc) {
+      client.send('authError', '登录已过期，请重新登录');
+      setTimeout(() => client.leave(), 100);
+      return;
+    }
+
+    const ch = getCharacter(charId);
+    if (!ch || ch.account_id !== acc.id) {
+      client.send('authError', '角色不存在');
+      setTimeout(() => client.leave(), 100);
+      return;
+    }
+
+    // 从 DB 加载世界数据，导入 WorldService
+    let pw: any;
+    try {
+      const data = JSON.parse(ch.world_data);
+      if (data && typeof data === 'object' && data.level) {
+        pw = world.loadFromJSON(client.sessionId, data);
+      } else {
+        pw = world.get(client.sessionId); // 新角色，种子
+      }
+    } catch {
+      pw = world.get(client.sessionId); // JSON 损坏，种子新世界
+    }
+
+    sessionCharMap.set(client.sessionId, charId);
+
+    // 建造 Colyseus 玩家对象
     const p = new GamePlayer();
     p.sessionId = client.sessionId;
-    // 基础名（客户端未传则给中性默认）；同房间重名自动追加 #2/#3，保证联机中每个名字唯一可区分。
-    const base = String(options?.name ?? '玩家').slice(0, 14) || '玩家';
-    let name = base;
-    let n = 2;
-    const taken = new Set(Array.from(this.state.players.values()).map((q: any) => q.name));
-    while (taken.has(name)) { name = `${base}#${n++}`; }
-    p.name = name.slice(0, 16);
+    p.name = ch.name;
     p.title = String(options?.title ?? '').slice(0, 16);
     p.color = COLORS[Math.floor(Math.random() * COLORS.length)];
     p.x = 400 + Math.random() * 200;
     p.y = 300 + Math.random() * 100;
     this.state.players.set(client.sessionId, p);
-    // 进房即下发权威世界状态（背包/装备/金币/任务…），客户端以服务端为准
-    client.send('worldSync', world.get(client.sessionId));
+
+    client.send('worldSync', pw);
     this.broadcast('system', `${p.name} 进入了地图`);
   }
 
   onLeave(client: Client) {
-    world.remove(client.sessionId); // 断线清除权威世界状态（重新进房会重新种子）
+    // 保存世界状态到 DB
+    const charId = sessionCharMap.get(client.sessionId);
+    if (charId !== undefined) {
+      const pw = world.get(client.sessionId);
+      if (pw.level > 0) {
+        try {
+          saveCharacterWorld(charId, JSON.stringify(pw));
+        } catch { /* 保存失败不阻断 */ }
+      }
+      sessionCharMap.delete(client.sessionId);
+    }
+    // 不清空 world——保留内存副本，下次重连时可恢复（WorldService 的 Map 仍是健在的）
+    // 但 30s 定时保存已写 DB，即使进程重启也不丢。
+
     this.state.players.delete(client.sessionId);
-    // 断线释放自己锁定的怪（防卡死）：失败离开=怪物立即复原
     this.state.monsters.forEach((m) => {
       if (m.state === 'busy' && m.owner === client.sessionId) {
         m.state = 'available'; m.owner = ''; m.respawnAt = 0;
       }
+    });
+  }
+
+  // ─── 定时保存 ───
+
+  private saveAllOnline(): void {
+    sessionCharMap.forEach((charId, sid) => {
+      try {
+        const pw = world.get(sid);
+        if (pw.level > 0) saveCharacterWorld(charId, JSON.stringify(pw));
+      } catch { /* skip */ }
     });
   }
 }
