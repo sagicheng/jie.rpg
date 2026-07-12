@@ -1192,6 +1192,13 @@ export class GameScene extends Phaser.Scene {
       room.onMessage('teamExitBattleEnd', () => {
         this.routeTeamBattleEnd();
       });
+      // 队长进入下一阶镜像地图 / 返回主世界 → 队员同步重建地图 / 退出副本
+      room.onMessage('teamDungeonStage', (data: { stage: number }) => {
+        this.routeTeamDungeonStage(data.stage);
+      });
+      room.onMessage('teamExitDungeon', () => {
+        this.routeTeamExitDungeon();
+      });
 
       // 队长进副本 → 队员跟随进入（仅当自身未在副本/未在战斗）
         room.onMessage('enterTeamDungeon', (data: { dungeonId: number }) => {
@@ -1724,6 +1731,20 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.stopTeamBattle();
     }
+  }
+
+  /** 副本阶段推进广播：队员侧同步重建镜像地图到队长所在阶（由队长 transitionToStage 触发，不用 isActive 守卫避免 paused 误判）。 */
+  private routeTeamDungeonStage(stage: number): void {
+    if (!this.inDungeon) return;
+    const dms = this.scene.get('DungeonMapScene') as any;
+    if (dms) dms.syncToServerStage(stage);
+  }
+
+  /** 副本退出广播：队员侧同步退出副本地图回主世界（由队长 exitToGame 触发）。 */
+  private routeTeamExitDungeon(): void {
+    if (!this.inDungeon) return;
+    const dms = this.scene.get('DungeonMapScene') as any;
+    if (dms) dms.exitToGame();
   }
 
   /** 开放世界组队战斗：队员侧收到队长返回广播后，退出战斗场景回地图（SHUTDOWN 自动 resume GameScene）。 */

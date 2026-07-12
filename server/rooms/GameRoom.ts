@@ -173,6 +173,33 @@ export class GameRoom extends Room<GameRoomState> {
       });
     });
 
+    // 副本阶段推进广播：队长进入下一阶镜像地图 → 通知队员同步重建地图（排除发起者自身）
+    this.onMessage('teamDungeonStage', (client, data: { stage?: number }) => {
+      const teamId = playerTeam.get(client.sessionId);
+      if (!teamId) return;
+      const team = teams.get(teamId);
+      if (!team) return;
+      const stage = Number(data?.stage) || 1;
+      team.members.forEach((_m: any, msid: string) => {
+        if (msid === client.sessionId) return;
+        const c = this.clients.find((x: Client) => x.sessionId === msid);
+        if (c) c.send('teamDungeonStage', { stage });
+      });
+    });
+
+    // 副本退出广播：队长返回主世界 → 通知队员同步退出副本地图（排除发起者自身）
+    this.onMessage('teamExitDungeon', (client) => {
+      const teamId = playerTeam.get(client.sessionId);
+      if (!teamId) return;
+      const team = teams.get(teamId);
+      if (!team) return;
+      team.members.forEach((_m: any, msid: string) => {
+        if (msid === client.sessionId) return;
+        const c = this.clients.find((x: Client) => x.sessionId === msid);
+        if (c) c.send('teamExitDungeon');
+      });
+    });
+
     this.clock.setInterval(() => this.tickRespawn(), 1000);
 
     // ─── 权威世界操作意图 ───

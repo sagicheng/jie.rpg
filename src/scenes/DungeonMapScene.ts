@@ -48,6 +48,7 @@ export class DungeonMapScene extends Phaser.Scene {
   private fromZone = 1;
   /** 是否由队长带队跟随进入：是则镜像队长阶段进度，自己不领奖/不进下一阶。 */
   private followEnter = false;
+  private followStageInit = false;  // 队员初始进入副本时一次性镜像服务端 stage（避免实时镜像导致提前跳阶）
   /** 自身颜色（进房时由 GameScene 传入，用于远端队友 tint + 上报给 dungeon room）。 */
   private myColor = '#4ecdc4';
   private localStage = 1;        // 当前显示的地图层（跟随服务端 stage）
@@ -65,6 +66,7 @@ export class DungeonMapScene extends Phaser.Scene {
   private enemies: DungeonEnemy[] = [];
   private rewardNPC: { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text } | null = null;
   private portal: { x: number; y: number; type: 'next' | 'exit'; gfx: Phaser.GameObjects.Graphics; label: Phaser.GameObjects.Text } | null = null;
+  private mapGfx: Phaser.GameObjects.Graphics | null = null;
   private battleCooldown = 0;
   private isTransitioning = false;
   private pendingNearby: '' | 'reward' | 'portal' = '';
@@ -129,6 +131,7 @@ export class DungeonMapScene extends Phaser.Scene {
     this.battleCooldown = 0;
     this.isTransitioning = false;
     this.pendingNearby = '';
+    this.followStageInit = false;
     // 复位面板宿主状态（防止上一次副本残留的面板/暂停标记带到新副本）
     this.statPanel = null; this.inventoryPanel = null; this.kidoPanel = null;
     this.kidoTooltip = null; this.enhancePanel = null; this.bestiaryPanel = null;
@@ -171,7 +174,9 @@ export class DungeonMapScene extends Phaser.Scene {
   private createMap(): void {
     const vis = getDungeonStageVisual(this.dungeonId, this.localStage);
     const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2;
+    if (this.mapGfx) { this.mapGfx.destroy(); this.mapGfx = null; }
     const g = this.add.graphics().setDepth(0);
+    this.mapGfx = g;
     g.fillStyle(vis.groundColor, 1);
     g.fillRect(0, 0, mapW, mapH);
     g.fillStyle(vis.roadColor, 1);
@@ -201,7 +206,8 @@ export class DungeonMapScene extends Phaser.Scene {
 
   // ═══ 明雷怪（散点分布，碰任意一只即打整组）═══
   private createEnemies(): void {
-    const party = buildDungeonParty(this.dungeonId, this.localStage);
+    let party = buildDungeonParty(this.dungeonId, this.localStage);
+    if (this.localStage >= 3) party = party.slice(0, 1); // 阶段3镜像地图仅1只BOSS明怪（按设定；战斗多敌由 buildEncounterParty 决定）
     const occupied: { x: number; y: number }[] = [];
     party.forEach((data, idx) => {
       let ex = Phaser.Math.Between(200, GAME_WIDTH * 3 - 200);
@@ -568,7 +574,7 @@ export class DungeonMapScene extends Phaser.Scene {
     }
     if (this.pendingNearby === 'reward') { this.claimReward(); return; }
     if (this.pendingNearby === 'portal') {
-      if (this.portal!.type === 'exit') this.exitToGame();
+      if (this.portal!.type === 'exit') { if (!this.followEnter) this.gameRoom?.send('teamExitDungeon'); this.exitToGame(); }
       else this.transitionToStage(this.localStage + 1);
       return;
     }
@@ -649,16 +655,23 @@ export class DungeonMapScene extends Phaser.Scene {
       this.updateStageHUD();
       this.cameras.main.fadeIn(400, 0, 0, 0);
       this.isTransitioning = false;
+      if (!this.followEnter) this.gameRoom?.send('teamDungeonStage', { stage }); // 队长进入下一阶 → 队员同步重建镜像地图
     });
   }
 
   private exitToGame(): void {
     if (this.isTransitioning) return;
     GameState.zone = this.fromZone;
+    const gs = this.scene.get('GameScene') as any;
+    gs?.exitDungeon?.(); // 重置主场景 inDungeon 标志，避免返回主世界后仍被副本守卫拦截
     // 恢复被暂停的主场景（保留其联机连接与权威世界），再关闭副本场景自身。
     // 必须 resume 而非 start —— start 会重启 GameScene 并重新连房拿到新 sessionId，
     // 导致服务端权威世界被清空、副本奖励/等级丢失（bug1/bug2 根因之一）。
     this.scene.resume('GameScene');
+    // 进副本时 GameScene 相机被 fadeOut 到全黑并随 pause 冻结；resume 不会自动还原，
+    // 必须主动 fadeIn 把相机从黑屏终态拉回，否则返回主世界会直接卡在黑屏。
+    const gscam = (this.scene.get('GameScene') as any)?.cameras?.main;
+    if (gscam) gscam.fadeIn(400, 0, 0, 0);
     this.scene.stop();
   }
 
@@ -697,7 +710,10 @@ export class DungeonMapScene extends Phaser.Scene {
     if (!s) return;
     this.updateStageHUD();
     // 跟随者：阶段进度由队长权威驱动，直接镜像服务端 stage（含进入时已在中途的情况）
-    if (this.followEnter) this.syncToServerStage(s.stage);
+    // 跟随者仅首次进入副本时一次性镜像服务端 stage（对齐队长当前阶），
+    // 后续阶段推进由队长 transitionToStage 显式广播 teamDungeonStage 驱动，
+    // 不再实时镜像——避免服务端 stage 在队长领奖瞬间就+1 导致队员提前跳阶。
+    if (this.followEnter && !this.followStageInit) { this.syncToServerStage(s.stage); this.followStageInit = true; }
     // 不在此处理阶段通关——本场景的完成检测由 onMultiBattleEnd 逐怪追踪（全部明雷击杀后
     // 调 handleStageCleared 生成领奖 NPC）。阶段推进与领奖通过 claimReward → claimStage
     // 权威驱动（DungeonRoom 服务端发奖+推进 stage）。若在此通过 serverStage/phase 变化
