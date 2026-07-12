@@ -1184,8 +1184,16 @@ export class GameScene extends Phaser.Scene {
         room.onMessage('enterTeamBattle', (data: { monsterId: string }) => {
           this.launchTeamBattle(data.monsterId);
         });
+        // 副本内：队长开战 → 队员（DungeonMapScene）被拉进同一 battle room 共斗
+        room.onMessage('enterTeamDungeonBattle', (data: { dungeonId: number; stage: number }) => {
+        this.routeTeamDungeonBattle(data);
+      });
+      // 队长战斗返回 → 队员（副本或地图场景）同步退出战斗场景
+      room.onMessage('teamExitBattleEnd', () => {
+        this.routeTeamBattleEnd();
+      });
 
-        // 队长进副本 → 队员跟随进入（仅当自身未在副本/未在战斗）
+      // 队长进副本 → 队员跟随进入（仅当自身未在副本/未在战斗）
         room.onMessage('enterTeamDungeon', (data: { dungeonId: number }) => {
           if (this.inDungeon) return;
           if (this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
@@ -1366,7 +1374,7 @@ export class GameScene extends Phaser.Scene {
       //      副本奖励/等级全部丢失（且 GameRoom 每秒 worldSync 反向把客户端覆盖成空）。
       // 这与 launchMultiBattle 同模式：launch 并行、pause 自身，连接与权威世界始终存活，
       // 副本奖励/升级随每秒 worldSync 全量 reconcile 自动到账，出本即同步。
-      this.scene.launch('DungeonMapScene', { dungeonId: zone, fromZone: zone, followEnter: fromTeam });
+      this.scene.launch('DungeonMapScene', { dungeonId: zone, fromZone: zone, followEnter: fromTeam, color: this.gameRoom?.state?.players?.get(this.mySessionId)?.color || '#4ecdc4' });
       this.scene.pause();
     });
   }
@@ -1696,6 +1704,31 @@ export class GameScene extends Phaser.Scene {
       isTeamPull: true,   // 被队友拉进来的，不发 startbattle
     });
     this.scene.pause();
+  }
+
+  /** 副本组队战斗：收到 enterTeamDungeonBattle 后，路由到活跃的 DungeonMapScene 拉队员进同一 battle room。 */
+  private routeTeamDungeonBattle(data: { dungeonId?: number; stage?: number }): void {
+    if (!this.inDungeon) return;
+    const dms = this.scene.get('DungeonMapScene') as any;
+    if (!dms || !dms.scene.isActive()) return;
+    dms.pullIntoTeamBattle(data);
+  }
+
+  /** 队长战斗返回广播：按当前场景路由——副本内停队员的战斗场景，地图内停自身战斗场景。
+   *  注意：副本战斗中 DungeonMapScene 处于 paused 状态（isActive()=false），
+   *  故此处只能用「实例存在」守卫，不能用 isActive()，否则队员退出战斗会被跳过。 */
+  private routeTeamBattleEnd(): void {
+    if (this.inDungeon) {
+      const dms = this.scene.get('DungeonMapScene') as any;
+      if (dms) dms.stopTeamBattle();
+    } else {
+      this.stopTeamBattle();
+    }
+  }
+
+  /** 开放世界组队战斗：队员侧收到队长返回广播后，退出战斗场景回地图（SHUTDOWN 自动 resume GameScene）。 */
+  private stopTeamBattle(): void {
+    if (this.scene.isActive('MultiBattleScene')) this.scene.stop('MultiBattleScene');
   }
 
   /** 邀请附近玩家（点击名牌触发）。 */

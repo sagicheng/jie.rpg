@@ -95,6 +95,9 @@ export class DungeonPlayer extends Schema {
   @type('string') dungeonSid = '';
   @type('string') gameSid = '';
   @type('string') name = '';
+  @type('string') color = '#4ecdc4';   // 远端渲染 tint（客户端进房时带自身 color）
+  @type('number') x = 0;               // 副本内位置（move 同步，供队友可见）
+  @type('number') y = 0;
 }
 
 export class DungeonRoomState extends Schema {

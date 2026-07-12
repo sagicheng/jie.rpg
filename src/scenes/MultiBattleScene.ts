@@ -167,6 +167,7 @@ export class MultiBattleScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-ESC', () => {
       if (this.resultPanel) return;
       this.intentionalLeave = true;
+      this.broadcastTeamExit();      // 队长主动退出 → 广播全队一起退出战斗
       this.scene.stop();
     });
 
@@ -687,9 +688,18 @@ export class MultiBattleScene extends Phaser.Scene {
       c.destroy(true);
       this.resultPanel = null;
       this.intentionalLeave = true; // 主动离开，onLeave 不应再弹「连接断开」
+      this.broadcastTeamExit();      // 队长返回 → 广播全队一起退出战斗
       this.scene.stop();
     });
     c.add([bg, panel, t, btn]);
     this.resultPanel = c;
+  }
+
+  /** 队长（非被拉入）主动返回时，广播给全队一起退出战斗场景。
+   *  队员侧收到 teamExitBattleEnd 后 stop 自身 MultiBattleScene 并 resume 对应场景（副本/地图）。 */
+  private broadcastTeamExit(): void {
+    if (this.isTeamPull) return;
+    const gs = this.scene.get('GameScene') as any;
+    if (gs?.gameRoom) gs.gameRoom.send('teamExitBattle');
   }
 }

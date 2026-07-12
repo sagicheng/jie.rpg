@@ -48,6 +48,8 @@ export class DungeonMapScene extends Phaser.Scene {
   private fromZone = 1;
   /** 是否由队长带队跟随进入：是则镜像队长阶段进度，自己不领奖/不进下一阶。 */
   private followEnter = false;
+  /** 自身颜色（进房时由 GameScene 传入，用于远端队友 tint + 上报给 dungeon room）。 */
+  private myColor = '#4ecdc4';
   private localStage = 1;        // 当前显示的地图层（跟随服务端 stage）
   private clearedPending = false; // 有刚打完待领奖的层
   private rewardTaken = false;
@@ -66,6 +68,12 @@ export class DungeonMapScene extends Phaser.Scene {
   private battleCooldown = 0;
   private isTransitioning = false;
   private pendingNearby: '' | 'reward' | 'portal' = '';
+
+  // ═══ 副本内远端队友（位置同步渲染）═══
+  private dungeonRemotePlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; tag: Phaser.GameObjects.Text; tx: number; ty: number; name: string; color: string }> = new Map();
+  private lastSentDungeon = { x: -9999, y: -9999, t: 0 };
+  private teamHud: Phaser.GameObjects.Container | null = null;
+  private teamHudSig = '';
 
   private zoneText!: Phaser.GameObjects.Text;
   private promptText!: Phaser.GameObjects.Text;
@@ -103,10 +111,11 @@ export class DungeonMapScene extends Phaser.Scene {
     super({ key: 'DungeonMapScene' });
   }
 
-  init(data: { dungeonId?: number; fromZone?: number; followEnter?: boolean }): void {
+  init(data: { dungeonId?: number; fromZone?: number; followEnter?: boolean; color?: string }): void {
     this.dungeonId = data?.dungeonId || 1;
     this.fromZone = data?.fromZone || GameState.zone;
     this.followEnter = data?.followEnter || false;
+    this.myColor = data?.color || '#4ecdc4';
     this.localStage = 1;
     this.clearedPending = false;
     this.rewardTaken = false;
@@ -151,6 +160,9 @@ export class DungeonMapScene extends Phaser.Scene {
     this.cameras.main.fadeIn(500, 0, 0, 0);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.dungeonRemotePlayers.forEach((rp) => { rp.sprite.destroy(); rp.tag.destroy(); });
+      this.dungeonRemotePlayers.clear();
+      if (this.teamHud) { this.teamHud.destroy(true); this.teamHud = null; }
       if (this.dungeonRoom) { this.dungeonRoom.leave(); this.dungeonRoom = null; }
     });
   }
@@ -288,6 +300,7 @@ export class DungeonMapScene extends Phaser.Scene {
     });
     // 鼠标点击移动（面板打开 / 切换中不响应）
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.followEnter) return; // 跟随者禁止点击移动，避免脱离队长
       if (this.isTransitioning || this.isMenuOpen()) return;
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.moveTarget = { x: wp.x, y: wp.y };
@@ -299,22 +312,41 @@ export class DungeonMapScene extends Phaser.Scene {
   // ═══ Update Loop ═══
   update(): void {
     this.enemies.forEach(e => { e.label.setPosition(e.sprite.x, e.sprite.y - e.sprite.height / 2 - 10); });
+    // 远端队友：位置插值 + 名牌刷新（即使本端开菜单/切换中也持续，保证队友可见）
+    this.syncDungeonRemotePlayers();
+    this.renderDungeonTeamHUD();
     if (this.isTransitioning) { this.player.setVelocity(0, 0); return; }
     if (this.isMenuOpen()) { this.player.setVelocity(0, 0); return; }
     const speed = this.ctrlKey.isDown ? 500 : 160;
-    let vx = 0, vy = 0;
-    if (this.moveTarget) {
-      const dx = this.moveTarget.x - this.player.x, dy = this.moveTarget.y - this.player.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 8) { this.moveTarget = null; }
-      else { vx = (dx / dist) * speed; vy = (dy / dist) * speed; }
+    let dirX = 0, dirY = 0;
+
+    // 跟随者：严格尾随队长，完全忽略手动输入（点击移动 / WASD / 方向键均不生效）。
+    // 设计上副本内不允许分头行动——队员脱离队长乱走或被怪碰撞独立开战都会导致副本状态错乱，
+    // 故队员移动完全由队长权威坐标驱动，战斗由队长触发后经 enterTeamDungeonBattle 拉入。
+    if (this.followEnter) {
+      this.moveTarget = null; // 清空任何残留的点击移动目标
+      const leader = this.findDungeonLeader();
+      if (leader) {
+        const ldx = leader.x - this.player.x, ldy = leader.y - this.player.y;
+        const ldist = Math.sqrt(ldx * ldx + ldy * ldy);
+        if (ldist > 56) { dirX = ldx / ldist; dirY = ldy / ldist; }
+      }
     } else {
-      if (this.cursors.left.isDown || this.keys.A.isDown) vx = -1;
-      else if (this.cursors.right.isDown || this.keys.D.isDown) vx = 1;
-      if (this.cursors.up.isDown || this.keys.W.isDown) vy = -1;
-      else if (this.cursors.down.isDown || this.keys.S.isDown) vy = 1;
-      if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
-      vx *= speed; vy *= speed;
+      if (this.moveTarget) {
+        const dx = this.moveTarget.x - this.player.x, dy = this.moveTarget.y - this.player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 8) { this.moveTarget = null; }
+        else { dirX = dx / dist; dirY = dy / dist; }
+      } else if (this.cursors.left.isDown || this.keys.A.isDown) dirX = -1;
+      else if (this.cursors.right.isDown || this.keys.D.isDown) dirX = 1;
+      if (this.cursors.up.isDown || this.keys.W.isDown) dirY = -1;
+      else if (this.cursors.down.isDown || this.keys.S.isDown) dirY = 1;
+    }
+
+    let vx = 0, vy = 0;
+    if (dirX !== 0 || dirY !== 0) {
+      const len = Math.sqrt(dirX * dirX + dirY * dirY);
+      if (len > 0) { vx = (dirX / len) * speed; vy = (dirY / len) * speed; }
     }
     this.player.setVelocity(vx, vy);
     if (vx < 0) this.player.setFlipX(true); else if (vx > 0) this.player.setFlipX(false);
@@ -326,10 +358,116 @@ export class DungeonMapScene extends Phaser.Scene {
     GameState.x = this.player.x; GameState.y = this.player.y;
     if (this.battleCooldown > 0) this.battleCooldown--;
     this.coordText.setText(`X:${Math.round(this.player.x)}  Y:${Math.round(this.player.y)}`);
+    this.sendDungeonMoveThrottled();
+  }
+
+  // ═══ 副本内远端队友渲染（位置同步）═══
+  private syncDungeonRemotePlayers(): void {
+    if (!this.dungeonRoom) return;
+    const state = this.dungeonRoom.state;
+    if (!state || !state.players) return;
+    const players = state.players as Map<string, any>;
+    const selfSid = this.dungeonRoom.sessionId;
+    players.forEach((p: any, sid: string) => {
+      if (sid === selfSid) return;
+      let rp = this.dungeonRemotePlayers.get(sid);
+      if (!rp) {
+        const sprite = this.add.sprite(p.x, p.y, 'player').setDepth(9).setAlpha(0.92);
+        sprite.setTint(Phaser.Display.Color.HexStringToColor(p.color || '#ffffff').color);
+        const tag = this.add.text(p.x, p.y - 46, p.name || '队友', {
+          fontSize: '13px', color: '#ffffff', fontStyle: 'bold',
+          stroke: '#000000', strokeThickness: 3,
+          backgroundColor: '#00000066', padding: { x: 5, y: 2 },
+        }).setOrigin(0.5, 1).setDepth(50);
+        rp = { sprite, tag, tx: p.x, ty: p.y, name: p.name || '队友', color: p.color || '#ffffff' };
+        this.dungeonRemotePlayers.set(sid, rp);
+      }
+      rp.tx = p.x; rp.ty = p.y;
+      if (rp.name !== p.name) { rp.name = p.name; rp.tag.setText(p.name); }
+      // 平滑插值到权威坐标（避免每帧硬跳）
+      const dx = rp.tx - rp.sprite.x, dy = rp.ty - rp.sprite.y;
+      rp.sprite.x += dx * 0.25; rp.sprite.y += dy * 0.25;
+      rp.tag.setPosition(rp.sprite.x, rp.sprite.y - 46);
+    });
+    for (const [sid, rp] of this.dungeonRemotePlayers) {
+      if (!players.has(sid)) { rp.sprite.destroy(); rp.tag.destroy(); this.dungeonRemotePlayers.delete(sid); }
+    }
+  }
+
+  /** 节流上报自身位置到 dungeon room（~10Hz，仅在确实移动时发）。 */
+  private sendDungeonMoveThrottled(): void {
+    if (!this.dungeonRoom) return;
+    const now = this.time.now;
+    const dx = this.player.x - this.lastSentDungeon.x;
+    const dy = this.player.y - this.lastSentDungeon.y;
+    if (now - this.lastSentDungeon.t >= 100 && dx * dx + dy * dy > 4) {
+      this.dungeonRoom.send('move', { x: Math.round(this.player.x), y: Math.round(this.player.y) });
+      this.lastSentDungeon = { x: this.player.x, y: this.player.y, t: now };
+    }
+  }
+
+  /** 副本内队伍 HUD（解决「组队状态消失」）：从同源 GameScene 读 teamMembers/leader，
+   *  渲染成员列表 + follower 常驻「跟随队长·第N阶」指示。签名变化才重建，避免每帧重建。 */
+  private renderDungeonTeamHUD(): void {
+    const gs = this.scene.get('GameScene') as any;
+    const members: Array<{ sid: string; name: string }> = gs?.teamMembers || [];
+    const leaderSid: string = gs?.teamLeaderSid || '';
+    const mySid: string = gs?.mySessionId || '';
+    const sig = members.map((m) => `${m.sid}:${m.name}`).join('|') + '#' + leaderSid + '#' + (this.followEnter ? 'F' : 'L') + '#' + this.localStage;
+    if (sig === this.teamHudSig) return;
+    this.teamHudSig = sig;
+    if (this.teamHud) { this.teamHud.destroy(true); this.teamHud = null; }
+    if (members.length === 0) return;
+
+    const w = 200, padX = 12, padY = 10, itemH = 22;
+    const h = padY * 2 + members.length * itemH + 30;
+    const c = this.add.container(12, 74).setScrollFactor(0).setDepth(120);
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.5); bg.fillRoundedRect(0, 0, w, h, 10);
+    bg.lineStyle(1, 0xc9a96e, 0.5); bg.strokeRoundedRect(0, 0, w, h, 10);
+    c.add(bg);
+    c.add(this.add.text(w / 2, padY + 4, `队伍 (${members.length}/4)  [G]`, {
+      fontSize: '13px', color: '#ffe8b0', fontStyle: 'bold',
+    }).setOrigin(0.5));
+    members.forEach((m, i) => {
+      const isLeader = m.sid === leaderSid;
+      const isMe = m.sid === mySid;
+      const label = isLeader ? `★ ${m.name}` : isMe ? `▶ ${m.name}` : `  ${m.name}`;
+      c.add(this.add.text(padX + 4, padY + 22 + i * itemH, label, {
+        fontSize: '12px', color: isMe ? '#88ff88' : '#ffffff',
+      }).setOrigin(0, 0.5));
+    });
+    const followTxt = this.followEnter ? `跟随队长 · 第${this.localStage}阶` : `本队进度 · 第${this.localStage}阶`;
+    c.add(this.add.text(padX + 4, h - 12, followTxt, {
+      fontSize: '11px', color: '#d9b3ff',
+    }).setOrigin(0, 0.5));
+    this.teamHud = c;
+  }
+
+  /** 副本内找队长坐标（用于跟随者自动尾随）：优先匹配 teamLeaderSid 对应的 DungeonPlayer，
+   *  兜底跟随任意其他在场玩家；无其他人则返回 null（跟随者保持静止）。 */
+  private findDungeonLeader(): { x: number; y: number } | null {
+    if (!this.dungeonRoom || !this.dungeonRoom.state?.players) return null;
+    const gs = this.scene.get('GameScene') as any;
+    const leaderGameSid = gs?.teamLeaderSid || '';
+    const players = this.dungeonRoom.state.players as Map<string, any>;
+    let match: any = null;
+    players.forEach((p: any, sid: string) => {
+      if (sid === this.dungeonRoom.sessionId) return;
+      if (leaderGameSid && p.gameSid === leaderGameSid) match = p;
+    });
+    if (match) return { x: match.x, y: match.y };
+    // 兜底：跟随任意其他在场玩家
+    let any: any = null;
+    players.forEach((p: any, sid: string) => {
+      if (sid !== this.dungeonRoom.sessionId) any = p;
+    });
+    return any ? { x: any.x, y: any.y } : null;
   }
 
   private checkEnemyCollision(): void {
     if (this.battleCooldown > 0 || this.isTransitioning) return;
+    if (this.followEnter) return; // 跟随者不独立开战：战斗由队长触发后经 enterTeamDungeonBattle 拉入同一房间
     if (this.enemies.length === 0) return;
     // 找到最近的一只明雷怪（非整组），仅传该只进战斗
     let nearest: { enemy: DungeonEnemy; dist: number } | null = null;
@@ -341,6 +479,7 @@ export class DungeonMapScene extends Phaser.Scene {
   }
 
   private enterBattle(enemy: DungeonEnemy): void {
+    if (this.scene.isActive('MultiBattleScene')) return; // 防重入（队员经消息拉入时不走此路径）
     this.battleCooldown = 180;
     this.scene.pause();
     this.scene.launch('MultiBattleScene', {
@@ -356,6 +495,37 @@ export class DungeonMapScene extends Phaser.Scene {
       // DungeonMapScene 自身不持有 mySessionId，从同源 GameScene 实例取。
       ownerSessionId: (this.scene.get('GameScene') as any)?.mySessionId || '',
     });
+    // 副本组队：通知全队进入同一 battle room 共斗（队员侧经 enterTeamDungeonBattle 拉入）
+    if (this.gameRoom) {
+      this.gameRoom.send('dungeonEnterBattle', { dungeonId: this.dungeonId, stage: this.localStage });
+    }
+  }
+
+  /** 队员侧：被队长拉进副本战斗（收到 enterTeamDungeonBattle 时由 GameScene 路由调用）。 */
+  pullIntoTeamBattle(data: { dungeonId?: number; stage?: number }): void {
+    if (this.scene.isActive('MultiBattleScene')) return;
+    const dungeonId = data?.dungeonId ?? this.dungeonId;
+    const stage = data?.stage ?? this.localStage;
+    if (stage !== this.localStage) return; // 阶段不同步保护：仅拉同阶战斗
+    this.battleCooldown = 180;
+    this.scene.pause();
+    this.scene.launch('MultiBattleScene', {
+      playerName: GameState.playerName || '勇者',
+      loadout: buildClientBattleLoadout(),
+      monsterId: `dungeon:${dungeonId}:${stage}`,
+      dungeonId,
+      dungeonStage: stage,
+      dungeonRoomId: this.dungeonRoomId,
+      returnScene: 'DungeonMapScene',
+      isTeamPull: true,
+      ownerSessionId: (this.scene.get('GameScene') as any)?.mySessionId || '',
+    });
+  }
+
+  /** 队员侧：收到队长返回广播后退出战斗场景回副本。
+   *  MultiBattleScene 的 SHUTDOWN 会自动 resume 本场景（returnScene='DungeonMapScene'），无需手动 resume。 */
+  stopTeamBattle(): void {
+    if (this.scene.isActive('MultiBattleScene')) this.scene.stop('MultiBattleScene');
   }
 
   /** 根据阶段随机生成敌群阵容：阶段1=1~4普通 / 阶段2=3~6精英 / 阶段3=1BOSS+7随从 */
@@ -500,6 +670,9 @@ export class DungeonMapScene extends Phaser.Scene {
         dungeonId: this.dungeonId,
         gameSid,
         name: GameState.playerName || '勇者',
+        color: this.myColor,
+        x: Math.round(this.player.x),
+        y: Math.round(this.player.y),
       });
       this.dungeonRoom = room;
       this.dungeonRoomId = room.roomId;

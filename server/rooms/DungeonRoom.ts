@@ -28,23 +28,42 @@ export class DungeonRoom extends Room<DungeonRoomState> {
       if (s !== this.state.stage) return;
       if (this.state.phase === 'clear') return;
 
-      const pw = world.get(p.gameSid);
+      // 全队发放：同副本房间的所有在场玩家（含跟随队员）都拿到本阶奖励。
+      // grantLoot 内部对每件战利品 { ...item } 展开入包，不污染源 rw.loot，
+      // 故 dungeonStageReward 只需计算一次，gold/exp/loot 对所有玩家一致。
       const rw = dungeonStageReward(this.state.dungeonId, s);
-      world.grantLoot(pw, rw.loot);
-      world.gainExp(pw, rw.exp);
-      world.addGold(pw, rw.gold);
-      c.send('claimStageReward', { gold: rw.gold, exp: rw.exp, loot: rw.loot.map(i => i.name) });
+      this.state.players.forEach((dp: any) => {
+        const pw = world.get(dp.gameSid);
+        if (!pw) return;
+        world.grantLoot(pw, rw.loot);
+        world.gainExp(pw, rw.exp);
+        world.addGold(pw, rw.gold);
+        const target = this.clients.find((x: Client) => x.sessionId === dp.dungeonSid);
+        if (target) target.send('claimStageReward', { gold: rw.gold, exp: rw.exp, loot: rw.loot.map(i => i.name) });
+      });
 
       if (s >= 3) {
         this.state.phase = 'clear';
-        world.completeDungeon(pw, this.state.dungeonId);
+        // 全队标记副本完成（清除各自的活动副本，下次进入重新计次）
+        this.state.players.forEach((dp: any) => {
+          const pw = world.get(dp.gameSid);
+          if (pw) world.completeDungeon(pw, this.state.dungeonId);
+        });
       } else {
         this.state.stage = s + 1;
       }
     });
+
+    // 副本内位置同步（队友可见）：更新在场玩家 x/y，@colyseus/schema 自动广播给同房间
+    this.onMessage('move', (c: Client, data: { x?: number; y?: number }) => {
+      const p = this.state.players.get(c.sessionId);
+      if (!p) return;
+      if (typeof data?.x === 'number') p.x = data.x;
+      if (typeof data?.y === 'number') p.y = data.y;
+    });
   }
 
-  onJoin(client: Client, options: { gameSid?: string; name?: string }) {
+  onJoin(client: Client, options: { gameSid?: string; name?: string; color?: string; x?: number; y?: number }) {
     const gameSid = options?.gameSid || client.sessionId;
     const pw = world.get(gameSid);
     const res = world.enterDungeon(pw, this.state.dungeonId);
@@ -57,6 +76,9 @@ export class DungeonRoom extends Room<DungeonRoomState> {
     dp.dungeonSid = client.sessionId;
     dp.gameSid = gameSid;
     dp.name = (options?.name ?? '勇者').slice(0, 16);
+    dp.color = (options?.color ?? '#4ecdc4').slice(0, 16);
+    dp.x = Number(options?.x) || 0;
+    dp.y = Number(options?.y) || 0;
     this.state.players.set(client.sessionId, dp);
   }
 

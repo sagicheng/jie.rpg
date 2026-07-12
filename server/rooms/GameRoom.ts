@@ -144,6 +144,35 @@ export class GameRoom extends Room<GameRoomState> {
     this.onMessage('enterBattle', (client, data: { id?: string }) => this.lockMonster(client, data));
     this.onMessage('killMonster', (client, data: { id?: string; respawnMs?: number }) => this.killMonster(client, data));
     this.onMessage('unlockMonster', (client, data: { id?: string }) => this.unlockMonster(client, data));
+    // 副本内开战广播：任一队员撞怪开战 → 通知全队进入同一 battle room 共斗（排除发起者自身）
+    this.onMessage('dungeonEnterBattle', (client, data: { dungeonId?: number; stage?: number }) => {
+      const teamId = playerTeam.get(client.sessionId);
+      if (!teamId) return;
+      const team = teams.get(teamId);
+      if (!team) return;
+      const dungeonId = Number(data?.dungeonId) || 1;
+      const stage = Number(data?.stage) || 1;
+      team.members.forEach((_m: any, msid: string) => {
+        if (msid === client.sessionId) return;
+        const c = this.clients.find((x: Client) => x.sessionId === msid);
+        if (c) c.send('enterTeamDungeonBattle', { dungeonId, stage });
+      });
+    });
+
+    // 战斗返回广播：队长主动返回地图/副本 → 通知全队一起退出战斗场景（排除发起者自身）
+    // 与 dungeonEnterBattle 对称，由客户端按 inDungeon 决定 resume 到副本还是地图场景
+    this.onMessage('teamExitBattle', (client) => {
+      const teamId = playerTeam.get(client.sessionId);
+      if (!teamId) return;
+      const team = teams.get(teamId);
+      if (!team) return;
+      team.members.forEach((_m: any, msid: string) => {
+        if (msid === client.sessionId) return;
+        const c = this.clients.find((x: Client) => x.sessionId === msid);
+        if (c) c.send('teamExitBattleEnd');
+      });
+    });
+
     this.clock.setInterval(() => this.tickRespawn(), 1000);
 
     // ─── 权威世界操作意图 ───
