@@ -475,6 +475,7 @@ export class DungeonMapScene extends Phaser.Scene {
       console.log('[DNG-F] DungeonRoom connected. roomId=', room.roomId, 'stage=', room.state?.stage, 'phase=', room.state?.phase);
       room.onStateChange((s: any) => this.onDungeonStateChange(s));
       room.onMessage('claimStageReward', (data: any) => {
+        console.log('[DNG-F] claimStageReward received!', data);
         let msg = `第 ${this.localStage} 阶通关！`;
         msg += `\n金币+${data.gold}  经验+${data.exp}`;
         if (data.loot?.length) msg += `\n获得：${data.loot.join('、')}`;

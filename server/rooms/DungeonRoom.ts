@@ -36,19 +36,23 @@ export class DungeonRoom extends Room<DungeonRoomState> {
     this.state.players.set(client.sessionId, dp);
 
     // 玩家清剿本阶全部明雷怪后按 F 领奖 → 服务端权威发放本阶奖励并推进阶段
-    this.onMessage('claimStage', async (c: Client, data: { stage?: number }) => {
-      const p = this.state.players.get(c.sessionId);
-      if (!p) return;
+    this.onMessage('claimStage', (c: Client, data: { stage?: number }) => {
       const s = Number(data?.stage) || 0;
-      if (s !== this.state.stage) return;
-      if (this.state.phase === 'clear') return;
+      console.log('[DNG-SRV] claimStage received. clientStage=', s, 'serverStage=', this.state.stage, 'phase=', this.state.phase);
+      const p = this.state.players.get(c.sessionId);
+      if (!p) { console.log('[DNG-SRV] claimStage BLOCKED: player not in room'); return; }
+      if (s !== this.state.stage) { console.log('[DNG-SRV] claimStage BLOCKED: stage mismatch'); return; }
+      if (this.state.phase === 'clear') { console.log('[DNG-SRV] claimStage BLOCKED: already clear'); return; }
 
       const pw = world.get(p.gameSid);
+      console.log('[DNG-SRV] world.get result=', !!pw, 'gameSid=', p.gameSid);
       const rw = dungeonStageReward(this.state.dungeonId, s);
+      console.log('[DNG-SRV] reward=', rw);
       world.grantLoot(pw, rw.loot);
       world.gainExp(pw, rw.exp);
       world.addGold(pw, rw.gold);
       c.send('claimStageReward', { gold: rw.gold, exp: rw.exp, loot: rw.loot.map(i => i.name) });
+      console.log('[DNG-SRV] claimStageReward sent');
 
       if (s >= 3) {
         this.state.phase = 'clear';
@@ -56,6 +60,7 @@ export class DungeonRoom extends Room<DungeonRoomState> {
       } else {
         this.state.stage = s + 1;
       }
+      console.log('[DNG-SRV] stage advanced to', this.state.stage, 'phase=', this.state.phase);
     });
   }
 
