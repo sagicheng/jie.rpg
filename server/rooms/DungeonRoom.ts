@@ -18,24 +18,9 @@ export class DungeonRoom extends Room<DungeonRoomState> {
     this.state.dungeonId = options?.dungeonId ?? 1;
     this.state.stage = 1;
     this.state.phase = 'lobby';
-  }
-
-  onJoin(client: Client, options: { gameSid?: string; name?: string }) {
-    const gameSid = options?.gameSid || client.sessionId;
-    const pw = world.get(gameSid);
-    const res = world.enterDungeon(pw, this.state.dungeonId);
-    if (!res.ok) {
-      // 周次已用完：直接拒绝连接（抛错让 Colyseus 拒绝客户端 join，避免 dungeonError 消息竞态丢包）。
-      // 客户端 joinOrCreate 的 Promise 会 reject，DungeonMapScene 收到 catch 后退出副本。
-      throw new Error(res.msg || '本周副本次数已用完');
-    }
-    const dp = new DungeonPlayer();
-    dp.dungeonSid = client.sessionId;
-    dp.gameSid = gameSid;
-    dp.name = (options?.name ?? '勇者').slice(0, 16);
-    this.state.players.set(client.sessionId, dp);
 
     // 玩家清剿本阶全部明雷怪后按 F 领奖 → 服务端权威发放本阶奖励并推进阶段
+    // 必须在 onCreate 中注册（Colyseus 0.15 onJoin 中注册的消息 handler 不生效）
     this.onMessage('claimStage', (c: Client, data: { stage?: number }) => {
       const s = Number(data?.stage) || 0;
       console.log('[DNG-SRV] claimStage received. clientStage=', s, 'serverStage=', this.state.stage, 'phase=', this.state.phase);
@@ -62,6 +47,22 @@ export class DungeonRoom extends Room<DungeonRoomState> {
       }
       console.log('[DNG-SRV] stage advanced to', this.state.stage, 'phase=', this.state.phase);
     });
+  }
+
+  onJoin(client: Client, options: { gameSid?: string; name?: string }) {
+    const gameSid = options?.gameSid || client.sessionId;
+    const pw = world.get(gameSid);
+    const res = world.enterDungeon(pw, this.state.dungeonId);
+    if (!res.ok) {
+      // 周次已用完：直接拒绝连接（抛错让 Colyseus 拒绝客户端 join，避免 dungeonError 消息竞态丢包）。
+      // 客户端 joinOrCreate 的 Promise 会 reject，DungeonMapScene 收到 catch 后退出副本。
+      throw new Error(res.msg || '本周副本次数已用完');
+    }
+    const dp = new DungeonPlayer();
+    dp.dungeonSid = client.sessionId;
+    dp.gameSid = gameSid;
+    dp.name = (options?.name ?? '勇者').slice(0, 16);
+    this.state.players.set(client.sessionId, dp);
   }
 
   onLeave(client: Client) {
