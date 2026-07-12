@@ -75,6 +75,10 @@ export class MultiBattleScene extends Phaser.Scene {
   private dungeonStage = 0;
   private dungeonRoomId = '';
   private returnScene = 'GameScene';
+  private isTeamPull = false;
+  private ownerSessionId = '';          // GameRoom sessionId（用于奖励写回正确世界）
+  private lastActionSent = false;        // 本轮是否已发送指令
+  private lastRoundSeen = 0;             // 上次看到的回合号（切轮时重置 lastActionSent）
 
   // 进房携带的可用技能/鬼道/道具/玩家真实属性（服务端据其做权威校验与结算）
   private loadout: ClientLoadout = { skills: [], kidos: [], items: [] };
@@ -97,7 +101,7 @@ export class MultiBattleScene extends Phaser.Scene {
     super({ key: 'MultiBattleScene' });
   }
 
-  init(data: { playerName?: string; mode?: 'vkey' | 'map'; enemyData?: any; enemyParty?: EnemyData[]; monsterId?: string; loadout?: ClientLoadout; dungeonId?: number; dungeonStage?: number; dungeonRoomId?: string; returnScene?: string }): void {
+  init(data: { playerName?: string; mode?: 'vkey' | 'map'; enemyData?: any; enemyParty?: EnemyData[]; monsterId?: string; loadout?: ClientLoadout; dungeonId?: number; dungeonStage?: number; dungeonRoomId?: string; returnScene?: string; isTeamPull?: boolean; ownerSessionId?: string }): void {
     this.playerName = data?.playerName || '玩家';
     this.mode = data?.mode || 'vkey';
     this.enemyData = data?.enemyData || null;
@@ -108,6 +112,8 @@ export class MultiBattleScene extends Phaser.Scene {
     this.dungeonStage = data?.dungeonStage || 0;
     this.dungeonRoomId = data?.dungeonRoomId || '';
     this.returnScene = data?.returnScene || 'GameScene';
+    this.isTeamPull = data?.isTeamPull || false;
+    this.ownerSessionId = data?.ownerSessionId || '';
     // 重置（场景复用同一实例时避免脏状态）
     this.room = null;
     this.mySessionId = '';
@@ -216,7 +222,7 @@ export class MultiBattleScene extends Phaser.Scene {
       name: this.playerName,
       // 传递游戏房(GameRoom) sessionId 作为稳定身份：BattleRoom 据此把奖励写入玩家本体世界，
       // 否则 Colyseus 每房间独立 sessionId 会导致奖励落到战斗房孤儿世界、玩家实际金币/经验不变。
-      ownerSessionId: (this.scene.get('GameScene') as any)?.mySessionId || '',
+      ownerSessionId: this.ownerSessionId,
       enemyData: this.enemyData ?? undefined,
       enemyParty: this.enemyParty,
       monsterId: battleMonsterId,
@@ -252,12 +258,15 @@ export class MultiBattleScene extends Phaser.Scene {
           }
         });
         this.renderState();
-        // 单人自检：若 1.5s 内仍只有自己（无人组队），则主动开战，便于单窗口验证 UI
-        this.time.delayedCall(1500, () => {
-          if (this.room && this.room.state && this.room.state.phase === 'waiting') {
-            this.room.send('startbattle');
-          }
-        });
+        // 组队战斗：只有触发者(撞怪的人)负责发 startbattle，被拉进来的队员静默等待
+        if (!this.isTeamPull) {
+          // 延长等待到 3s，给其他队员时间 joinOrCreate 进入 BattleRoom
+          this.time.delayedCall(3000, () => {
+            if (this.room && this.room.state && this.room.state.phase === 'waiting') {
+              this.room.send('startbattle');
+            }
+          });
+        }
         // 状态同步兜底：若 onStateChange 未推送初始状态（个别浏览器/网络抖动），
         // 3s 后若仍显示「连接中…」则强制重绘一次，避免画面卡在连接态。
         this.time.delayedCall(3000, () => {
@@ -274,12 +283,16 @@ export class MultiBattleScene extends Phaser.Scene {
       });
   }
 
-  /** 发送意图（仅当前回合、战斗阶段可发）。 */
+  /** 发送意图（仅指令阶段可发，每人每轮限1次）。 */
   private send(action: { type: string; id?: string; targetId?: string }): void {
     if (!this.room || !this.room.state) return;
     if (this.room.state.phase !== 'combat') return;
-    if (this.room.state.currentTurn !== this.mySessionId) return; // 非我方回合，忽略（防加速/作弊）
+    if (this.room.state.roundPhase !== 'command') return;
+    if (this.lastActionSent) return;
+    this.lastActionSent = true;
     this.room.send('action', action);
+    // 立即刷新 UI：显示"已选择，等待执行…"（Colyseus 消息不触发 onStateChange）
+    this.renderState();
   }
 
   // ——— 攻击：单怪直接打；多怪设待释放意图，点敌人卡片释放 ———
@@ -380,7 +393,8 @@ export class MultiBattleScene extends Phaser.Scene {
   private onEnemyCardClicked(enemyId: string): void {
     if (!this.pendingAction) return;
     if (!this.room || !this.room.state) return;
-    if (this.room.state.phase !== 'combat' || this.room.state.currentTurn !== this.mySessionId) return;
+    // DQ式回合：指令阶段全员可发，每轮限1次（与 send() 一致）
+    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command' || this.lastActionSent) return;
     const action = { type: this.pendingAction.type, id: this.pendingAction.id, targetId: enemyId };
     this.pendingAction = null;
     this.send(action);
@@ -445,7 +459,11 @@ export class MultiBattleScene extends Phaser.Scene {
   }
 
   private refreshButtons(): void {
-    for (const b of Object.values(this.actionBtns)) b.setEnable(this.lastIsMyTurn && !this.menuOpen);
+    // DQ 式回合制：指令阶段全员可用（非「仅当前回合者」），由 renderState 统一管理
+    if (!this.room || !this.room.state) return;
+    const s = this.room.state;
+    const btnEnable = s.phase === 'combat' && s.roundPhase === 'command' && !this.lastActionSent && !this.menuOpen;
+    for (const b of Object.values(this.actionBtns)) b.setEnable(btnEnable);
   }
 
   private flashMessage(text: string): void {
@@ -456,38 +474,50 @@ export class MultiBattleScene extends Phaser.Scene {
     this.time.delayedCall(1000, () => t.destroy());
   }
 
-  /** 显示当前行动者（自己或队友）的 20s 决策倒计时，由服务端 turnExpiresAt 驱动。 */
+  /** 指令阶段倒计时：服务端 roundExpiresAt 驱动，超时自动开战。 */
   private updateCountdown(): void {
     if (!this.turnCountdownText) return;
     const s = this.room?.state;
-    if (!s || s.phase !== 'combat' || !s.turnExpiresAt) { this.turnCountdownText.setText(''); return; }
-    const remain = Math.max(0, (s.turnExpiresAt - Date.now()) / 1000);
+    if (!s || s.phase !== 'combat' || s.roundPhase !== 'command' || !s.roundExpiresAt) {
+      this.turnCountdownText.setText(''); return;
+    }
+    const remain = Math.max(0, (s.roundExpiresAt - Date.now()) / 1000);
     const secs = Math.ceil(remain);
-    const cur = s.players.get(s.currentTurn);
-    const who = cur?.name ?? '行动者';
-    this.turnCountdownText.setText(`${who} 决策时间 ${secs}s`);
+    this.turnCountdownText.setText(`指令选择 剩余 ${secs}s`);
     this.turnCountdownText.setColor(secs <= 5 ? '#ff6666' : '#ffcc66');
   }
 
-  // ——— 渲染（完全由服务端状态驱动）———
+  // ——— 渲染（DQ式回合：指令阶段/执行阶段两态）———
   private renderState(): void {
     if (!this.room || !this.room.state) return;
     const s = this.room.state;
 
-    const isMyTurn = s.currentTurn === this.mySessionId;
-    const cur = s.players.get(s.currentTurn) || s.enemies.get(s.currentTurn);
-    // 非我方回合或非战斗阶段：关闭残留弹层
-    if ((!isMyTurn || s.phase !== 'combat') && this.menuOpen) this.closeMenu();
-    this.lastIsMyTurn = isMyTurn;
+    const inCombat = s.phase === 'combat';
+    const inCommand = inCombat && s.roundPhase === 'command';
+    const inExecute = inCombat && s.roundPhase === 'execute';
 
-    if (s.phase === 'combat') {
-      this.turnText.setText(isMyTurn ? '★ 你的回合 — 选择行动' : `等待 ${cur?.name ?? ''} 行动…`);
-      this.turnText.setColor(isMyTurn ? '#88ff88' : '#ffe8b0');
-    } else {
-      this.turnText.setText(`阶段：${s.phase}`);
-      this.turnText.setColor('#aaaacc');
+    // 新一轮指令阶段：清除已发送标记
+    if (inCommand && this.lastActionSent && this.lastRoundSeen !== s.round) {
+      this.lastActionSent = false;
     }
-    for (const b of Object.values(this.actionBtns)) b.setEnable(isMyTurn && !this.menuOpen);
+    this.lastRoundSeen = s.round;
+
+    if ((!inCommand || this.lastActionSent) && this.menuOpen) this.closeMenu();
+
+    if (inCommand) {
+      this.turnText.setText(this.lastActionSent ? '已选择，等待执行…' : '★ 选择指令');
+      this.turnText.setColor(this.lastActionSent ? '#ffe8b0' : '#88ff88');
+    } else if (inExecute) {
+      const cur = s.players.get(s.currentTurn) || s.enemies.get(s.currentTurn);
+      this.turnText.setText(`执行中 — ${cur?.name ?? ''} 行动`);
+      this.turnText.setColor('#aaaacc');
+    } else {
+      this.turnText.setText(`阶段：${s.phase}`); this.turnText.setColor('#aaaacc');
+    }
+
+    const btnEnable = inCommand && !this.lastActionSent && !this.menuOpen;
+    for (const b of Object.values(this.actionBtns)) b.setEnable(btnEnable);
+
     const me = s.players.get(this.mySessionId);
     if (this.mpText) this.mpText.setText(me ? `灵力 MP ${Math.max(0, Math.round(me.mp))} / ${Math.round(me.maxMp)}` : '');
 

@@ -1,10 +1,8 @@
 /**
- * 共享地图房间：玩家移动同步 + 聊天 + 权威世界状态。
+ * 共享地图房间：玩家移动同步 + 聊天 + 权威世界状态 + 多人组队。
  *
- * Stage D：接入 Token 验证 + DB 持久化。
- * - onJoin 必须带 token + characterId，验证通过后才进房。
- * - 角色数据从 DB 加载到 WorldService 内存。
- * - onLeave 世界状态写回 DB，不清空（断线不丢进度）。
+ * Stage D：Token 验证 + DB 持久化。
+ * Stage D+：多人组队——邀请/接受/踢人/解散 + 全队共享战斗 + 同进副本。
  */
 
 import { Room, Client } from '@colyseus/core';
@@ -13,20 +11,112 @@ import { world, type OpResult } from '../world';
 import { findAccountByToken, getCharacter, saveCharacterWorld } from '../db';
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
+const TEAM_MAX = 4;
 
-/** sessionId → characterId 映射，留到 onLeave 时知道要保存哪个角色。 */
+// ——— 队伍数据结构（模块级，同一 GameRoom 内共享）———
+
+interface TeamMember {
+  sid: string;
+  name: string;
+}
+interface Team {
+  id: string;
+  leaderSid: string;
+  members: Map<string, TeamMember>; // sid → member
+  invites: Map<string, { fromName: string; expiresAt: number }>; // targetSid → invite
+}
+const teams = new Map<string, Team>();          // teamId → Team
+const playerTeam = new Map<string, string>();   // playerSid → teamId
+
+/** sessionId → characterId 映射 */
 const sessionCharMap = new Map<string, number>();
+
+// ——— 队伍辅助函数 ———
+
+function genTeamId(): string {
+  return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function broadcastTeam(room: Room<GameRoomState>, teamId: string): void {
+  const team = teams.get(teamId);
+  if (!team) return;
+  const members: Array<{ sid: string; name: string }> = [];
+  team.members.forEach((m) => members.push({ sid: m.sid, name: m.name }));
+  const payload = { id: team.id, leaderSid: team.leaderSid, members };
+  team.members.forEach((_, sid) => {
+    const c = room.clients.find((x: Client) => x.sessionId === sid);
+    if (c) c.send('teamUpdate', payload);
+  });
+}
+
+function removeFromTeam(room: Room<GameRoomState>, sid: string): void {
+  const teamId = playerTeam.get(sid);
+  if (!teamId) return;
+  const team = teams.get(teamId);
+  if (!team) { playerTeam.delete(sid); return; }
+
+  team.members.delete(sid);
+  playerTeam.delete(sid);
+  // 清除 Colyseus 状态上的 teamId
+  const p = room.state.players.get(sid);
+  if (p) p.teamId = '';
+
+  if (team.members.size === 0) {
+    // 空队：解散
+    teams.delete(teamId);
+    return;
+  }
+
+  // 队长离开 → 转移给第一个成员
+  if (team.leaderSid === sid) {
+    const first = team.members.keys().next().value as string;
+    team.leaderSid = first;
+  }
+
+  // 清除该玩家收到的所有待处理邀请
+  team.invites.delete(sid);
+  broadcastTeam(room, teamId);
+}
+
+// 清理过期邀请（3分钟超时）
+function pruneExpiredInvites(team: Team): void {
+  const now = Date.now();
+  team.invites.forEach((inv, sid) => {
+    if (now > inv.expiresAt) team.invites.delete(sid);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
 
 export class GameRoom extends Room<GameRoomState> {
   onCreate() {
     this.setState(new GameRoomState());
 
+    // ─── 基础消息 ───
+
     this.onMessage('move', (client, data: { x?: number; y?: number }) => {
       const p = this.state.players.get(client.sessionId);
-      if (p && typeof data.x === 'number' && typeof data.y === 'number') {
-        p.x = data.x;
-        p.y = data.y;
+      if (!p || typeof data.x !== 'number' || typeof data.y !== 'number') return;
+
+      // 组队：非队长跟随队长，防止跨场景作弊
+      const teamId = playerTeam.get(client.sessionId);
+      if (teamId) {
+        const team = teams.get(teamId);
+        if (team && team.leaderSid !== client.sessionId) {
+          const leader = this.state.players.get(team.leaderSid);
+          if (leader) {
+            // 固定编队位置：按 sessionId hash 选稳定偏移，不与 syncTeamPositions 冲突
+            const offsets = [[0, 40], [-40, 30], [40, 30], [0, 60]];
+            const idx = this.teamMemberIndex(team, client.sessionId);
+            const [ox, oy] = offsets[(idx - 1) % offsets.length];
+            p.x = leader.x + ox;
+            p.y = leader.y + oy;
+            return;
+          }
+        }
       }
+
+      p.x = data.x; p.y = data.y;
     });
 
     this.onMessage('chat', (client, data: { text?: string }) => {
@@ -49,15 +139,17 @@ export class GameRoom extends Room<GameRoomState> {
       if (p) p.battling = !!data.v;
     });
 
+    // ─── 怪物状态机 ───
+
     this.onMessage('enterBattle', (client, data: { id?: string }) => this.lockMonster(client, data));
     this.onMessage('killMonster', (client, data: { id?: string; respawnMs?: number }) => this.killMonster(client, data));
     this.onMessage('unlockMonster', (client, data: { id?: string }) => this.unlockMonster(client, data));
-
     this.clock.setInterval(() => this.tickRespawn(), 1000);
 
+    // ─── 权威世界操作意图 ───
+
     this.onMessage('intent', (client, data: any) => {
-      const sid = client.sessionId;
-      const pw = world.get(sid);
+      const pw = world.get(client.sessionId);
       let res: OpResult = { ok: false, msg: '未知操作' };
       switch (data?.op) {
         case 'gather': res = world.gather(pw, Number(data.zone) | 0, Number(data.nodeIdx) | 0, Number(data.x) | 0, Number(data.y) | 0); break;
@@ -77,7 +169,139 @@ export class GameRoom extends Room<GameRoomState> {
       client.send('worldSync', pw);
     });
 
-    // 每秒把各玩家权威世界状态同步给其本人
+    // ══════════════════════════════════════════════════
+    //  队伍系统（多人组队·Stage D+）
+    // ══════════════════════════════════════════════════
+
+    // 邀请组队
+    this.onMessage('invite', (client, data: { targetSid?: string }) => {
+      const fromSid = client.sessionId;
+      const targetSid = String(data?.targetSid ?? '').slice(0, 64);
+      if (!targetSid || fromSid === targetSid) return;
+
+      // 检查目标是否存在且在线
+      const target = this.state.players.get(targetSid);
+      if (!target) return;
+
+      const from = this.state.players.get(fromSid);
+      if (!from) return;
+
+      // 目标已在队伍中？
+      if (playerTeam.has(targetSid)) return;
+
+      // 发邀请
+      let teamId = playerTeam.get(fromSid);
+      if (!teamId) {
+        // 发起方不在队伍中 → 新建队伍
+        teamId = genTeamId();
+        const team: Team = {
+          id: teamId, leaderSid: fromSid,
+          members: new Map([[fromSid, { sid: fromSid, name: from.name }]]),
+          invites: new Map(),
+        };
+        teams.set(teamId, team);
+        playerTeam.set(fromSid, teamId);
+        from.teamId = teamId;
+      }
+
+      const team = teams.get(teamId)!;
+      if (team.members.size >= TEAM_MAX) {
+        client.send('teamError', '队伍已满（最多4人）');
+        return;
+      }
+
+      pruneExpiredInvites(team);
+      team.invites.set(targetSid, {
+        fromName: from.name,
+        expiresAt: Date.now() + 180_000,
+      });
+
+      const tc = this.clients.find((x: Client) => x.sessionId === targetSid);
+      if (tc) tc.send('inviteReceived', { fromName: from.name, fromSid, teamId });
+    });
+
+    // 接受/拒绝邀请
+    this.onMessage('respondInvite', (client, data: { teamId?: string; accept?: boolean }) => {
+      const sid = client.sessionId;
+      const teamId = String(data?.teamId ?? '');
+      const accept = !!data?.accept;
+      const team = teams.get(teamId);
+      if (!team) return;
+
+      const invite = team.invites.get(sid);
+      if (!invite) return;
+
+      team.invites.delete(sid);
+
+      if (accept) {
+        if (playerTeam.has(sid)) return; // 已在他队
+        if (team.members.size >= TEAM_MAX) return;
+        const p = this.state.players.get(sid);
+        team.members.set(sid, { sid, name: p?.name ?? '未知' });
+        playerTeam.set(sid, teamId);
+        if (p) p.teamId = teamId;
+        broadcastTeam(this, teamId);
+      }
+    });
+
+    // 退出队伍
+    this.onMessage('leaveTeam', (client) => {
+      const sid = client.sessionId;
+      const teamId = playerTeam.get(sid);
+      if (!teamId) return;
+      const team = teams.get(teamId);
+      if (!team) { playerTeam.delete(sid); return; }
+
+      removeFromTeam(this, sid);
+      // 如果队伍还存在（未解散），给留队的人广播
+      if (teams.has(teamId)) {
+        broadcastTeam(this, teamId);
+      } else {
+        // 解散：通知所有已离队成员
+        team.members.forEach((_, msid) => {
+          const c = this.clients.find((x: Client) => x.sessionId === msid);
+          if (c) c.send('teamDisbanded', {});
+        });
+      }
+    });
+
+    // 踢人（仅队长）
+    this.onMessage('kickMember', (client, data: { targetSid?: string }) => {
+      const leaderSid = client.sessionId;
+      const targetSid = String(data?.targetSid ?? '');
+      const teamId = playerTeam.get(leaderSid);
+      if (!teamId) return;
+      const team = teams.get(teamId);
+      if (!team || team.leaderSid !== leaderSid) return;
+      if (!team.members.has(targetSid)) return;
+      if (targetSid === leaderSid) return;
+
+      removeFromTeam(this, targetSid);
+      broadcastTeam(this, teamId);
+      // 告诉被踢者
+      const tc = this.clients.find((x: Client) => x.sessionId === targetSid);
+      if (tc) tc.send('teamKicked', {});
+    });
+
+    // 解散队伍（仅队长）
+    this.onMessage('disbandTeam', (client) => {
+      const sid = client.sessionId;
+      const teamId = playerTeam.get(sid);
+      if (!teamId) return;
+      const team = teams.get(teamId);
+      if (!team || team.leaderSid !== sid) return;
+
+      const allSids = Array.from(team.members.keys());
+      for (const msid of allSids) removeFromTeam(this, msid);
+      teams.delete(teamId);
+      for (const msid of allSids) {
+        const c = this.clients.find((x: Client) => x.sessionId === msid);
+        if (c) c.send('teamDisbanded', {});
+      }
+    });
+
+    // ─── 定时 ───
+
     this.clock.setInterval(() => {
       this.state.players.forEach((_p: any, sid: string) => {
         const c = this.clients.find((x: Client) => x.sessionId === sid);
@@ -85,8 +309,10 @@ export class GameRoom extends Room<GameRoomState> {
       });
     }, 1000);
 
-    // 每 30 秒自动保存所有在线玩家世界到 DB
     this.clock.setInterval(() => this.saveAllOnline(), 30000);
+
+    // 队伍跟随：每 500ms 将非队长位置强推到队长身边
+    this.clock.setInterval(() => this.syncTeamPositions(), 500);
   }
 
   // ─── 怪物状态机 ───
@@ -97,12 +323,28 @@ export class GameRoom extends Room<GameRoomState> {
     return m;
   }
 
+  /** 锁定怪物——组队时广播全队进入战斗。 */
   private lockMonster(client: Client, data: { id?: string }): void {
     if (!data || typeof data.id !== 'string') return;
     const id = data.id.slice(0, 64);
     if (!id) return;
     const m = this.getMonster(id);
-    if (m.state === 'available') { m.state = 'busy'; m.owner = client.sessionId; m.respawnAt = 0; }
+    if (m.state !== 'available') return;
+
+    m.state = 'busy'; m.owner = client.sessionId; m.respawnAt = 0;
+
+    // 组队：通知其他队员进入同一场战斗（不发给触发者，他自己已走正常流程进战）
+    const teamId = playerTeam.get(client.sessionId);
+    if (teamId) {
+      const team = teams.get(teamId);
+      if (team) {
+        team.members.forEach((_, sid) => {
+          if (sid === client.sessionId) return; // 跳过触发者
+          const c = this.clients.find((x: Client) => x.sessionId === sid);
+          if (c) c.send('enterTeamBattle', { monsterId: id });
+        });
+      }
+    }
   }
 
   private killMonster(client: Client, data: { id?: string; respawnMs?: number }): void {
@@ -111,8 +353,7 @@ export class GameRoom extends Room<GameRoomState> {
     if (!id) return;
     const m = this.getMonster(id);
     if (m.state === 'busy' && m.owner !== client.sessionId) return;
-    m.state = 'dead';
-    m.owner = '';
+    m.state = 'dead'; m.owner = '';
     m.respawnAt = Date.now() + (Number(data.respawnMs) || 30000);
   }
 
@@ -135,10 +376,9 @@ export class GameRoom extends Room<GameRoomState> {
     });
   }
 
-  // ─── 进房 / 离房（DB 持久化）───
+  // ─── 进房 / 离房 ───
 
   onJoin(client: Client, options: { token?: string; characterId?: number; title?: string }) {
-    // Stage D：必须带 token + characterId
     const token = options?.token;
     const charId = options?.characterId;
     if (!token || !charId) {
@@ -146,14 +386,12 @@ export class GameRoom extends Room<GameRoomState> {
       setTimeout(() => client.leave(), 100);
       return;
     }
-
     const acc = findAccountByToken(token);
     if (!acc) {
       client.send('authError', '登录已过期，请重新登录');
       setTimeout(() => client.leave(), 100);
       return;
     }
-
     const ch = getCharacter(charId);
     if (!ch || ch.account_id !== acc.id) {
       client.send('authError', '角色不存在');
@@ -161,22 +399,20 @@ export class GameRoom extends Room<GameRoomState> {
       return;
     }
 
-    // 从 DB 加载世界数据，导入 WorldService
     let pw: any;
     try {
       const data = JSON.parse(ch.world_data);
       if (data && typeof data === 'object' && data.level) {
         pw = world.loadFromJSON(client.sessionId, data);
       } else {
-        pw = world.get(client.sessionId); // 新角色，种子
+        pw = world.get(client.sessionId);
       }
     } catch {
-      pw = world.get(client.sessionId); // JSON 损坏，种子新世界
+      pw = world.get(client.sessionId);
     }
 
     sessionCharMap.set(client.sessionId, charId);
 
-    // 建造 Colyseus 玩家对象
     const p = new GamePlayer();
     p.sessionId = client.sessionId;
     p.name = ch.name;
@@ -191,19 +427,25 @@ export class GameRoom extends Room<GameRoomState> {
   }
 
   onLeave(client: Client) {
-    // 保存世界状态到 DB
+    // 自动退出队伍
+    removeFromTeam(this, client.sessionId);
+    const teamId = playerTeam.get(client.sessionId); // 重入队?
+    if (!playerTeam.has(client.sessionId)) {
+      // 已成功离队——通知队伍成员
+      if (teamId && teams.has(teamId)) {
+        broadcastTeam(this, teamId);
+      }
+    }
+
+    // 保存世界到 DB
     const charId = sessionCharMap.get(client.sessionId);
     if (charId !== undefined) {
       const pw = world.get(client.sessionId);
       if (pw.level > 0) {
-        try {
-          saveCharacterWorld(charId, JSON.stringify(pw));
-        } catch { /* 保存失败不阻断 */ }
+        try { saveCharacterWorld(charId, JSON.stringify(pw)); } catch {}
       }
       sessionCharMap.delete(client.sessionId);
     }
-    // 不清空 world——保留内存副本，下次重连时可恢复（WorldService 的 Map 仍是健在的）
-    // 但 30s 定时保存已写 DB，即使进程重启也不丢。
 
     this.state.players.delete(client.sessionId);
     this.state.monsters.forEach((m) => {
@@ -213,14 +455,36 @@ export class GameRoom extends Room<GameRoomState> {
     });
   }
 
-  // ─── 定时保存 ───
-
   private saveAllOnline(): void {
     sessionCharMap.forEach((charId, sid) => {
       try {
         const pw = world.get(sid);
         if (pw.level > 0) saveCharacterWorld(charId, JSON.stringify(pw));
-      } catch { /* skip */ }
+      } catch {}
     });
+  }
+
+  /** 队伍跟随：服务端主动同步非队长到队长固定后方偏移（按 sessionId 排序确保位置稳定）。 */
+  private syncTeamPositions(): void {
+    teams.forEach((team) => {
+      const leader = this.state.players.get(team.leaderSid);
+      if (!leader) return;
+      // 稳定排序：按 sessionId 字典序，保证每帧偏移一致
+      const sortedMembers = [...team.members.keys()].filter((sid) => sid !== team.leaderSid).sort();
+      sortedMembers.forEach((sid, i) => {
+        const p = this.state.players.get(sid);
+        if (!p) return;
+        const offsets = [[0, 40], [-40, 30], [40, 30], [0, 60]];
+        const [ox, oy] = offsets[i % offsets.length];
+        p.x = leader.x + ox;
+        p.y = leader.y + oy;
+      });
+    });
+  }
+
+  /** 获取队员在队伍中的稳定序号（1-based，跳过队长）。仅由 move handler 使用。 */
+  private teamMemberIndex(team: Team, sid: string): number {
+    const sorted = [...team.members.keys()].filter((s) => s !== team.leaderSid).sort();
+    return sorted.indexOf(sid) + 1;
   }
 }

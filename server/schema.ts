@@ -13,6 +13,7 @@ export class GamePlayer extends Schema {
   @type('number') x = 0;
   @type('number') y = 0;
   @type('boolean') battling = false;   // 是否处于战斗中（用于远端名牌显示「战斗中」标签）
+  @type('string') teamId = '';          // 所属队伍 ID（空=未组队）
 }
 
 export class ChatMessage extends Schema {
@@ -76,7 +77,13 @@ export class BattleRoomState extends Schema {
   @type('string') currentTurn = '';
   /** waiting | combat | victory | defeat */
   @type('string') phase = 'waiting';
-  /** 当前行动者(玩家)的决策截止时间 epoch ms；>0 表示正在限时决策（敌人回合/非战斗为 0）。客户端据此显示 20s 倒计时。 */
+  /** command（指令阶段）| execute（执行阶段）。仅在 phase=combat 时有效。 */
+  @type('string') roundPhase = 'command';
+  /** 指令阶段截止时间 epoch ms；>0 表示倒计时中。execute 阶段为 0。 */
+  @type('number') roundExpiresAt = 0;
+  /** 当前回合号（从 1 开始） */
+  @type('number') round = 0;
+  /** 当前行动者(玩家)的决策截止时间 epoch ms；>0 表示正在限时决策（敌人回合/非战斗为 0）。客户端据此显示 20s 倒计时。（保留兼容） */
   @type('number') turnExpiresAt = 0;
   @type([ChatMessage]) log = new ArraySchema<ChatMessage>();
   @type('string') winner = '';

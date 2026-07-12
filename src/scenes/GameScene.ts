@@ -54,6 +54,11 @@ export class GameScene extends Phaser.Scene {
   private authToken = '';
   private characterId = 0;
   private remotePlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; tag: Phaser.GameObjects.Text; tx: number; ty: number; name: string; title: string }> = new Map();
+  // 队伍状态（多人组队·Stage D+）
+  private teamId = '';
+  private teamMembers: Array<{ sid: string; name: string }> = [];
+  private teamLeaderSid = '';
+  private teamPanel: Phaser.GameObjects.Container | null = null;
   private lastSent = { x: -9999, y: -9999, t: 0 };
   private netHint!: Phaser.GameObjects.Text;
   /** 权威战斗结束后的奖励报告，等场景 RESUME 时弹出（避免被战斗场景遮挡）。 */
@@ -237,9 +242,10 @@ export class GameScene extends Phaser.Scene {
       });
     });
 
-    // 鼠标点击移动
+    // 鼠标点击移动（组队非队长禁止）
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel) return;
+      if (this.teamId && this.teamLeaderSid !== this.mySessionId) return; // 非队长不移
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.moveTarget = { x: wp.x, y: wp.y };
     });
@@ -370,12 +376,15 @@ export class GameScene extends Phaser.Scene {
     if (this.isInDialogue) { this.player.setVelocity(0, 0); return; }
     const speed = this.ctrlKey.isDown ? 500 : 160;
     let vx = 0, vy = 0;
-    if (this.moveTarget) {
+    // 组队非队长：禁止本地移动，位置由服务端强制同步到队长
+    const isTeamNonLeader = !!(this.teamId && this.teamLeaderSid !== this.mySessionId);
+
+    if (this.moveTarget && !isTeamNonLeader) {
       const dx = this.moveTarget.x - this.player.x, dy = this.moveTarget.y - this.player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < 8) { this.moveTarget = null; }
       else { vx = (dx / dist) * speed; vy = (dy / dist) * speed; }
-    } else {
+    } else if (!isTeamNonLeader) {
       if (this.cursors.left.isDown || this.keys.A.isDown) vx = -1;
       else if (this.cursors.right.isDown || this.keys.D.isDown) vx = 1;
       if (this.cursors.up.isDown || this.keys.W.isDown) vy = -1;
@@ -384,6 +393,15 @@ export class GameScene extends Phaser.Scene {
       vx *= speed; vy *= speed;
     }
     this.player.setVelocity(vx, vy);
+
+    // 组队非队长：服务端权威位置覆盖本地物理，视觉上紧跟队长
+    if (isTeamNonLeader && this.gameRoom) {
+      const meState = this.gameRoom.state?.players?.get(this.mySessionId);
+      if (meState) {
+        this.player.setPosition(meState.x, meState.y);
+        this.player.setVelocity(0, 0);
+      }
+    }
     if (vx < 0) this.player.setFlipX(true); else if (vx > 0) this.player.setFlipX(false);
     this.checkNPCProximity(); this.checkZoneExit(); this.checkDungeonPortal();
     this.updateMiniMap(); this.checkEnemyCollision();
@@ -552,7 +570,7 @@ export class GameScene extends Phaser.Scene {
         this.scene.pause();
         if (this.gameRoom) {
           // 联机：进权威战斗房间（单人独占该怪，根除双杀双掉落）；真实怪数据传给服务端结算
-          this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, enemyParty: this.buildEncounterParty(en.data), monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout() });
+          this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, enemyParty: this.buildEncounterParty(en.data), monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), ownerSessionId: this.mySessionId });
         } else {
           // 离线兜底：本地战斗
           this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
@@ -635,19 +653,19 @@ export class GameScene extends Phaser.Scene {
     }
     if (result === 'victory') {
       const en = this.enemies.find(e => e.id === monsterId);
-      const data: EnemyData = enemyData;
-      const ib = data.type === '妖将' || data.type === '妖王';
-      // 任务进度（客户端活动任务 UI 跟踪，不影响服务端权威）
-      GameState.updateQuestProgress('kill', data.name);
-      if (en) this.removeMonster(en);
-      if (this.gameRoom) {
-        // 联机：通知服务端本怪物被击杀，按刷新时长从战斗结束计时后重新出现（共享怪物·玩家间争夺）
-        this.gameRoom.send('killMonster', { id: monsterId, respawnMs: this.monsterRespawnMs({ data }) });
-      } else if (en) {
-        if (en.respawnTimer) en.respawnTimer.destroy();
-        const d = ib ? 7200000 : data.type === '恶妖' ? 300000 : 30000;
-        en.respawnTimer = this.time.delayedCall(d, () => this.restoreMonster(en));
+      // 队内被拉玩家（enterTeamBattle）不一定有 enemyData，安全回退
+      if (enemyData && enemyData.name) {
+        const ib = enemyData.type === '妖将' || enemyData.type === '妖王';
+        GameState.updateQuestProgress('kill', enemyData.name);
+        if (this.gameRoom) {
+          this.gameRoom.send('killMonster', { id: monsterId, respawnMs: this.monsterRespawnMs({ data: enemyData }) });
+        } else if (en) {
+          if (en.respawnTimer) en.respawnTimer.destroy();
+          const d = ib ? 7200000 : enemyData.type === '恶妖' ? 300000 : 30000;
+          en.respawnTimer = this.time.delayedCall(d, () => this.restoreMonster(en));
+        }
       }
+      if (en) this.removeMonster(en);
       // 奖励数据来自服务端下发（gold/exp/loot/bestiary 已由 worldSync 写入 GameState）
       const expGain = reward?.exp ?? 0;
       const goldGain = reward?.gold ?? 0;
@@ -1127,6 +1145,49 @@ export class GameScene extends Phaser.Scene {
         room.onMessage('intentResult', (res: any) => this.onIntentResult(res));
         room.onLeave(() => { this.clearRemotePlayers(); setActiveRoom(null); });
         room.onMessage('system', () => {});
+
+        // ═════ 组队消息 ————
+
+        // 收到邀请
+        room.onMessage('inviteReceived', (data: { fromName: string; fromSid: string; teamId: string }) => {
+          this.showInvitePrompt(data);
+        });
+
+        // 队伍状态更新
+        room.onMessage('teamUpdate', (data: { id: string; leaderSid: string; members: Array<{ sid: string; name: string }> }) => {
+          this.teamId = data.id;
+          this.teamLeaderSid = data.leaderSid;
+          this.teamMembers = data.members;
+          this.renderTeamPanel();
+        });
+
+        // 全队进入战斗
+        room.onMessage('enterTeamBattle', (data: { monsterId: string }) => {
+          this.launchTeamBattle(data.monsterId);
+        });
+
+        // 被踢出
+        room.onMessage('teamKicked', () => {
+          this.teamId = '';
+          this.teamMembers = [];
+          this.teamLeaderSid = '';
+          this.hideTeamPanel();
+          this.showWorldNotif('你被移出了队伍', false);
+        });
+
+        // 队伍解散
+        room.onMessage('teamDisbanded', () => {
+          this.teamId = '';
+          this.teamMembers = [];
+          this.teamLeaderSid = '';
+          this.hideTeamPanel();
+          this.showWorldNotif('队伍已解散', false);
+        });
+
+        // 队伍错误提示
+        room.onMessage('teamError', (msg: string) => {
+          this.showWorldNotif(msg, false);
+        });
         room.onError((code: number, msg: string) => console.warn('[game] 房间错误', code, msg));
       })
       .catch((e: any) => console.warn('[game] 联机房间连接失败，单机模式继续', e));
@@ -1209,6 +1270,7 @@ export class GameScene extends Phaser.Scene {
     for (const [sid, rp] of this.remotePlayers) {
       if (!players.has(sid)) { rp.sprite.destroy(); rp.tag.destroy(); this.remotePlayers.delete(sid); }
     }
+    this.makeRemotePlayersInteractable();
   }
 
   private clearRemotePlayers(): void {
@@ -1239,7 +1301,7 @@ export class GameScene extends Phaser.Scene {
     if (this.gameRoom) this.setBattling(true);
     // V键组队：无指定怪，用当前区域虚怪组成小队（与单机 randomEnemyCount 同款）
     const dummy: EnemyData = createEnemyData('虚', '杂妖', '火', GameState.zone);
-    this.scene.launch('MultiBattleScene', { playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), enemyParty: this.buildEncounterParty(dummy) });
+    this.scene.launch('MultiBattleScene', { playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), enemyParty: this.buildEncounterParty(dummy), ownerSessionId: this.mySessionId });
     this.scene.pause();
   }
 
@@ -1328,12 +1390,143 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < n; i++) party.push({ ...ed, hp: ed.maxHp, maxHp: ed.maxHp });
     return party;
   }
-  
 
-  
+  // ═══════════════════════════════════
+  //  组队系统（Stage D+）
+  // ═══════════════════════════════════
 
-  
+  /** 弹出邀请提示——半透明覆盖层 + 确认/拒绝按钮。 */
+  private showInvitePrompt(data: { fromName: string; fromSid: string; teamId: string }): void {
+    const w = GAME_WIDTH, h = GAME_HEIGHT;
+    const overlay = this.add.container(0, 0).setDepth(500).setScrollFactor(0);
 
-  
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.6);
+    bg.fillRect(0, 0, w, h);
 
+    const panel = this.add.graphics();
+    panel.fillStyle(0x1a1a2e, 0.95);
+    panel.fillRoundedRect(w / 2 - 200, h / 2 - 80, 400, 160, 12);
+    panel.lineStyle(2, 0xc9a96e, 0.8);
+    panel.strokeRoundedRect(w / 2 - 200, h / 2 - 80, 400, 160, 12);
+
+    const title = this.add.text(w / 2, h / 2 - 45, `${data.fromName} 邀请你组队`, {
+      fontSize: '20px', color: '#ffe8b0', fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    overlay.add([bg, panel, title]);
+
+    // 接受 / 拒绝按钮——居中排列，两个按钮间距 200px
+    const btnY = h / 2 + 25;
+    const drawBtn = (x: number, label: string, fill: number, textColor: string, cb: () => void) => {
+      const bw = 130, bh = 42;
+      const g = this.add.graphics();
+      g.fillStyle(fill, 0.9);
+      g.fillRoundedRect(x - bw / 2, btnY - bh / 2, bw, bh, 8);
+      g.lineStyle(1, 0xc9a96e, 0.5);
+      g.strokeRoundedRect(x - bw / 2, btnY - bh / 2, bw, bh, 8);
+      const t = this.add.text(x, btnY, label, {
+        fontSize: '16px', color: textColor, fontStyle: 'bold',
+      }).setOrigin(0.5);
+      const z = this.add.zone(x, btnY, bw, bh).setInteractive({ useHandCursor: true });
+      z.on('pointerover', () => { g.clear(); g.fillStyle(fill, 1); g.fillRoundedRect(x - bw / 2, btnY - bh / 2, bw, bh, 8); t.setColor('#ffffff'); });
+      z.on('pointerout', () => { g.clear(); g.fillStyle(fill, 0.9); g.fillRoundedRect(x - bw / 2, btnY - bh / 2, bw, bh, 8); t.setColor(textColor); });
+      z.on('pointerdown', cb);
+      overlay.add([g, t, z]);
+    };
+
+    drawBtn(w / 2 - 100, '接受', 0x1a3a1a, '#88ff88', () => {
+      this.gameRoom?.send('respondInvite', { teamId: data.teamId, accept: true });
+      overlay.destroy();
+    });
+    drawBtn(w / 2 + 100, '拒绝', 0x3a1a1a, '#ff8888', () => {
+      this.gameRoom?.send('respondInvite', { teamId: data.teamId, accept: false });
+      overlay.destroy();
+    });
+  }
+
+  /** 绘制/刷新队伍面板（左上角，半透明 HUD）。 */
+  private renderTeamPanel(): void {
+    this.hideTeamPanel();
+    if (this.teamMembers.length === 0) return;
+
+    const padX = 16, padY = 12, itemH = 28, w = 200;
+    const h = padY * 2 + this.teamMembers.length * itemH + 30;
+    const panel = this.add.container(12, 12).setDepth(300).setScrollFactor(0);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1a1a2e, 0.85);
+    bg.fillRoundedRect(0, 0, w, h, 10);
+    bg.lineStyle(1, 0xc9a96e, 0.5);
+    bg.strokeRoundedRect(0, 0, w, h, 10);
+
+    const title = this.add.text(w / 2, padY + 6, `队伍 (${this.teamMembers.length}/4)`, {
+      fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    panel.add([bg, title]);
+
+    this.teamMembers.forEach((m, i) => {
+      const isLeader = m.sid === this.teamLeaderSid;
+      const isMe = m.sid === this.mySessionId;
+      const y = padY + 28 + i * itemH;
+      const txt = this.add.text(padX + 4, y + 4, isLeader ? `★ ${m.name}` : isMe ? `▶ ${m.name}` : `  ${m.name}`, {
+        fontSize: '13px', color: isMe ? '#88ff88' : '#ffffff',
+      }).setScrollFactor(0);
+      panel.add(txt);
+    });
+
+    this.teamPanel = panel;
+  }
+
+  private hideTeamPanel(): void {
+    if (this.teamPanel) { this.teamPanel.destroy(); this.teamPanel = null; }
+  }
+
+  /** 组队战斗：收到 enterTeamBattle 后自动启动战斗。 */
+  private launchTeamBattle(monsterId: string): void {
+    if (!this.gameRoom) return;
+    this.battleCooldown = 120;
+    this.setBattling(true);
+
+    const loadout = this.buildBattleLoadout();
+
+    // 只传 monsterId 和自身身份，不传 dummy enemyParty——
+    // BattleRoom 已有首个玩家的真实 enemyParty + state.enemies，覆盖会导致数据不一致。
+    this.scene.launch('MultiBattleScene', {
+      playerName: GameState.playerName || '勇者',
+      loadout,
+      monsterId,
+      ownerSessionId: this.mySessionId,
+      isTeamPull: true,   // 被队友拉进来的，不发 startbattle
+    });
+    this.scene.pause();
+  }
+
+  /** 邀请附近玩家（点击名牌触发）。 */
+  private invitePlayer(targetSid: string): void {
+    if (this.teamId) {
+      this.showWorldNotif('你已在队伍中', false);
+      return;
+    }
+    this.gameRoom?.send('invite', { targetSid });
+    this.showWorldNotif('已发送组队邀请', true);
+  }
+
+  /** 使远程玩家名牌可点击（悬停变色，点击邀请）。 */
+  private makeRemotePlayersInteractable(): void {
+    this.remotePlayers.forEach((rp, sid) => {
+      const tag = rp.tag;
+      if ((tag as any)._teamInviteSet) return;
+      (tag as any)._teamInviteSet = true;
+      tag.setInteractive({ useHandCursor: true });
+      tag.on('pointerdown', () => {
+        if (!this.gameRoom) return;
+        if (this.teamId) { this.showWorldNotif('你已在队伍中', false); return; }
+        this.invitePlayer(sid);
+      });
+      tag.on('pointerover', () => tag.setColor('#ffe8b0'));
+      tag.on('pointerout', () => tag.setColor('#ffffff'));
+    });
+  }
 }
