@@ -1213,6 +1213,17 @@ export class GameScene extends Phaser.Scene {
 
   /** 进入副本：停止当前地图，切换到独立副本地图场景（镜像地图方案，无 overlay 嵌套）。 */
   private enterDungeon(zone: number): void {
+    // 客户端前置检查：本周副本次数是否已用完（防御 DungeonRoom.onJoin dungeonError 竞态丢消息）
+    if (!dungeonProgress || dungeonProgress.dungeonId !== zone) {
+      const remaining = Math.max(0, DUNGEON_WEEKLY_CAP - dungeonWeekly.count);
+      if (remaining <= 0) {
+        const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40, '本周副本次数已用完（共享3次）', {
+          fontSize: '16px', color: '#ff8888', backgroundColor: '#221111cc', padding: { x: 12, y: 6 },
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+        this.tweens.add({ targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 80, duration: 1800, onComplete: () => notif.destroy() });
+        return;
+      }
+    }
     this.inDungeon = true;
     this.promptText.setVisible(false);
     this.cameras.main.fadeOut(400, 0, 0, 0);

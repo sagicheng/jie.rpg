@@ -327,22 +327,25 @@ export class DungeonMapScene extends Phaser.Scene {
 
   private checkEnemyCollision(): void {
     if (this.battleCooldown > 0 || this.isTransitioning) return;
+    if (this.enemies.length === 0) return;
+    // 找到最近的一只明雷怪（非整组），仅传该只进战斗
+    let nearest: { enemy: DungeonEnemy; dist: number } | null = null;
     for (const en of this.enemies) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y);
-      if (d < 52) {
-        this.enterBattle();
-        return;
-      }
+      if (d < 52 && (!nearest || d < nearest.dist)) nearest = { enemy: en, dist: d };
     }
+    if (nearest) this.enterBattle(nearest.enemy);
   }
 
-  private enterBattle(): void {
+  private enterBattle(enemy: DungeonEnemy): void {
     this.battleCooldown = 180;
     this.scene.pause();
     this.scene.launch('MultiBattleScene', {
       playerName: GameState.playerName || '勇者',
       loadout: buildClientBattleLoadout(),
-      enemyParty: buildDungeonParty(this.dungeonId, this.localStage),
+      // 仅传碰到的这一只怪（逐只独立遭遇，不打包整组）
+      enemyParty: [enemy.data],
+      monsterId: enemy.id,
       dungeonId: this.dungeonId,
       dungeonStage: this.localStage,
       dungeonRoomId: this.dungeonRoomId,
@@ -385,13 +388,11 @@ export class DungeonMapScene extends Phaser.Scene {
   // ═══ 领奖 / 传送阵 / 层切换 ═══
   private claimReward(): void {
     if (this.rewardTaken) return;
+    if (!this.dungeonRoom) { this.showNotif('未连接到副本服务器'); return; }
     this.rewardTaken = true;
-    const r = this.lastReward;
-    let msg = `第 ${this.localStage} 阶通关！`;
-    if (r) msg += `\n金币+${r.gold}  经验+${r.exp}` + (r.loot.length ? `\n获得：${r.loot.join('、')}` : '');
-    this.showNotif(msg);
-    if (this.rewardNPC) { this.rewardNPC.sprite.destroy(); this.rewardNPC.label.destroy(); this.rewardNPC = null; }
-    this.spawnPortal(this.localStage >= 3 ? 'exit' : 'next');
+    this.clearedPending = true; // 防止 onDungeonStateChange 重复触发
+    // 权威发奖：通知 DungeonRoom 本阶清剿完成 → 服务端发放阶段奖励 + 推进 stage
+    this.dungeonRoom.send('claimStage', { stage: this.localStage });
   }
 
   private spawnRewardNPC(): void {
@@ -453,22 +454,31 @@ export class DungeonMapScene extends Phaser.Scene {
   }
 
   // ═══ DungeonRoom 状态同步（权威 stage/phase 驱动地图刷新）═══
-  private connectDungeonRoom(): void {
+  private async connectDungeonRoom(): Promise<void> {
     const gameSid = (this.scene.get('GameScene') as any)?.mySessionId || GameState.playerName || '勇者';
-    getClient().joinOrCreate('dungeon', {
-      dungeonId: this.dungeonId,
-      gameSid,
-      name: GameState.playerName || '勇者',
-    }).then((room: any) => {
+    try {
+      const room: any = await getClient().joinOrCreate('dungeon', {
+        dungeonId: this.dungeonId,
+        gameSid,
+        name: GameState.playerName || '勇者',
+      });
       this.dungeonRoom = room;
       this.dungeonRoomId = room.roomId;
       room.onStateChange((s: any) => this.onDungeonStateChange(s));
-      room.onMessage('dungeonError', (m: any) => this.showNotif(m?.msg || '无法进入副本'));
+      room.onMessage('claimStageReward', (data: any) => {
+        let msg = `第 ${this.localStage} 阶通关！`;
+        msg += `\n金币+${data.gold}  经验+${data.exp}`;
+        if (data.loot?.length) msg += `\n获得：${data.loot.join('、')}`;
+        this.showNotif(msg);
+        if (this.rewardNPC) { this.rewardNPC.sprite.destroy(); this.rewardNPC.label.destroy(); this.rewardNPC = null; }
+        this.spawnPortal(this.localStage >= 3 ? 'exit' : 'next');
+      });
       this.onDungeonStateChange(room.state);
-    }).catch((e: any) => {
-      console.error('[DUNGEON-CONN] 连接失败', e);
-      this.showNotif('无法连接副本服务器');
-    });
+    } catch (e: any) {
+      // 包括：周次耗尽（服务器 onJoin throw Error）、网络错误等
+      this.showNotif(e?.message || '无法进入副本');
+      this.time.delayedCall(1200, () => this.exitToGame());
+    }
   }
 
   private onDungeonStateChange(s: any): void {
@@ -507,13 +517,18 @@ export class DungeonMapScene extends Phaser.Scene {
   }
 
   // ═══ 战斗结束回调（MultiBattleScene 胜利后触发）═══
-  onMultiBattleEnd(result: string, _monsterId: string, _enemyData: any, reward?: RewardInfo): void {
-    // 注意：副本奖励已由服务端权威写入 WorldService（金币/经验/掉落），并随每秒 worldSync
-    // 全量 reconcile 到客户端 GameState.Inventory（掉落按真实 type 下发，铁矿石=材料）。
-    // 此处【不再】本地双写——旧实现曾把掉落错写成 type:'consumable'，既导致重复写入，
-    // 又使铁矿石混入战斗道具栏被当血药（bug3 源头）。仅保留 lastReward 供领奖 UI 文案。
-    if (result === 'victory' && reward) {
-      this.lastReward = reward;
+  onMultiBattleEnd(result: string, monsterId: string, _enemyData: any, reward?: RewardInfo): void {
+    if (result === 'victory') {
+      // 按 monsterId 精确移除被击杀的那只明雷怪（其余怪留在地图上，等待逐一碰撞）
+      const idx = this.enemies.findIndex(e => e.id === monsterId);
+      if (idx >= 0) {
+        this.enemies[idx].sprite.destroy();
+        this.enemies[idx].label.destroy();
+        this.enemies.splice(idx, 1);
+      }
+      if (reward) this.lastReward = reward;
+      // 本阶全部明雷怪清空 → 领奖
+      if (this.enemies.length === 0) this.handleStageCleared(this.localStage);
     }
   }
 

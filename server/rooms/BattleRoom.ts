@@ -8,9 +8,9 @@
  */
 import { Room, Client } from '@colyseus/core';
 import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage } from '../schema';
-import { createEnemyData, calcDamage, calcMagicDamage, generateLoot, dungeonStageReward } from '../../src/systems/BattleData';
+import { createEnemyData, calcDamage, calcMagicDamage, generateLoot } from '../../src/systems/BattleData';
 import { world } from '../world';
-import { DungeonRegistry } from '../DungeonRegistry';
+
 import type { EnemyData } from '../../src/systems/BattleData';
 import { SKILL_BY_NAME, getSkillTargetType } from '../../src/systems/Skills';
 import { CONSUMABLES } from '../../src/systems/ConsumableSystem';
@@ -493,22 +493,17 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.state.winner = 'players';
     this.clearTurnTimer();
 
-    // 副本战斗：发副本阶段奖励（gold/exp/loot），并通知 DungeonRoom 推进阶进度
+    // 副本战斗：仅发基础战斗奖励（exp/gold），不再逐战推进阶段。
+    // 阶段推进改为由玩家在本阶全部明雷怪清空后按 F「领奖」触发 DungeonRoom.claimStage。
     if (this.dungeonStage > 0) {
-      const rw = dungeonStageReward(this.dungeonId, this.dungeonStage);
-      const lootNames = rw.loot.map((i) => i.name).join('、') || '无';
-      this.logMsg('system', `副本第${this.dungeonStage}阶通关！获得 金币${rw.gold} 经验${rw.exp}（${lootNames}）`);
-      const gameSids = [...this.clients].map((c: Client) => this.ownerSids.get(c.sessionId) || c.sessionId);
+      const baseExp = Math.round((this.enemyDef.expReward || 10) * 0.5);
+      const baseGold = Math.round((this.enemyDef.goldReward || 5) * 0.5);
       this.clients.forEach((c: Client) => {
         const pw = world.get(this.ownerSids.get(c.sessionId) || c.sessionId);
-        world.grantLoot(pw, rw.loot);
-        const leveled = world.gainExp(pw, rw.exp) > 0;
-        world.addGold(pw, rw.gold);
-        if (this.dungeonStage >= 3) world.completeDungeon(pw, this.dungeonId);
-        c.send('battleReward', { exp: rw.exp, gold: rw.gold, loot: rw.loot.map((i) => i.name), leveled });
+        world.gainExp(pw, baseExp);
+        world.addGold(pw, baseGold);
+        c.send('battleReward', { exp: baseExp, gold: baseGold, loot: [], leveled: world.gainExp(pw, 0) > 0 });
       });
-      // 推进副本实例阶进度（断连恢复：进度存 WorldService，不影响此处推进）
-      DungeonRegistry.get(this.dungeonRoomId)?.onStageCleared(this.dungeonStage, gameSids);
       return true;
     }
 
