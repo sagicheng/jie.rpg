@@ -1217,16 +1217,20 @@ export class GameScene extends Phaser.Scene {
     this.promptText.setVisible(false);
     this.cameras.main.fadeOut(400, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      // 关键修复（bug1/bug2 根因）：暂停而非停止 GameScene，保留联机连接与 sessionId 稳定，
-      // 服务端权威世界（金币/经验/背包/等级）不被清空，副本奖励与升级才会同步回主场景。
-      // 若用 scene.stop 会触发 SHUTDOWN → gameRoom.leave() → 服务端 world.remove(sessionId)
-      // 清空玩家整个权威世界，出副本后奖励/等级全部丢失。
-      this.scene.pause('GameScene');
-      this.scene.start('DungeonMapScene', { dungeonId: zone, fromZone: zone });
+      // 关键修复（bug1/bug2 根因）：用 launch 并行启动副本地图 + pause 自身，
+      // 【绝不能】用 scene.start('DungeonMapScene') —— Phaser 的 ScenePlugin.start(key) 会先
+      // queue 一个 stop 把【当前场景】(GameScene) 停掉，导致 GameScene 被 SHUTDOWN：
+      //   ① cameras.main 销毁 → RESUME 复位时 this.cameras.main.fadeIn 报 undefined 卡死；
+      //   ② 触发 gameRoom.leave() → 服务端 world.remove(sessionId) 清空玩家整个权威世界，
+      //      副本奖励/等级全部丢失（且 GameRoom 每秒 worldSync 反向把客户端覆盖成空）。
+      // 这与 launchMultiBattle 同模式：launch 并行、pause 自身，连接与权威世界始终存活，
+      // 副本奖励/升级随每秒 worldSync 全量 reconcile 自动到账，出本即同步。
+      this.scene.launch('DungeonMapScene', { dungeonId: zone, fromZone: zone });
+      this.scene.pause();
     });
   }
 
-  /** 兼容保留（DungeonMapScene 通过 scene.start('GameScene') 直接返回，不经此方法）。 */
+  /** 兼容保留（DungeonMapScene 现通过 exitToGame → scene.resume('GameScene') 返回主场景，不经此方法）。 */
   public exitDungeon(): void {
     this.inDungeon = false;
     this.nearbyDungeon = false;
