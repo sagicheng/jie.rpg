@@ -356,6 +356,11 @@ export class DungeonMapScene extends Phaser.Scene {
   // ═══ 交互（F 键）═══
   private onInteractKey(): void {
     if (this.isTransitioning) return;
+    // 直接检测领奖 NPC 距离（绕过 pendingNearby，防止 updateProximity 帧跳/坐标漂移导致 F 键失效）
+    if (this.rewardNPC && !this.rewardTaken) {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.rewardNPC.sprite.x, this.rewardNPC.sprite.y);
+      if (d < 80) { this.claimReward(); return; }
+    }
     if (this.pendingNearby === 'reward') { this.claimReward(); return; }
     if (this.pendingNearby === 'portal') {
       if (this.portal!.type === 'exit') this.exitToGame();
@@ -388,12 +393,10 @@ export class DungeonMapScene extends Phaser.Scene {
   // ═══ 领奖 / 传送阵 / 层切换 ═══
   private claimReward(): void {
     if (this.rewardTaken) return;
-    // DungeonRoom 连接是异步的（connectDungeonRoom 在 create() 中启动但未 await），
-    // 玩家可能在连接完成前就清完所有明雷怪。未连上时不设 rewardTaken，允许重试。
-    if (!this.dungeonRoom) {
-      this.showNotif('副本服务器连接中，请稍后再按 F');
-      return;
-    }
+    // DungeonRoom 连接是异步的，可能在连接完成前玩家已清完所有怪。
+    // 未连上时不做任何事（不设 rewardTaken，不弹提示），玩家走开再回来或等一秒再按 F 即可。
+    // updateProximity 仍会显示 "按 F 领取奖励"，反复按 F 直到连接就绪后自动处理。
+    if (!this.dungeonRoom) return;
     this.rewardTaken = true;
     this.clearedPending = true;
     // 权威发奖：通知 DungeonRoom 本阶清剿完成 → 服务端发放阶段奖励 + 推进 stage
