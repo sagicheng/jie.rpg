@@ -355,15 +355,13 @@ export class DungeonMapScene extends Phaser.Scene {
 
   // ═══ 交互（F 键）═══
   private onInteractKey(): void {
-    console.log('[DNG-F] onInteractKey() fired. isTransitioning=', this.isTransitioning, 'rewardNPC=', !!this.rewardNPC, 'rewardTaken=', this.rewardTaken, 'pendingNearby=', this.pendingNearby);
     if (this.isTransitioning) return;
     // 直接检测领奖 NPC 距离（绕过 pendingNearby，防止 updateProximity 帧跳/坐标漂移导致 F 键失效）
     if (this.rewardNPC && !this.rewardTaken) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.rewardNPC.sprite.x, this.rewardNPC.sprite.y);
-      console.log('[DNG-F] rewardNPC distance=', Math.round(d), 'playerXY=', Math.round(this.player.x), Math.round(this.player.y), 'npcXY=', Math.round(this.rewardNPC.sprite.x), Math.round(this.rewardNPC.sprite.y));
-      if (d < 80) { console.log('[DNG-F] -> claimReward()'); this.claimReward(); return; }
+      if (d < 80) { this.claimReward(); return; }
     }
-    if (this.pendingNearby === 'reward') { console.log('[DNG-F] -> claimReward() via pendingNearby'); this.claimReward(); return; }
+    if (this.pendingNearby === 'reward') { this.claimReward(); return; }
     if (this.pendingNearby === 'portal') {
       if (this.portal!.type === 'exit') this.exitToGame();
       else this.transitionToStage(this.localStage + 1);
@@ -394,12 +392,10 @@ export class DungeonMapScene extends Phaser.Scene {
 
   // ═══ 领奖 / 传送阵 / 层切换 ═══
   private claimReward(): void {
-    console.log('[DNG-F] claimReward() rewardTaken=', this.rewardTaken, 'dungeonRoom=', !!this.dungeonRoom, 'dungeonRoomId=', this.dungeonRoomId);
     if (this.rewardTaken) return;
-    if (!this.dungeonRoom) { console.log('[DNG-F] claimReward BLOCKED: dungeonRoom is null'); return; }
+    if (!this.dungeonRoom) return;
     this.rewardTaken = true;
     this.clearedPending = true;
-    console.log('[DNG-F] claimReward sending claimStage stage=', this.localStage);
     this.dungeonRoom.send('claimStage', { stage: this.localStage });
   }
 
@@ -472,10 +468,8 @@ export class DungeonMapScene extends Phaser.Scene {
       });
       this.dungeonRoom = room;
       this.dungeonRoomId = room.roomId;
-      console.log('[DNG-F] DungeonRoom connected. roomId=', room.roomId, 'stage=', room.state?.stage, 'phase=', room.state?.phase);
       room.onStateChange((s: any) => this.onDungeonStateChange(s));
       room.onMessage('claimStageReward', (data: any) => {
-        console.log('[DNG-F] claimStageReward received!', data);
         let msg = `第 ${this.localStage} 阶通关！`;
         msg += `\n金币+${data.gold}  经验+${data.exp}`;
         if (data.loot?.length) msg += `\n获得：${data.loot.join('、')}`;
@@ -502,34 +496,28 @@ export class DungeonMapScene extends Phaser.Scene {
 
   /** 某层刚通关：移除该层所有怪，中央生成领奖 NPC。clearedStage 仅用于文案。 */
   private handleStageCleared(clearedStage: number): void {
-    console.log('[DNG-F] handleStageCleared stage=', clearedStage, 'enemiesBefore=', this.enemies.length);
     this.enemies.forEach(e => { e.sprite.destroy(); e.label.destroy(); });
     this.enemies = [];
     if (this.rewardNPC) { this.rewardNPC.sprite.destroy(); this.rewardNPC.label.destroy(); this.rewardNPC = null; }
     this.spawnRewardNPC();
     this.showNotif(`第 ${clearedStage} 阶已通关！前往中央领取奖励`);
-    const rnpc = this.rewardNPC as any;
-    console.log('[DNG-F] handleStageCleared done, rewardNPC spawned at', rnpc ? `${rnpc.sprite.x},${rnpc.sprite.y}` : 'NULL');
   }
 
   // ═══ 战斗结束回调（MultiBattleScene 胜利后触发）═══
   onMultiBattleEnd(result: string, monsterId: string, _enemyData: any, reward?: RewardInfo): void {
-    console.log('[DNG-F] onMultiBattleEnd result=', result, 'monsterId=', monsterId, 'enemiesLeft=', this.enemies.length);
     if (result !== 'victory') return;
     const idx = this.enemies.findIndex(e => e.id === monsterId);
     if (idx >= 0) {
       this.enemies[idx].sprite.destroy();
       this.enemies[idx].label.destroy();
       this.enemies.splice(idx, 1);
-      console.log('[DNG-F] removed enemy idx=', idx, 'remaining=', this.enemies.length);
     } else if (this.enemies.length > 0) {
       this.enemies[0].sprite.destroy();
       this.enemies[0].label.destroy();
       this.enemies.splice(0, 1);
-      console.log('[DNG-F] FALLBACK removed enemy[0], monsterId mismatch. remaining=', this.enemies.length);
     }
     if (reward) this.lastReward = reward;
-    if (this.enemies.length === 0) { console.log('[DNG-F] all enemies cleared -> handleStageCleared'); this.handleStageCleared(this.localStage); }
+    if (this.enemies.length === 0) this.handleStageCleared(this.localStage);
   }
 
   // ═══ 小地图（简化：玩家点 + 副本传送阵点）═══

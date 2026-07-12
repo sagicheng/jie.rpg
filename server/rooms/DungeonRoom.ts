@@ -23,21 +23,17 @@ export class DungeonRoom extends Room<DungeonRoomState> {
     // 必须在 onCreate 中注册（Colyseus 0.15 onJoin 中注册的消息 handler 不生效）
     this.onMessage('claimStage', (c: Client, data: { stage?: number }) => {
       const s = Number(data?.stage) || 0;
-      console.log('[DNG-SRV] claimStage received. clientStage=', s, 'serverStage=', this.state.stage, 'phase=', this.state.phase);
       const p = this.state.players.get(c.sessionId);
-      if (!p) { console.log('[DNG-SRV] claimStage BLOCKED: player not in room'); return; }
-      if (s !== this.state.stage) { console.log('[DNG-SRV] claimStage BLOCKED: stage mismatch'); return; }
-      if (this.state.phase === 'clear') { console.log('[DNG-SRV] claimStage BLOCKED: already clear'); return; }
+      if (!p) return;
+      if (s !== this.state.stage) return;
+      if (this.state.phase === 'clear') return;
 
       const pw = world.get(p.gameSid);
-      console.log('[DNG-SRV] world.get result=', !!pw, 'gameSid=', p.gameSid);
       const rw = dungeonStageReward(this.state.dungeonId, s);
-      console.log('[DNG-SRV] reward=', rw);
       world.grantLoot(pw, rw.loot);
       world.gainExp(pw, rw.exp);
       world.addGold(pw, rw.gold);
       c.send('claimStageReward', { gold: rw.gold, exp: rw.exp, loot: rw.loot.map(i => i.name) });
-      console.log('[DNG-SRV] claimStageReward sent');
 
       if (s >= 3) {
         this.state.phase = 'clear';
@@ -45,7 +41,6 @@ export class DungeonRoom extends Room<DungeonRoomState> {
       } else {
         this.state.stage = s + 1;
       }
-      console.log('[DNG-SRV] stage advanced to', this.state.stage, 'phase=', this.state.phase);
     });
   }
 
