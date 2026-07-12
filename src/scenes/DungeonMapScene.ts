@@ -4,9 +4,9 @@
  * 设计要点：
  *  - 副本 = 一张独立地图场景（与 GameScene 平级），不再用 overlay 嵌套 DungeonScene，
  *    彻底规避 overlay 套 overlay 的渲染层级 bug（phase=combat 但画面不可见）。
- *  - 共 7 波（4 普通妖群 / 2 精英妖将 / 1 区域 BOSS），每波是同一张地图的不同「阶段」：
- *    进入显示该波明雷怪，清完 → 中央出现领奖 NPC → 按 F 领奖 → 出现下一波传送阵 →
- *    碰传送阵切换地图视觉与怪，第 7 波通关后传送阵变为「返回原地图」。
+ *  - 共 3 张镜像地图（阶段③），各一场战斗：镜像地图1=4 普通妖 / 镜像地图2=2 精英妖将 / 镜像地图3=1 区域 BOSS。
+ *    进入显示该阶段明雷怪，清完 → 中央出现领奖 NPC → 按 F 领奖 → 出现下一阶段传送阵 →
+ *    碰传送阵切换镜像地图视觉与怪，第 3 阶段（BOSS）通关后传送阵变为「返回原地图」。
  *  - 进度权威在服务端 DungeonRoom（stage/phase），本场景监听 stateChange 刷新；战斗胜利后
  *    BattleRoom 自动调 DungeonRegistry.onStageCleared 推进 stage，并下发副本阶奖励。
  *  - 断连恢复：DungeonRoom 进度存 WorldService，重连（再次进本副本）续打。
@@ -391,7 +391,7 @@ export class DungeonMapScene extends Phaser.Scene {
     if (r) msg += `\n金币+${r.gold}  经验+${r.exp}` + (r.loot.length ? `\n获得：${r.loot.join('、')}` : '');
     this.showNotif(msg);
     if (this.rewardNPC) { this.rewardNPC.sprite.destroy(); this.rewardNPC.label.destroy(); this.rewardNPC = null; }
-    this.spawnPortal(this.localStage >= 7 ? 'exit' : 'next');
+    this.spawnPortal(this.localStage >= 3 ? 'exit' : 'next');
   }
 
   private spawnRewardNPC(): void {
@@ -478,7 +478,7 @@ export class DungeonMapScene extends Phaser.Scene {
     this.updateStageHUD();
 
     if (phase === 'clear') {
-      // 第 7 波（最终）通关：localStage 此时应为 7，原地发最终奖励。
+      // 第 3 阶段（最终 BOSS）通关：localStage 此时应为 3，原地发最终奖励。
       if (!this.clearHandled) {
         this.clearHandled = true;
         this.handleStageCleared(this.localStage);
@@ -486,9 +486,9 @@ export class DungeonMapScene extends Phaser.Scene {
       return;
     }
 
-    // 普通波通关：服务端把 stage 推进到「已通关波 + 1」（见 DungeonRoom.onStageCleared）。
-    // 关键：localStage 表示"当前显示/刚通关的波"，绝不可直接覆盖成 serverStage，
-    // 否则打完第 6 波会被误判为第 7 波、传送阵错发 exit，导致跳过 BOSS 第 7 波。
+    // 普通阶段通关：服务端把 stage 推进到「已通关阶段 + 1」（见 DungeonRoom.onStageCleared）。
+    // 关键：localStage 表示"当前显示/刚通关的阶段"，绝不可直接覆盖成 serverStage，
+    // 否则打完第 2 阶段会被误判为第 3 阶段、传送阵错发 exit，导致跳过 BOSS 第 3 阶段。
     const clearedStage = serverStage - 1;
     if (clearedStage >= 1 && clearedStage === this.localStage && !this.clearedPending) {
       this.clearedPending = true;
