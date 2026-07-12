@@ -343,14 +343,38 @@ export class DungeonMapScene extends Phaser.Scene {
     this.scene.launch('MultiBattleScene', {
       playerName: GameState.playerName || '勇者',
       loadout: buildClientBattleLoadout(),
-      // 仅传碰到的这一只怪（逐只独立遭遇，不打包整组）
-      enemyParty: [enemy.data],
+      enemyParty: this.buildEncounterParty(),
       monsterId: enemy.id,
       dungeonId: this.dungeonId,
       dungeonStage: this.localStage,
       dungeonRoomId: this.dungeonRoomId,
       returnScene: 'DungeonMapScene',
     });
+  }
+
+  /** 根据阶段随机生成敌群阵容：阶段1=1~4普通 / 阶段2=3~6精英 / 阶段3=1BOSS+7随从 */
+  private buildEncounterParty(): EnemyData[] {
+    const templates = buildDungeonParty(this.dungeonId, this.localStage);
+    // 阶段3：BOSS+随从 1+7（templates[0]=BOSS, templates[1+]=随从池，池不够时复用）
+    if (this.localStage >= 3) {
+      const boss = templates[0];
+      const minions = templates.length > 1 ? templates.slice(1) : [boss];
+      const party: EnemyData[] = [boss];
+      for (let i = 0; i < 7; i++) party.push(minions[i % minions.length]);
+      return party;
+    }
+    // 阶段2：精英 3~6 只随机
+    if (this.localStage === 2) {
+      const n = Phaser.Math.Between(3, 6);
+      const party: EnemyData[] = [];
+      for (let i = 0; i < n; i++) party.push(templates[i % templates.length]);
+      return party;
+    }
+    // 阶段1：普通 1~4 只随机
+    const n = Phaser.Math.Between(1, 4);
+    const party: EnemyData[] = [];
+    for (let i = 0; i < n; i++) party.push(templates[i % templates.length]);
+    return party;
   }
 
   // ═══ 交互（F 键）═══

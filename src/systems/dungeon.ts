@@ -6,6 +6,7 @@
  */
 import { ZONE_CONFIGS } from './Zones';
 import { createEnemyData, EnemyData } from './BattleData';
+import { BOSS_CONFIG } from './BossMechanics';
 import { Inventory } from './Inventory';
 import { GameState } from './GameState';
 import { getAvailableSkills } from './Skills';
@@ -38,12 +39,23 @@ export function buildDungeonParty(dungeonId: number, stage: number): EnemyData[]
   const cfg = ZONE_CONFIGS[dungeonId];
   const enemies = cfg?.enemies || [];
 
-  // 阶段3（镜像地图3）：区域 BOSS（单只，无随从）
+  // 阶段3（镜像地图3）：区域 BOSS + 随从池（小怪/精英，实际7只由 buildEncounterParty 组装）
   if (stage >= 3) {
     const boss = enemies.find((e) => e.isBoss)
       || enemies.find((e) => e.type === '妖将' || e.type === '妖王')
       || { name: '副本守卫', type: '妖王' as const, element: '无', x: 0.5, y: 0.5 };
-    return [createEnemyData(boss.name, boss.type, boss.element, dungeonId)];
+    const bossData = createEnemyData(boss.name, boss.type, boss.element, dungeonId);
+    // 随从池：优先 BOSS_CONFIG retinue，无则用普通妖群
+    const bcfg = BOSS_CONFIG[boss.name];
+    let minionPool: EnemyData[] = [];
+    if (bcfg?.retinue?.length) {
+      minionPool = bcfg.retinue.map(r => createEnemyData(r.name, r.type, r.element, dungeonId));
+    } else {
+      const pool = enemies.filter(e => !e.isBoss && (e.type === '杂妖' || e.type === '恶妖'));
+      if (pool.length === 0) pool.push({ name: '副本喽啰', type: '杂妖' as const, element: boss.element, x: 0.5, y: 0.5 });
+      for (const e of pool.slice(0, 4)) minionPool.push(createEnemyData(e.name, e.type, e.element, dungeonId));
+    }
+    return [bossData, ...minionPool];
   }
 
   // 阶段2（镜像地图2）：精英妖将 2 只
