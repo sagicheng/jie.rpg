@@ -248,7 +248,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     const order: string[] = [];
     this.state.players.forEach((pl) => order.push(pl.sessionId));
     this.state.enemies.forEach((e) => order.push(e.id));
-    order.sort((a, b) => this.spdOf(b) - this.spdOf(a));
+    order.sort((a, b) => this.spdCmp(a, b));
     this.state.turnOrder.splice(0, this.state.turnOrder.length, ...order);
     this.state.phase = 'combat';
     this.state.round = 1;
@@ -573,12 +573,17 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (this.state.players.has(id)) return this.state.players.get(id)!.spd;
     return this.state.enemies.get(id)?.spd ?? 0;
   }
+  /** SPD 确定性比较：高速优先，相同时用 ID 字典序做 tie-breaker（梦幻西游式 Internal_ID）。 */
+  private spdCmp(a: string, b: string): number {
+    const diff = this.spdOf(b) - this.spdOf(a);
+    return diff !== 0 ? diff : a.localeCompare(b);
+  }
   /** 从 state.players + state.enemies 完整重建 turnOrder（SPD 降序）。替代不稳定的 splice 动态插入。 */
   private rebuildTurnOrder(who: string): void {
     const order: string[] = [];
     this.state.players.forEach((pl) => order.push(pl.sessionId));
     this.state.enemies.forEach((e) => order.push(e.id));
-    order.sort((a, b) => this.spdOf(b) - this.spdOf(a));
+    order.sort((a, b) => this.spdCmp(a, b));
     this.state.turnOrder.splice(0, this.state.turnOrder.length, ...order);
     this.logMsg('system', `${who} 加入，战斗队列已重建（${order.length} 人）`);
   }
