@@ -483,28 +483,11 @@ export class DungeonMapScene extends Phaser.Scene {
 
   private onDungeonStateChange(s: any): void {
     if (!s) return;
-    const serverStage = s.stage || 1;
-    const phase = s.phase || 'lobby';
     this.updateStageHUD();
-
-    if (phase === 'clear') {
-      // 第 3 阶段（最终 BOSS）通关：localStage 此时应为 3，原地发最终奖励。
-      if (!this.clearHandled) {
-        this.clearHandled = true;
-        this.handleStageCleared(this.localStage);
-      }
-      return;
-    }
-
-    // 普通阶段通关：服务端把 stage 推进到「已通关阶段 + 1」（见 DungeonRoom.onStageCleared）。
-    // 关键：localStage 表示"当前显示/刚通关的阶段"，绝不可直接覆盖成 serverStage，
-    // 否则打完第 2 阶段会被误判为第 3 阶段、传送阵错发 exit，导致跳过 BOSS 第 3 阶段。
-    const clearedStage = serverStage - 1;
-    if (clearedStage >= 1 && clearedStage === this.localStage && !this.clearedPending) {
-      this.clearedPending = true;
-      this.rewardTaken = false;
-      this.handleStageCleared(this.localStage);
-    }
+    // 不在此处理阶段通关——本场景的完成检测由 onMultiBattleEnd 逐怪追踪（全部明雷击杀后
+    // 调 handleStageCleared 生成领奖 NPC）。阶段推进与领奖通过 claimReward → claimStage
+    // 权威驱动（DungeonRoom 服务端发奖+推进 stage）。若在此通过 serverStage/phase 变化
+    // 触发 handleStageCleared，会与 onMultiBattleEnd 冲突导致「打死1只→全清→提前弹出NPC」。
   }
 
   /** 某层刚通关：移除该层所有怪，中央生成领奖 NPC。clearedStage 仅用于文案。 */
