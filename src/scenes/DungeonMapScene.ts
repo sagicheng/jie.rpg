@@ -388,9 +388,14 @@ export class DungeonMapScene extends Phaser.Scene {
   // ═══ 领奖 / 传送阵 / 层切换 ═══
   private claimReward(): void {
     if (this.rewardTaken) return;
-    if (!this.dungeonRoom) { this.showNotif('未连接到副本服务器'); return; }
+    // DungeonRoom 连接是异步的（connectDungeonRoom 在 create() 中启动但未 await），
+    // 玩家可能在连接完成前就清完所有明雷怪。未连上时不设 rewardTaken，允许重试。
+    if (!this.dungeonRoom) {
+      this.showNotif('副本服务器连接中，请稍后再按 F');
+      return;
+    }
     this.rewardTaken = true;
-    this.clearedPending = true; // 防止 onDungeonStateChange 重复触发
+    this.clearedPending = true;
     // 权威发奖：通知 DungeonRoom 本阶清剿完成 → 服务端发放阶段奖励 + 推进 stage
     this.dungeonRoom.send('claimStage', { stage: this.localStage });
   }
@@ -501,18 +506,22 @@ export class DungeonMapScene extends Phaser.Scene {
 
   // ═══ 战斗结束回调（MultiBattleScene 胜利后触发）═══
   onMultiBattleEnd(result: string, monsterId: string, _enemyData: any, reward?: RewardInfo): void {
-    if (result === 'victory') {
-      // 按 monsterId 精确移除被击杀的那只明雷怪（其余怪留在地图上，等待逐一碰撞）
-      const idx = this.enemies.findIndex(e => e.id === monsterId);
-      if (idx >= 0) {
-        this.enemies[idx].sprite.destroy();
-        this.enemies[idx].label.destroy();
-        this.enemies.splice(idx, 1);
-      }
-      if (reward) this.lastReward = reward;
-      // 本阶全部明雷怪清空 → 领奖
-      if (this.enemies.length === 0) this.handleStageCleared(this.localStage);
+    if (result !== 'victory') return;
+    // 按 monsterId 精确移除被击杀的那只明雷怪（其余怪留在地图上，等待逐一碰撞）
+    const idx = this.enemies.findIndex(e => e.id === monsterId);
+    if (idx >= 0) {
+      this.enemies[idx].sprite.destroy();
+      this.enemies[idx].label.destroy();
+      this.enemies.splice(idx, 1);
+    } else if (this.enemies.length > 0) {
+      // 防御：monsterId 不匹配时（如参数传递异常），退而移除第一只存活怪
+      this.enemies[0].sprite.destroy();
+      this.enemies[0].label.destroy();
+      this.enemies.splice(0, 1);
     }
+    if (reward) this.lastReward = reward;
+    // 本阶全部明雷怪清空 → 领奖 NPC
+    if (this.enemies.length === 0) this.handleStageCleared(this.localStage);
   }
 
   // ═══ 小地图（简化：玩家点 + 副本传送阵点）═══
