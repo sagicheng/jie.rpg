@@ -59,6 +59,12 @@ export class GameScene extends Phaser.Scene {
   private teamMembers: Array<{ sid: string; name: string }> = [];
   private teamLeaderSid = '';
   private teamPanel: Phaser.GameObjects.Container | null = null;
+  // 独立组队面板（G 键开关 / HUD 点开）：含成员操作 + 逐条处理的邀请队列
+  private teamPanelFull: Phaser.GameObjects.Container | null = null;
+  private pendingInvites: Array<{ fromName: string; fromSid: string; teamId: string }> = [];
+  private teamPanelInviteOpen = false;
+  private dungeonConfirmOpen = false;
+  private dungeonConfirmPanel: Phaser.GameObjects.Container | null = null;
   private lastSent = { x: -9999, y: -9999, t: 0 };
   private netHint!: Phaser.GameObjects.Text;
   /** 权威战斗结束后的奖励报告，等场景 RESUME 时弹出（避免被战斗场景遮挡）。 */
@@ -223,6 +229,8 @@ export class GameScene extends Phaser.Scene {
         toggleTitlePanel(this);
     });
     this.input.keyboard!.addKey('ESC').on('down', () => {
+      if (this.teamPanelFull) { this.closeTeamPanel(); return; }
+      if (this.dungeonConfirmOpen) { this.closeDungeonConfirm(); return; }
       if (this.inventoryPanel) { closeInventory(this); return; }
       if (this.statPanel) { closeStatPanel(this); return; }
       if (this.kidoPanel) { closeKidoPanel(this); return; }
@@ -245,6 +253,7 @@ export class GameScene extends Phaser.Scene {
     // 鼠标点击移动（组队非队长禁止）
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel) return;
+      if (this.teamPanelFull || this.dungeonConfirmOpen) return; // 模态界面打开时不移动
       if (this.teamId && this.teamLeaderSid !== this.mySessionId) return; // 非队长不移
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.moveTarget = { x: wp.x, y: wp.y };
@@ -298,6 +307,13 @@ export class GameScene extends Phaser.Scene {
     });
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G).on('down', () => {
       if (ctrl.isDown) { GameState.exp += expForLevel(GameState.level + 1); GameState.checkLevelUp(); showDevNotif('经验+1级', '#ccaaff'); this.scene.get('UIScene').events.emit('updateStats'); }
+    });
+    // 单独 G 键：开关独立组队面板（与 CTRL+G dev 升级区分）
+    this.input.keyboard!.addKey('G').on('down', () => {
+      if (this.ctrlKey.isDown) return;
+      if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
+      if (this.dungeonConfirmOpen) return; // 确认框优先
+      this.toggleTeamPanel();
     });
     this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.H).on('down', () => {
       if (ctrl.isDown) {
@@ -451,10 +467,11 @@ export class GameScene extends Phaser.Scene {
   /** F 键统一处理（事件驱动，keydown 即触发，不受 keyup 时机影响）。按优先级：NPC > 副本传送阵 > 采集点 > 区域出口。 */
   private onInteractKey(): void {
     if (this.isInDialogue) return;
+    if (this.dungeonConfirmOpen) return; // 确认框已开，避免重复弹
     // NPC 对话优先
     if (this.canInteract && this.currentNPC) { this.startDialogue(this.currentNPC); return; }
-    // 副本传送阵：F 进入
-    if (this.nearbyDungeon && !this.inDungeon) { this.enterDungeon(GameState.zone); return; }
+    // 副本传送阵：F 弹出确认界面（进入副本 / 暂不进入），不再直接进
+    if (this.nearbyDungeon && !this.inDungeon) { this.showDungeonConfirm(GameState.zone); return; }
     // 采集点
     for (let i = 0; i < this.gatherPoints.length; i++) {
       const pt = this.gatherPoints[i];
@@ -1148,9 +1165,10 @@ export class GameScene extends Phaser.Scene {
 
         // ═════ 组队消息 ————
 
-        // 收到邀请
+        // 收到邀请：入列（支持多人同时邀请逐条处理），并自动打开组队面板处理
         room.onMessage('inviteReceived', (data: { fromName: string; fromSid: string; teamId: string }) => {
-          this.showInvitePrompt(data);
+          this.addPendingInvite(data);
+          this.openTeamPanel();
         });
 
         // 队伍状态更新
@@ -1159,6 +1177,7 @@ export class GameScene extends Phaser.Scene {
           this.teamLeaderSid = data.leaderSid;
           this.teamMembers = data.members;
           this.renderTeamPanel();
+          if (this.teamPanelFull) this.openTeamPanel(); // 面板开着则实时刷新
         });
 
         // 全队进入战斗
@@ -1166,12 +1185,21 @@ export class GameScene extends Phaser.Scene {
           this.launchTeamBattle(data.monsterId);
         });
 
+        // 队长进副本 → 队员跟随进入（仅当自身未在副本/未在战斗）
+        room.onMessage('enterTeamDungeon', (data: { dungeonId: number }) => {
+          if (this.inDungeon) return;
+          if (this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
+          this.enterDungeon(data.dungeonId, true);
+        });
+
         // 被踢出
         room.onMessage('teamKicked', () => {
           this.teamId = '';
           this.teamMembers = [];
           this.teamLeaderSid = '';
+          this.pendingInvites = [];
           this.hideTeamPanel();
+          this.closeTeamPanel();
           this.showWorldNotif('你被移出了队伍', false);
         });
 
@@ -1180,7 +1208,9 @@ export class GameScene extends Phaser.Scene {
           this.teamId = '';
           this.teamMembers = [];
           this.teamLeaderSid = '';
+          this.pendingInvites = [];
           this.hideTeamPanel();
+          this.closeTeamPanel();
           this.showWorldNotif('队伍已解散', false);
         });
 
@@ -1305,8 +1335,9 @@ export class GameScene extends Phaser.Scene {
     this.scene.pause();
   }
 
-  /** 进入副本：停止当前地图，切换到独立副本地图场景（镜像地图方案，无 overlay 嵌套）。 */
-  private enterDungeon(zone: number): void {
+  /** 进入副本：停止当前地图，切换到独立副本地图场景（镜像地图方案，无 overlay 嵌套）。
+   *  @param fromTeam 是否由队长带队跟随进入（队员侧）：用于副本内镜像队长阶段进度。 */
+  private enterDungeon(zone: number, fromTeam = false): void {
     // 客户端前置检查：本周副本次数是否已用完（防御 DungeonRoom.onJoin dungeonError 竞态丢消息）
     if (!dungeonProgress || dungeonProgress.dungeonId !== zone) {
       const remaining = Math.max(0, DUNGEON_WEEKLY_CAP - dungeonWeekly.count);
@@ -1320,6 +1351,11 @@ export class GameScene extends Phaser.Scene {
     }
     this.inDungeon = true;
     this.promptText.setVisible(false);
+    // 队长（非跟随进入）进副本 → 广播全队跟随进入同一副本实例
+    // 仅队长触发、仅队员收到，避免队员互拉循环；服务端 teamEnterDungeon 也已校验 leaderSid。
+    if (!fromTeam && this.teamId && this.teamLeaderSid === this.mySessionId && this.teamMembers.length > 1) {
+      this.gameRoom?.send('teamEnterDungeon', { dungeonId: zone });
+    }
     this.cameras.main.fadeOut(400, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => {
       // 关键修复（bug1/bug2 根因）：用 launch 并行启动副本地图 + pause 自身，
@@ -1330,7 +1366,7 @@ export class GameScene extends Phaser.Scene {
       //      副本奖励/等级全部丢失（且 GameRoom 每秒 worldSync 反向把客户端覆盖成空）。
       // 这与 launchMultiBattle 同模式：launch 并行、pause 自身，连接与权威世界始终存活，
       // 副本奖励/升级随每秒 worldSync 全量 reconcile 自动到账，出本即同步。
-      this.scene.launch('DungeonMapScene', { dungeonId: zone, fromZone: zone });
+      this.scene.launch('DungeonMapScene', { dungeonId: zone, fromZone: zone, followEnter: fromTeam });
       this.scene.pause();
     });
   }
@@ -1395,63 +1431,200 @@ export class GameScene extends Phaser.Scene {
   //  组队系统（Stage D+）
   // ═══════════════════════════════════
 
-  /** 弹出邀请提示——半透明覆盖层 + 确认/拒绝按钮。 */
-  private showInvitePrompt(data: { fromName: string; fromSid: string; teamId: string }): void {
+  // ═══════════════════════════════════
+  //  组队面板（独立界面：邀请队列 / 成员操作）
+  // ═══════════════════════════════════
+
+  /** 邀请入列（支持多人同时邀请，逐条处理）。 */
+  private addPendingInvite(data: { fromName: string; fromSid: string; teamId: string }): void {
+    if (this.pendingInvites.some((i) => i.fromSid === data.fromSid && i.teamId === data.teamId)) return;
+    this.pendingInvites.push(data);
+  }
+  private removePendingInvite(teamId: string, fromSid: string): void {
+    this.pendingInvites = this.pendingInvites.filter((i) => !(i.teamId === teamId && i.fromSid === fromSid));
+  }
+
+  private toggleTeamPanel(): void {
+    if (this.teamPanelFull) this.closeTeamPanel();
+    else this.openTeamPanel();
+  }
+  private closeTeamPanel(): void {
+    if (this.teamPanelFull) { this.teamPanelFull.destroy(true); this.teamPanelFull = null; }
+  }
+
+  /** 组队面板内通用按钮（graphics + text + 交互 zone）。 */
+  private teamPanelButton(c: Phaser.GameObjects.Container, x: number, y: number, bw: number, bh: number, label: string, fill: number, textColor: string, cb: () => void): void {
+    const g = this.add.graphics();
+    g.fillStyle(fill, 0.9); g.fillRoundedRect(x - bw / 2, y - bh / 2, bw, bh, 6);
+    g.lineStyle(1, 0xc9a96e, 0.5); g.strokeRoundedRect(x - bw / 2, y - bh / 2, bw, bh, 6);
+    const t = this.add.text(x, y, label, { fontSize: '13px', color: textColor, fontStyle: 'bold' }).setOrigin(0.5);
+    const z = this.add.zone(x, y, bw, bh).setInteractive({ useHandCursor: true });
+    z.on('pointerover', () => { g.clear(); g.fillStyle(fill, 1); g.fillRoundedRect(x - bw / 2, y - bh / 2, bw, bh, 6); });
+    z.on('pointerout', () => { g.clear(); g.fillStyle(fill, 0.9); g.fillRoundedRect(x - bw / 2, y - bh / 2, bw, bh, 6); t.setColor(textColor); });
+    z.on('pointerdown', cb);
+    c.add([g, t, z]);
+  }
+
+  /** 打开/刷新独立组队面板：待处理邀请 + 成员操作 + 邀请队员。 */
+  private openTeamPanel(): void {
+    this.closeTeamPanel();
     const w = GAME_WIDTH, h = GAME_HEIGHT;
-    const overlay = this.add.container(0, 0).setDepth(500).setScrollFactor(0);
+    const c = this.add.container(0, 0).setDepth(500).setScrollFactor(0);
 
-    const bg = this.add.graphics();
-    bg.fillStyle(0x000000, 0.6);
-    bg.fillRect(0, 0, w, h);
+    const dim = this.add.graphics();
+    dim.fillStyle(0x000000, 0.5); dim.fillRect(0, 0, w, h);
+    c.add(dim);
 
+    const panelW = 430, panelH = 470;
+    const px = (w - panelW) / 2, py = (h - panelH) / 2;
     const panel = this.add.graphics();
-    panel.fillStyle(0x1a1a2e, 0.95);
-    panel.fillRoundedRect(w / 2 - 200, h / 2 - 80, 400, 160, 12);
-    panel.lineStyle(2, 0xc9a96e, 0.8);
-    panel.strokeRoundedRect(w / 2 - 200, h / 2 - 80, 400, 160, 12);
+    panel.fillStyle(0x16162a, 0.97); panel.fillRoundedRect(px, py, panelW, panelH, 14);
+    panel.lineStyle(2, 0xc9a96e, 0.8); panel.strokeRoundedRect(px, py, panelW, panelH, 14);
+    c.add(panel);
+    c.add(this.add.text(px + panelW / 2, py + 26, '队伍面板', { fontSize: '22px', color: '#ffe8b0', fontStyle: 'bold' }).setOrigin(0.5));
 
-    const title = this.add.text(w / 2, h / 2 - 45, `${data.fromName} 邀请你组队`, {
-      fontSize: '20px', color: '#ffe8b0', fontStyle: 'bold',
-    }).setOrigin(0.5);
+    const closeZ = this.add.zone(px + panelW - 22, py + 22, 32, 32).setInteractive({ useHandCursor: true });
+    c.add(closeZ);
+    c.add(this.add.text(px + panelW - 22, py + 22, '✕', { fontSize: '20px', color: '#ff8888' }).setOrigin(0.5));
+    closeZ.on('pointerdown', () => this.closeTeamPanel());
 
-    overlay.add([bg, panel, title]);
+    let y = py + 58;
 
-    // 接受 / 拒绝按钮——居中排列，两个按钮间距 200px
-    const btnY = h / 2 + 25;
-    const drawBtn = (x: number, label: string, fill: number, textColor: string, cb: () => void) => {
-      const bw = 130, bh = 42;
-      const g = this.add.graphics();
-      g.fillStyle(fill, 0.9);
-      g.fillRoundedRect(x - bw / 2, btnY - bh / 2, bw, bh, 8);
-      g.lineStyle(1, 0xc9a96e, 0.5);
-      g.strokeRoundedRect(x - bw / 2, btnY - bh / 2, bw, bh, 8);
-      const t = this.add.text(x, btnY, label, {
-        fontSize: '16px', color: textColor, fontStyle: 'bold',
-      }).setOrigin(0.5);
-      const z = this.add.zone(x, btnY, bw, bh).setInteractive({ useHandCursor: true });
-      z.on('pointerover', () => { g.clear(); g.fillStyle(fill, 1); g.fillRoundedRect(x - bw / 2, btnY - bh / 2, bw, bh, 8); t.setColor('#ffffff'); });
-      z.on('pointerout', () => { g.clear(); g.fillStyle(fill, 0.9); g.fillRoundedRect(x - bw / 2, btnY - bh / 2, bw, bh, 8); t.setColor(textColor); });
-      z.on('pointerdown', cb);
-      overlay.add([g, t, z]);
-    };
+    // —— 待处理邀请（多人同时邀请逐条处理）——
+    if (this.pendingInvites.length > 0) {
+      c.add(this.add.text(px + 18, y, `待处理邀请 (${this.pendingInvites.length})`, { fontSize: '15px', color: '#ffd9a0', fontStyle: 'bold' }));
+      y += 26;
+      for (const inv of this.pendingInvites) {
+        c.add(this.add.text(px + 18, y + 14, `${inv.fromName} 邀请你组队`, { fontSize: '13px', color: '#ffffff' }).setOrigin(0, 0.5));
+        this.teamPanelButton(c, px + panelW - 152, y + 14, 62, 26, '接受', 0x1a3a1a, '#88ff88', () => {
+          this.gameRoom?.send('respondInvite', { teamId: inv.teamId, accept: true });
+          this.removePendingInvite(inv.teamId, inv.fromSid);
+          this.openTeamPanel();
+        });
+        this.teamPanelButton(c, px + panelW - 82, y + 14, 62, 26, '拒绝', 0x3a1a1a, '#ff8888', () => {
+          this.gameRoom?.send('respondInvite', { teamId: inv.teamId, accept: false });
+          this.removePendingInvite(inv.teamId, inv.fromSid);
+          this.openTeamPanel();
+        });
+        y += 40;
+      }
+      y += 8;
+    }
 
-    drawBtn(w / 2 - 100, '接受', 0x1a3a1a, '#88ff88', () => {
-      this.gameRoom?.send('respondInvite', { teamId: data.teamId, accept: true });
-      overlay.destroy();
+    // —— 队伍成员 ——
+    if (this.teamMembers.length > 0) {
+      c.add(this.add.text(px + 18, y, `队伍成员 (${this.teamMembers.length}/4)`, { fontSize: '15px', color: '#ffd9a0', fontStyle: 'bold' }));
+      y += 26;
+      const amLeader = this.teamLeaderSid === this.mySessionId;
+      for (const m of this.teamMembers) {
+        const isLeader = m.sid === this.teamLeaderSid;
+        const isMe = m.sid === this.mySessionId;
+        const label = isLeader ? `★ ${m.name}` : isMe ? `▶ ${m.name}` : `  ${m.name}`;
+        c.add(this.add.text(px + 18, y + 14, label, { fontSize: '13px', color: isMe ? '#88ff88' : '#ffffff' }).setOrigin(0, 0.5));
+        if (amLeader && !isMe) {
+          this.teamPanelButton(c, px + panelW - 80, y + 14, 64, 26, '踢出', 0x3a1a1a, '#ff8888', () => {
+            this.gameRoom?.send('kickMember', { targetSid: m.sid });
+            this.openTeamPanel();
+          });
+        } else if (isMe && !amLeader) {
+          this.teamPanelButton(c, px + panelW - 80, y + 14, 64, 26, '退出', 0x3a2a1a, '#ffcc88', () => {
+            this.gameRoom?.send('leaveTeam', {});
+          });
+        }
+        y += 34;
+      }
+      if (amLeader) {
+        this.teamPanelButton(c, px + 18, y + 15, 120, 30, '解散队伍', 0x3a1a1a, '#ff8888', () => {
+          this.gameRoom?.send('disbandTeam', {});
+        });
+      } else {
+        this.teamPanelButton(c, px + 18, y + 15, 120, 30, '退出队伍', 0x3a2a1a, '#ffcc88', () => {
+          this.gameRoom?.send('leaveTeam', {});
+        });
+      }
+      y += 42;
+    }
+
+    // —— 邀请附近队员（展开列表）——
+    if (!this.inDungeon) {
+      const inviteLabel = this.teamPanelInviteOpen ? '▾ 邀请队员' : '▸ 邀请队员';
+      this.teamPanelButton(c, px + 18, y + 15, 150, 30, inviteLabel, 0x1a2a3a, '#88ccff', () => {
+        this.teamPanelInviteOpen = !this.teamPanelInviteOpen;
+        this.openTeamPanel();
+      });
+      y += 40;
+      if (this.teamPanelInviteOpen) {
+        const candidates = [...this.remotePlayers.entries()].filter(([sid]) => !this.teamMembers.some((m) => m.sid === sid));
+        if (candidates.length === 0) {
+          c.add(this.add.text(px + 24, y + 10, '附近没有可邀请的玩家', { fontSize: '12px', color: '#888899' }));
+          y += 22;
+        } else {
+          for (const [sid, rp] of candidates) {
+            if (y > py + panelH - 40) break; // 防止溢出面板
+            this.teamPanelButton(c, px + 18, y + 14, panelW - 36, 26, `邀请 ${rp.name}`, 0x16261a, '#aaffaa', () => {
+              this.gameRoom?.send('invite', { targetSid: sid });
+              this.showWorldNotif('已发送组队邀请', true);
+              this.teamPanelInviteOpen = false;
+              this.openTeamPanel();
+            });
+            y += 30;
+          }
+        }
+      }
+    }
+
+    this.teamPanelFull = c;
+  }
+
+  /** 旧接口兼容：收到邀请直接走队列 + 开面板。 */
+  private showInvitePrompt(data: { fromName: string; fromSid: string; teamId: string }): void {
+    this.addPendingInvite(data);
+    this.openTeamPanel();
+  }
+
+  /** 副本传送阵确认界面（进入副本 / 暂不进入）。 */
+  private showDungeonConfirm(zone: number): void {
+    if (this.dungeonConfirmOpen) return;
+    this.dungeonConfirmOpen = true;
+    const w = GAME_WIDTH, h = GAME_HEIGHT;
+    const c = this.add.container(0, 0).setDepth(500).setScrollFactor(0);
+    this.dungeonConfirmPanel = c;
+    const dim = this.add.graphics();
+    dim.fillStyle(0x000000, 0.55); dim.fillRect(0, 0, w, h);
+    c.add(dim);
+    const pw = 360, ph = 190;
+    const px = (w - pw) / 2, py = (h - ph) / 2;
+    const panel = this.add.graphics();
+    panel.fillStyle(0x16162a, 0.97); panel.fillRoundedRect(px, py, pw, ph, 14);
+    panel.lineStyle(2, 0xaa66ff, 0.8); panel.strokeRoundedRect(px, py, pw, ph, 14);
+    c.add(panel);
+    c.add(this.add.text(px + pw / 2, py + 42, `进入副本 ${zone}？`, { fontSize: '22px', color: '#e8d8ff', fontStyle: 'bold' }).setOrigin(0.5));
+    const remaining = Math.max(0, DUNGEON_WEEKLY_CAP - dungeonWeekly.count);
+    const active = dungeonProgress && dungeonProgress.dungeonId === zone;
+    c.add(this.add.text(px + pw / 2, py + 78, active ? '继续当前副本进度' : `本周剩余 ${remaining} 次`, { fontSize: '13px', color: '#bbaadd' }).setOrigin(0.5));
+    this.teamPanelButton(c, px + pw / 2 - 90, py + 138, 150, 44, '进入副本', 0x2a1a3a, '#cdaaff', () => {
+      this.closeDungeonConfirm(); this.enterDungeon(zone);
     });
-    drawBtn(w / 2 + 100, '拒绝', 0x3a1a1a, '#ff8888', () => {
-      this.gameRoom?.send('respondInvite', { teamId: data.teamId, accept: false });
-      overlay.destroy();
+    this.teamPanelButton(c, px + pw / 2 + 90, py + 138, 150, 44, '暂不进入', 0x2a2a2a, '#cccccc', () => {
+      this.closeDungeonConfirm();
     });
+  }
+  private closeDungeonConfirm(): void {
+    if (this.dungeonConfirmPanel) { this.dungeonConfirmPanel.destroy(true); this.dungeonConfirmPanel = null; }
+    this.dungeonConfirmOpen = false;
   }
 
   /** 绘制/刷新队伍面板（左上角，半透明 HUD）。 */
   private renderTeamPanel(): void {
     this.hideTeamPanel();
-    if (this.teamMembers.length === 0) return;
+    const hasTeam = this.teamMembers.length > 0;
+    const hasInvites = this.pendingInvites.length > 0;
+    if (!hasTeam && !hasInvites) return;
 
-    const padX = 16, padY = 12, itemH = 28, w = 200;
-    const h = padY * 2 + this.teamMembers.length * itemH + 30;
+    const padX = 16, padY = 12, itemH = 28, w = 210;
+    const rows = hasTeam ? this.teamMembers.length : 0;
+    const extra = hasInvites ? 24 : 0;
+    const h = padY * 2 + (hasTeam ? rows * itemH + 30 : 24) + extra;
     const panel = this.add.container(12, 12).setDepth(300).setScrollFactor(0);
 
     const bg = this.add.graphics();
@@ -1460,21 +1633,43 @@ export class GameScene extends Phaser.Scene {
     bg.lineStyle(1, 0xc9a96e, 0.5);
     bg.strokeRoundedRect(0, 0, w, h, 10);
 
-    const title = this.add.text(w / 2, padY + 6, `队伍 (${this.teamMembers.length}/4)`, {
-      fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
-    }).setOrigin(0.5);
+    let y = padY + 6;
+    if (hasTeam) {
+      const title = this.add.text(w / 2, y, `队伍 (${this.teamMembers.length}/4)  [G]`, {
+        fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
+      }).setOrigin(0.5);
+      panel.add(title);
+      y += 24;
+      this.teamMembers.forEach((m, i) => {
+        const isLeader = m.sid === this.teamLeaderSid;
+        const isMe = m.sid === this.mySessionId;
+        const yy = y + i * itemH;
+        const txt = this.add.text(padX + 4, yy + 4, isLeader ? `★ ${m.name}` : isMe ? `▶ ${m.name}` : `  ${m.name}`, {
+          fontSize: '13px', color: isMe ? '#88ff88' : '#ffffff',
+        }).setScrollFactor(0);
+        panel.add(txt);
+      });
+      y += rows * itemH + 6;
+    } else {
+      const title = this.add.text(w / 2, y, `队伍面板  [G]`, {
+        fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
+      }).setOrigin(0.5);
+      panel.add(title);
+      y += 24;
+    }
 
-    panel.add([bg, title]);
-
-    this.teamMembers.forEach((m, i) => {
-      const isLeader = m.sid === this.teamLeaderSid;
-      const isMe = m.sid === this.mySessionId;
-      const y = padY + 28 + i * itemH;
-      const txt = this.add.text(padX + 4, y + 4, isLeader ? `★ ${m.name}` : isMe ? `▶ ${m.name}` : `  ${m.name}`, {
-        fontSize: '13px', color: isMe ? '#88ff88' : '#ffffff',
+    if (hasInvites) {
+      const inv = this.add.text(padX + 4, y + 4, `● ${this.pendingInvites.length} 条组队邀请`, {
+        fontSize: '13px', color: '#ffd9a0', fontStyle: 'bold',
       }).setScrollFactor(0);
-      panel.add(txt);
-    });
+      panel.add(inv);
+      y += 24;
+    }
+
+    // 整块可点击打开完整面板
+    const hit = this.add.zone(w / 2, h / 2, w, h).setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', () => this.toggleTeamPanel());
+    panel.add(hit);
 
     this.teamPanel = panel;
   }

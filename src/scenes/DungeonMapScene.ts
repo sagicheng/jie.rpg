@@ -46,6 +46,8 @@ interface RewardInfo { exp: number; gold: number; loot: string[]; leveled: boole
 export class DungeonMapScene extends Phaser.Scene {
   private dungeonId = 1;
   private fromZone = 1;
+  /** 是否由队长带队跟随进入：是则镜像队长阶段进度，自己不领奖/不进下一阶。 */
+  private followEnter = false;
   private localStage = 1;        // 当前显示的地图层（跟随服务端 stage）
   private clearedPending = false; // 有刚打完待领奖的层
   private rewardTaken = false;
@@ -101,9 +103,10 @@ export class DungeonMapScene extends Phaser.Scene {
     super({ key: 'DungeonMapScene' });
   }
 
-  init(data: { dungeonId?: number; fromZone?: number }): void {
+  init(data: { dungeonId?: number; fromZone?: number; followEnter?: boolean }): void {
     this.dungeonId = data?.dungeonId || 1;
     this.fromZone = data?.fromZone || GameState.zone;
+    this.followEnter = data?.followEnter || false;
     this.localStage = 1;
     this.clearedPending = false;
     this.rewardTaken = false;
@@ -349,6 +352,9 @@ export class DungeonMapScene extends Phaser.Scene {
       dungeonStage: this.localStage,
       dungeonRoomId: this.dungeonRoomId,
       returnScene: 'DungeonMapScene',
+      // 关键：副本战斗奖励必须写回玩家本体世界（GameRoom sessionId），否则落到 battle 房间孤儿世界丢失。
+      // DungeonMapScene 自身不持有 mySessionId，从同源 GameScene 实例取。
+      ownerSessionId: (this.scene.get('GameScene') as any)?.mySessionId || '',
     });
   }
 
@@ -380,6 +386,11 @@ export class DungeonMapScene extends Phaser.Scene {
   // ═══ 交互（F 键）═══
   private onInteractKey(): void {
     if (this.isTransitioning) return;
+    // 跟随者：阶段推进由队长驱动（服务端权威），自己不领奖/不进下一阶；仅允许退出副本
+    if (this.followEnter) {
+      if (this.pendingNearby === 'portal' && this.portal && this.portal.type === 'exit') this.exitToGame();
+      return;
+    }
     // 直接检测领奖 NPC 距离（绕过 pendingNearby，防止 updateProximity 帧跳/坐标漂移导致 F 键失效）
     if (this.rewardNPC && !this.rewardTaken) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.rewardNPC.sprite.x, this.rewardNPC.sprite.y);
@@ -512,10 +523,30 @@ export class DungeonMapScene extends Phaser.Scene {
   private onDungeonStateChange(s: any): void {
     if (!s) return;
     this.updateStageHUD();
+    // 跟随者：阶段进度由队长权威驱动，直接镜像服务端 stage（含进入时已在中途的情况）
+    if (this.followEnter) this.syncToServerStage(s.stage);
     // 不在此处理阶段通关——本场景的完成检测由 onMultiBattleEnd 逐怪追踪（全部明雷击杀后
     // 调 handleStageCleared 生成领奖 NPC）。阶段推进与领奖通过 claimReward → claimStage
     // 权威驱动（DungeonRoom 服务端发奖+推进 stage）。若在此通过 serverStage/phase 变化
     // 触发 handleStageCleared，会与 onMultiBattleEnd 冲突导致「打死1只→全清→提前弹出NPC」。
+  }
+
+  /** 跟随者镜像：把本地阶段对齐到服务端（队长所在）阶段，重建地图与明雷。 */
+  private syncToServerStage(stage: number): void {
+    if (!stage || stage === this.localStage) return;
+    if (this.isTransitioning) return;
+    this.localStage = stage;
+    this.enemies.forEach((e) => { e.sprite.destroy(); e.label.destroy(); });
+    this.enemies = [];
+    if (this.rewardNPC) { this.rewardNPC.sprite.destroy(); this.rewardNPC.label.destroy(); this.rewardNPC = null; }
+    if (this.portal) { this.portal.gfx.destroy(); this.portal.label.destroy(); this.portal = null; }
+    this.clearedPending = false;
+    this.rewardTaken = false;
+    this.createMap();
+    this.createEnemies();
+    this.player.setPosition(GAME_WIDTH * 1.5, GAME_HEIGHT * 1.0);
+    this.updateStageHUD();
+    this.showNotif(`跟随队长进入第 ${stage} 阶`);
   }
 
   /** 某层刚通关：移除该层所有怪，中央生成领奖 NPC。clearedStage 仅用于文案。 */
@@ -523,7 +554,8 @@ export class DungeonMapScene extends Phaser.Scene {
     this.enemies.forEach(e => { e.sprite.destroy(); e.label.destroy(); });
     this.enemies = [];
     if (this.rewardNPC) { this.rewardNPC.sprite.destroy(); this.rewardNPC.label.destroy(); this.rewardNPC = null; }
-    this.spawnRewardNPC();
+    // 跟随者不自己领奖（阶段推进由队长权威驱动），跳过领奖 NPC
+    if (!this.followEnter) this.spawnRewardNPC();
     this.showNotif(`第 ${clearedStage} 阶已通关！前往中央领取奖励`);
   }
 
@@ -535,11 +567,9 @@ export class DungeonMapScene extends Phaser.Scene {
       this.enemies[idx].sprite.destroy();
       this.enemies[idx].label.destroy();
       this.enemies.splice(idx, 1);
-    } else if (this.enemies.length > 0) {
-      this.enemies[0].sprite.destroy();
-      this.enemies[0].label.destroy();
-      this.enemies.splice(0, 1);
     }
+    // 注意：不再用「找不到就删 enemies[0]」的兜底——跟随者阶段镜像会整体替换 enemies，
+    // 此时原 monsterId 已不在列表中，若兜底删 [0] 会误删新阶段的怪。
     if (reward) this.lastReward = reward;
     if (this.enemies.length === 0) this.handleStageCleared(this.localStage);
   }

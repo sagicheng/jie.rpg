@@ -527,8 +527,11 @@ export class BattleRoom extends Room<BattleRoomState> {
       const baseGold = Math.round((this.enemyDef.goldReward || 5) * 0.5);
       this.clients.forEach((c: Client) => {
         const pw = world.get(this.ownerSids.get(c.sessionId) || c.sessionId);
-        world.gainExp(pw, baseExp); world.addGold(pw, baseGold);
-        c.send('battleReward', { exp: baseExp, gold: baseGold, loot: [], leveled: world.gainExp(pw, 0) > 0 });
+        const lvBefore = pw.level;
+        world.gainExp(pw, baseExp);
+        const leveled = pw.level > lvBefore;
+        world.addGold(pw, baseGold);
+        c.send('battleReward', { exp: baseExp, gold: baseGold, loot: [], leveled });
       });
       return true;
     }

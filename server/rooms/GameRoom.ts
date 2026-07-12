@@ -300,6 +300,22 @@ export class GameRoom extends Room<GameRoomState> {
       }
     });
 
+    // 队长进入副本 → 广播全队跟随进入同一副本实例（DungeonRoom 按 dungeonId 合并，天然共享进度）
+    this.onMessage('teamEnterDungeon', (client, data: { dungeonId?: number }) => {
+      const leaderSid = client.sessionId;
+      const teamId = playerTeam.get(leaderSid);
+      if (!teamId) return;
+      const team = teams.get(teamId);
+      // 仅队长可触发，避免队员互拉造成循环
+      if (!team || team.leaderSid !== leaderSid) return;
+      const dungeonId = Number(data?.dungeonId) || 1;
+      team.members.forEach((_, msid) => {
+        if (msid === leaderSid) return;
+        const c = this.clients.find((x: Client) => x.sessionId === msid);
+        if (c) c.send('enterTeamDungeon', { dungeonId });
+      });
+    });
+
     // ─── 定时 ───
 
     this.clock.setInterval(() => {
