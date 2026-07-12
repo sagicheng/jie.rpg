@@ -355,13 +355,15 @@ export class DungeonMapScene extends Phaser.Scene {
 
   // ═══ 交互（F 键）═══
   private onInteractKey(): void {
+    console.log('[DNG-F] onInteractKey() fired. isTransitioning=', this.isTransitioning, 'rewardNPC=', !!this.rewardNPC, 'rewardTaken=', this.rewardTaken, 'pendingNearby=', this.pendingNearby);
     if (this.isTransitioning) return;
     // 直接检测领奖 NPC 距离（绕过 pendingNearby，防止 updateProximity 帧跳/坐标漂移导致 F 键失效）
     if (this.rewardNPC && !this.rewardTaken) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.rewardNPC.sprite.x, this.rewardNPC.sprite.y);
-      if (d < 80) { this.claimReward(); return; }
+      console.log('[DNG-F] rewardNPC distance=', Math.round(d), 'playerXY=', Math.round(this.player.x), Math.round(this.player.y), 'npcXY=', Math.round(this.rewardNPC.sprite.x), Math.round(this.rewardNPC.sprite.y));
+      if (d < 80) { console.log('[DNG-F] -> claimReward()'); this.claimReward(); return; }
     }
-    if (this.pendingNearby === 'reward') { this.claimReward(); return; }
+    if (this.pendingNearby === 'reward') { console.log('[DNG-F] -> claimReward() via pendingNearby'); this.claimReward(); return; }
     if (this.pendingNearby === 'portal') {
       if (this.portal!.type === 'exit') this.exitToGame();
       else this.transitionToStage(this.localStage + 1);
@@ -392,14 +394,12 @@ export class DungeonMapScene extends Phaser.Scene {
 
   // ═══ 领奖 / 传送阵 / 层切换 ═══
   private claimReward(): void {
+    console.log('[DNG-F] claimReward() rewardTaken=', this.rewardTaken, 'dungeonRoom=', !!this.dungeonRoom, 'dungeonRoomId=', this.dungeonRoomId);
     if (this.rewardTaken) return;
-    // DungeonRoom 连接是异步的，可能在连接完成前玩家已清完所有怪。
-    // 未连上时不做任何事（不设 rewardTaken，不弹提示），玩家走开再回来或等一秒再按 F 即可。
-    // updateProximity 仍会显示 "按 F 领取奖励"，反复按 F 直到连接就绪后自动处理。
-    if (!this.dungeonRoom) return;
+    if (!this.dungeonRoom) { console.log('[DNG-F] claimReward BLOCKED: dungeonRoom is null'); return; }
     this.rewardTaken = true;
     this.clearedPending = true;
-    // 权威发奖：通知 DungeonRoom 本阶清剿完成 → 服务端发放阶段奖励 + 推进 stage
+    console.log('[DNG-F] claimReward sending claimStage stage=', this.localStage);
     this.dungeonRoom.send('claimStage', { stage: this.localStage });
   }
 
@@ -472,6 +472,7 @@ export class DungeonMapScene extends Phaser.Scene {
       });
       this.dungeonRoom = room;
       this.dungeonRoomId = room.roomId;
+      console.log('[DNG-F] DungeonRoom connected. roomId=', room.roomId, 'stage=', room.state?.stage, 'phase=', room.state?.phase);
       room.onStateChange((s: any) => this.onDungeonStateChange(s));
       room.onMessage('claimStageReward', (data: any) => {
         let msg = `第 ${this.localStage} 阶通关！`;
@@ -500,31 +501,34 @@ export class DungeonMapScene extends Phaser.Scene {
 
   /** 某层刚通关：移除该层所有怪，中央生成领奖 NPC。clearedStage 仅用于文案。 */
   private handleStageCleared(clearedStage: number): void {
+    console.log('[DNG-F] handleStageCleared stage=', clearedStage, 'enemiesBefore=', this.enemies.length);
     this.enemies.forEach(e => { e.sprite.destroy(); e.label.destroy(); });
     this.enemies = [];
     if (this.rewardNPC) { this.rewardNPC.sprite.destroy(); this.rewardNPC.label.destroy(); this.rewardNPC = null; }
     this.spawnRewardNPC();
     this.showNotif(`第 ${clearedStage} 阶已通关！前往中央领取奖励`);
+    const rnpc = this.rewardNPC as any;
+    console.log('[DNG-F] handleStageCleared done, rewardNPC spawned at', rnpc ? `${rnpc.sprite.x},${rnpc.sprite.y}` : 'NULL');
   }
 
   // ═══ 战斗结束回调（MultiBattleScene 胜利后触发）═══
   onMultiBattleEnd(result: string, monsterId: string, _enemyData: any, reward?: RewardInfo): void {
+    console.log('[DNG-F] onMultiBattleEnd result=', result, 'monsterId=', monsterId, 'enemiesLeft=', this.enemies.length);
     if (result !== 'victory') return;
-    // 按 monsterId 精确移除被击杀的那只明雷怪（其余怪留在地图上，等待逐一碰撞）
     const idx = this.enemies.findIndex(e => e.id === monsterId);
     if (idx >= 0) {
       this.enemies[idx].sprite.destroy();
       this.enemies[idx].label.destroy();
       this.enemies.splice(idx, 1);
+      console.log('[DNG-F] removed enemy idx=', idx, 'remaining=', this.enemies.length);
     } else if (this.enemies.length > 0) {
-      // 防御：monsterId 不匹配时（如参数传递异常），退而移除第一只存活怪
       this.enemies[0].sprite.destroy();
       this.enemies[0].label.destroy();
       this.enemies.splice(0, 1);
+      console.log('[DNG-F] FALLBACK removed enemy[0], monsterId mismatch. remaining=', this.enemies.length);
     }
     if (reward) this.lastReward = reward;
-    // 本阶全部明雷怪清空 → 领奖 NPC
-    if (this.enemies.length === 0) this.handleStageCleared(this.localStage);
+    if (this.enemies.length === 0) { console.log('[DNG-F] all enemies cleared -> handleStageCleared'); this.handleStageCleared(this.localStage); }
   }
 
   // ═══ 小地图（简化：玩家点 + 副本传送阵点）═══
