@@ -474,7 +474,9 @@ export class WorldService {
       if (it && it.id === itemId) return { item: it, slot };
     }
     const bag = pw.inventory.find(i => i.id === itemId && i.type === 'equipment');
-    if (bag) return { item: bag, slot: (bag.slot as EquipSlot) || null };
+    // 背包内装备：未装备，slot 必须置 null。切忌用 bag.slot——背包 item 的 slot 字段是装备类型名（'weapon' 等，truthy），
+    // 若误当 slot 返回，decompose 会走 `pw.equipment[slot]=null` 分支清空装备栏对应槽位，而非从 inventory 移除该装备，导致分解"成功但装备仍在"。
+    if (bag) return { item: bag, slot: null };
     return null;
   }
   private enhanceCost(lv: number, quality: string): { gold: number; crystals: number } {

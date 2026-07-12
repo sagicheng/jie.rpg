@@ -97,10 +97,17 @@ export function getBestiaryTierReached(killedMap: Record<string, number>): numbe
   const allNames = Object.keys(NAMED_ENEMIES);
   if (allNames.length === 0) return 0;
 
+  // 各层级达成所需「击杀达标种类占比」阈值（击杀次数 ≥ 该层 requiredKills 的种类数 / 总种类数）
+  // 旧逻辑要求『全部种类都达成』，门槛过高（后期区域 Boss 前期遇不到，Tier1 永远卡 0，领奖按钮全灰）。
+  // 改为按比例达成：前期击杀约 15% 种类即可领初级奖励，逐步递进至全收集。
+  const RATIO: Record<number, number> = { 1: 0.15, 2: 0.4, 3: 0.7, 4: 1.0 };
+
   let reached = 0;
   for (const tier of BESTIARY_TIERS) {
-    const allMet = allNames.every(name => (killedMap[name] || 0) >= tier.requiredKills);
-    if (allMet) reached = tier.id;
+    const metCount = allNames.filter(name => (killedMap[name] || 0) >= tier.requiredKills).length;
+    const ratio = metCount / allNames.length;
+    const need = RATIO[tier.id] ?? 1.0;
+    if (ratio >= need) reached = tier.id;
     else break;
   }
   return reached;
