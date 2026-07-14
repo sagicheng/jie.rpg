@@ -22,6 +22,7 @@ export interface Item {
   slot?: EquipSlot;
   stats?: Partial<Record<string, number>>;
   quality?: string; // white/green/blue/purple/gold
+  set?: string;      // 套装标识：`${zone}_${quality}`，同标识装备凑齐件数激活套装加成
   // 强化系统
   enhanceLevel?: number;         // 0~15
   refineStats?: RefineStat[];    // 精炼词条列表

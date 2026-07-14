@@ -6,6 +6,7 @@ import { SaveManager } from '../systems/SaveManager';
 import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../systems/BestiaryData';
 import { expForLevel } from '../systems/BattleData';
 import { Inventory, EquipSlot, Item } from '../systems/Inventory';
+import { listSetProgress, setShortName } from '../systems/SetSystem';
 import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
 import { createPlayerStatus } from '../systems/StatusSystem';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS, getQuestDef, rollDailyPool, rollWeeklyPool, DAILY_CAP, WEEKLY_CAP } from '../systems/QuestData';
@@ -386,7 +387,8 @@ export function renderInventoryPanel(scene: GameScene): void {
       const it = eq[s];
       if (it) {
         const elv = it.enhanceLevel || 0; const q = it.quality || 'white'; const lvTxt = elv > 0 ? ` +${elv}` : '';
-        p.add(scene.add.text(sx + 8, sy + 20, `${it.name}${lvTxt}`, { fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
+        const setTag = it.set ? ` ⚑${setShortName(it.set)}` : '';
+        p.add(scene.add.text(sx + 8, sy + 20, `${it.name}${lvTxt}${setTag}`, { fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 } }));
         const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join(' ');
         p.add(scene.add.text(sx + 8, sy + 40, sts, { fontSize: '9px', color: '#7788aa', padding: { y: 1 } }));
         const eqRef = getRefineDisplay(it);
@@ -496,6 +498,21 @@ export function renderInventoryPanel(scene: GameScene): void {
     p.add(scene.add.text(ox + 20, matY, '材料', { fontSize: '15px', color: '#88aacc', fontStyle: 'bold', padding: { y: 2 } }));
     const mats = Inventory.items.filter(it => it.type === 'material' && it.quantity > 0);
     mats.forEach((item, i) => { const col = i % 6, row = Math.floor(i / 6); const mx = ox + 20 + col * 280, my = matY + 30 + row * 24; p.add(scene.add.text(mx, my, `${item.name} ×${item.quantity}`, { fontSize: '11px', color: '#aaaacc', padding: { y: 2 } })); });
+
+    // 套装进度汇总（联机下 equipment 由 worldSync 重建并带 set 字段）
+    const setProgress = listSetProgress(Inventory.equipment);
+    const setBlockY = matY + 30 + Math.ceil(mats.length / 6) * 24 + 14;
+    p.add(scene.add.text(ox + 20, setBlockY, '套装进度', { fontSize: '15px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 2 } }));
+    if (setProgress.length === 0) {
+      p.add(scene.add.text(ox + 20, setBlockY + 26, '（未穿戴任何套装装备；同区域同品质装备凑齐件数可激活加成）', { fontSize: '11px', color: '#556688', padding: { y: 1 } }));
+    } else {
+      setProgress.forEach((s, i) => {
+        const y = setBlockY + 26 + i * 20;
+        const bonusStr = Object.entries(s.active).map(([k, v]) => `${k.toUpperCase()}+${Math.round((v as number) * 100)}%`).join(' ');
+        p.add(scene.add.text(ox + 20, y, `${s.name}  防具 ${s.armorCount}/${s.armorTotal} · 饰品 ${s.jewelCount}/${s.jewelTotal}`, { fontSize: '11px', color: '#88ccff', padding: { y: 1 } }));
+        if (bonusStr) p.add(scene.add.text(ox + 300, y, `已激活: ${bonusStr}`, { fontSize: '11px', color: '#ffcc66', padding: { y: 1 } }));
+      });
+    }
 
     const fy = oy + oh - 28; const ft = scene.add.graphics(); ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
     p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, 'B键 开关  |  ESC 关闭', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));

@@ -16,6 +16,7 @@ import { Kido } from './Kido';
 export interface WorldItem {
   id: string; name: string; type: string; desc: string; quantity: number;
   slot?: string; stats?: Record<string, number>; quality?: string;
+  set?: string; // 套装标识 `${zone}_${quality}`
   enhanceLevel?: number; refineStats?: Array<{ key: string; value: number }>;
 }
 export interface PlayerWorld {
@@ -126,7 +127,7 @@ export function requestSetTitle(id: string | null): boolean { return sendIntent(
 function mapItem(w: WorldItem): any {
   return {
     id: w.id, name: w.name, type: w.type, desc: w.desc, quantity: w.quantity,
-    slot: w.slot, stats: w.stats, quality: w.quality,
+    slot: w.slot, stats: w.stats, quality: w.quality, set: w.set,
     enhanceLevel: w.enhanceLevel, refineStats: w.refineStats,
   };
 }

@@ -4,6 +4,7 @@
 import { STAT_PER_POINT, POINTS_PER_LEVEL, ZANPAKUTO_GROWTH } from '../config';
 import { Inventory } from './Inventory';
 import { Kido } from './Kido';
+import { computeSetBonuses } from './SetSystem';
 import { expForLevel } from './BattleData';
 import { Constructor } from '../types';
 
@@ -76,6 +77,16 @@ export function GameStateStatsMixin<TBase extends Constructor>(Base: TBase) {
         this.mdef = Math.round(this.mdef * (1 + titlePct));
         this.spd = Math.round(this.spd * (1 + titlePct));
       }
+
+      // 套装加成（% 类，叠加在称号之后；联机下 equipment 由 worldSync 重建并带 set 字段）
+      const setBonus = computeSetBonuses(Inventory.equipment);
+      if (setBonus.hp) this.maxHp = Math.round(this.maxHp * (1 + setBonus.hp));
+      if (setBonus.mp) this.maxMp = Math.round(this.maxMp * (1 + setBonus.mp));
+      if (setBonus.atk) this.atk = Math.round(this.atk * (1 + setBonus.atk));
+      if (setBonus.def) this.def = Math.round(this.def * (1 + setBonus.def));
+      if (setBonus.matk) this.matk = Math.round(this.matk * (1 + setBonus.matk));
+      if (setBonus.mdef) this.mdef = Math.round(this.mdef * (1 + setBonus.mdef));
+      if (setBonus.spd) this.spd = Math.round(this.spd * (1 + setBonus.spd));
 
       this.statusAcc = (g as any).statusAcc || 0;
       this.hp = Math.min(this.hp || this.maxHp, this.maxHp);

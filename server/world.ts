@@ -56,6 +56,7 @@ const CRAFT_RECIPES: Record<string, { cost: Record<string, number>; result: Worl
 export interface WorldItem {
   id: string; name: string; type: string; desc: string; quantity: number;
   slot?: EquipSlot; stats?: Partial<Record<string, number>>; quality?: string;
+  set?: string; // 套装标识 `${zone}_${quality}`
   enhanceLevel?: number; refineStats?: Array<{ key: string; value: number }>;
 }
 

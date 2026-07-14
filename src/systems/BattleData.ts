@@ -2,6 +2,7 @@ import { matId } from '../data/materials';
 import { QUALITY_MULT } from '../constants';
 import { ZONE_PL } from '../config';
 import { Item, EquipSlot } from './Inventory';
+import { makeSetId } from './SetSystem';
 
 /** 敌人类型 */
 export type EnemyType = '杂妖' | '恶妖' | '妖将' | '妖王';
@@ -142,6 +143,7 @@ export function generateEquipmentDrop(zone: number, quality: Quality): Item | nu
     slot: eq.slot as EquipSlot,
     stats,
     quality,
+    set: makeSetId(zone, quality),
   };
 }
 

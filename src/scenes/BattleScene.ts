@@ -1694,6 +1694,7 @@ export class BattleScene extends Phaser.Scene {
         id: item.id, name: item.name, type: item.type,
         desc: item.desc, quantity: item.quantity,
         slot: item.slot, stats: item.stats, quality: item.quality,
+        set: item.set,
       });
     });
 
