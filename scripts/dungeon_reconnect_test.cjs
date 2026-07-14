@@ -73,8 +73,8 @@ function readDB(charName) {
   console.log('=== 《解》副本掉线续打 集成测试 ===');
   console.log(`账号: ${account}  角色: ${charName}`);
 
-  const result = { entered: false, claimed: false, resumedStage: -1, weekly: -1, stageRestored: false, noDoubleCharge: false, resumedAdvanced: false, completedCleared: false, roomDisposed: false };
-  let client, gameRoom, dRoom, dRoom2;
+  const result = { entered: false, claimed: false, resumedStage: -1, weekly: -1, stageRestored: false, noDoubleCharge: false, resumedAdvanced: false, completedCleared: false, roomDisposed: false, stagePersisted: false, dbReloadStage: -1 };
+  let client, gameRoom, dRoom, dRoom2, client2, gameRoom2;
 
   try {
     const { token, charId } = await registerAndCreate(account, password, charName);
@@ -110,10 +110,31 @@ function readDB(charName) {
     await sleep(2000); // 等 autoDispose 真正销毁房间
     console.log('  -> 已断开副本连接（模拟最后一人掉线，房间应销毁）');
 
-    // 6) 重连再进同一副本
-    dRoom2 = await client.joinOrCreate('dungeon', {
+    // 5b) 落库验证：claim 到 stage2 后，DungeonRoom 已在关键节点 persistBySid，
+    //     DB 中应已写入 dungeon.stage=2（这是真机重连续阶的真相来源）。
+    const pwPersist = readDB(charName);
+    result.stagePersisted = pwPersist?.dungeon?.stage === 2;
+    console.log(`[落库] DB dungeon.stage=${pwPersist?.dungeon?.stage} (期望 2) → ${result.stagePersisted ? 'PASS' : 'FAIL'}`);
+
+    // 6) 真机复现：断开 game 连接（onLeave 保存），用【新 client + 新 game 会话】从 DB 重载后重连进本。
+    //    这正是用户真机"关浏览器→重选角"路径：新 sessionId、world.loadFromJSON 从 DB 恢复。
+    //    旧测试用同一 client+sessionId 复用内存 pw 才 PASS，恰恰掩盖了"未落库→DB 重载回落第1阶"的 BUG。
+    await gameRoom.leave();
+    await sleep(800);
+    client2 = new Client(WS);
+    gameRoom2 = await client2.joinOrCreate('game', { token, characterId: charId });
+    await sleep(400);
+    let syncedDungeon = null;
+    await new Promise((resolve) => {
+      gameRoom2.onMessage('worldSync', (pw) => { syncedDungeon = pw.dungeon; resolve(); });
+      setTimeout(resolve, 1500);
+    });
+    result.dbReloadStage = syncedDungeon ? (syncedDungeon.stage ?? -1) : -1;
+    console.log(`[DB重载] 重连 worldSync dungeon.stage=${result.dbReloadStage} (期望 2) → ${result.dbReloadStage === 2 ? 'PASS' : 'FAIL'}`);
+
+    dRoom2 = await client2.joinOrCreate('dungeon', {
       dungeonId: DUNGEON_ID,
-      gameSid: gameRoom.sessionId,
+      gameSid: gameRoom2.sessionId,
       name: charName,
       color: '#4ecdc4',
       x: 2880, y: 1080,
@@ -137,8 +158,8 @@ function readDB(charName) {
     result.roomDisposed = roomLeft;
     console.log(`[完成即毁] 房间在 ~3s 内销毁 → ${result.roomDisposed ? 'PASS' : 'FAIL'}`);
 
-    // 8) 关 game 房触发存档 → 读 DB 验证：周次不重复计 + 完成后 dungeon 被清空（无僵尸续打）
-    await gameRoom.leave();
+    // 8) 读 DB 验证：周次不重复计 + 完成后 dungeon 被清空（无僵尸续打）
+    await gameRoom2.leave();
     await sleep(800);
     const pw = readDB(charName);
     result.weekly = pw?.dungeonWeekly?.count ?? -1;
@@ -152,11 +173,14 @@ function readDB(charName) {
     try { if (dRoom) await dRoom.leave(); } catch {}
     try { if (dRoom2) await dRoom2.leave(); } catch {}
     try { if (gameRoom) await gameRoom.leave(); } catch {}
+    try { if (gameRoom2) await gameRoom2.leave(); } catch {}
     try { if (client) client.close(); } catch {}
+    try { if (client2) client2.close(); } catch {}
   }
 
   const allPass = result.entered && result.claimed && result.stageRestored && result.noDoubleCharge
-    && result.resumedAdvanced && result.completedCleared && result.roomDisposed;
+    && result.resumedAdvanced && result.completedCleared && result.roomDisposed
+    && result.stagePersisted && result.dbReloadStage === 2;
   console.log('\n=== 结果 ===');
   console.log(JSON.stringify(result, null, 2));
   console.log(allPass ? '✅ 掉线续打 + 完成即毁图: PASS' : '❌ 测试: FAIL');

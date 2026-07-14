@@ -21,6 +21,7 @@ import { POINTS_PER_LEVEL } from '../src/config';
 import type { EquipSlot } from '../src/systems/Inventory';
 import { KIDO_NODES, TIER_LOCK, ALL_KIDO_NODES } from '../src/systems/Kido';
 import { getBestiaryTierReached, BESTIARY_TIERS, BESTIARY_TITLES, NAMED_ENEMIES } from '../src/systems/BestiaryData';
+import { saveCharacterWorld } from './db';
 
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1080;
@@ -120,6 +121,8 @@ function seedWorld(): PlayerWorld {
 
 export class WorldService {
   private worlds = new Map<string, PlayerWorld>();
+  /** gameSid → charId 映射，供副本房间在关键节点主动落库（不依赖 GameRoom.onLeave 时机）。 */
+  private charIds = new Map<string, number>();
 
   /** 取（或首次创建并种子）某玩家的权威世界。 */
   get(sid: string): PlayerWorld {
@@ -266,6 +269,21 @@ export class WorldService {
   }
 
   remove(sid: string): void { this.worlds.delete(sid); }
+
+  /** 登记 gameSid→charId，供 persistBySid 落库。GameRoom.onJoin 时调用。 */
+  registerCharId(sid: string, charId: number): void {
+    this.charIds.set(sid, charId);
+  }
+
+  /** 主动持久化某玩家的权威世界到 DB（副本推进/完成等关键节点调用，
+   *  避免依赖断连时 onLeave 的保存时机——真机重连走"新会话从 DB 重载"，
+   *  若仅内存推进不落库，重连会读到旧 dungeon.stage 而回落第 1 阶）。 */
+  persistBySid(sid: string): void {
+    const cid = this.charIds.get(sid);
+    const pw = this.worlds.get(sid);
+    if (cid === undefined || !pw) return;
+    try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {}
+  }
 
   // ───────────────── 背包 ─────────────────
   private findItem(pw: PlayerWorld, id: string): WorldItem | undefined {

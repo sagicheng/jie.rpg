@@ -49,6 +49,8 @@ export class DungeonRoom extends Room<DungeonRoomState> {
         const pw = world.get(dp.gameSid);
         if (pw) world.completeDungeon(pw, this.state.dungeonId);
       });
+      // 完成即毁图落库：清进度（pw.dungeon=null）后立即持久化，确保重连无僵尸续打。
+      this.state.players.forEach((dp: any) => world.persistBySid(dp.gameSid));
       // 完成即毁图：清进度后兜底强制销毁房间（对齐老副本场景过期 +1s）。
       // disconnect() 会先断开全部在场客户端（触发其 room.onLeave → 自动返回主场景），
       // 再 dispose 房间，确保即便有客户端滞留，房间也不会成为孤儿实例。
@@ -60,6 +62,8 @@ export class DungeonRoom extends Room<DungeonRoomState> {
         const pw = world.get(dp.gameSid);
         if (pw && pw.dungeon) pw.dungeon.stage = s + 1;
       });
+      // 落库：副本内推进的 stage 立即持久化，确保断连重连（从 DB 重载）续到原阶。
+      this.state.players.forEach((dp: any) => world.persistBySid(dp.gameSid));
     }
     });
 
@@ -86,6 +90,9 @@ export class DungeonRoom extends Room<DungeonRoomState> {
     //  - 房间已销毁（最后一人掉线）：重连开新房间，用 pw.dungeon.stage 续到原阶（而非从第1阶重来）。
     // Math.max 避免新加入队员把进度拉低。
     this.state.stage = Math.max(this.state.stage, (pw.dungeon && pw.dungeon.stage) || 1);
+    // 进本即落库：把 enterDungeon 写入的 pw.dungeon（含 stage）持久化，
+    // 否则仅内存推进、断连后从 DB 重载会丢失活动副本（重连当新本从第 1 阶重来）。
+    world.persistBySid(gameSid);
     const dp = new DungeonPlayer();
     dp.dungeonSid = client.sessionId;
     dp.gameSid = gameSid;

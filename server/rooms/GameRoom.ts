@@ -522,6 +522,7 @@ export class GameRoom extends Room<GameRoomState> {
     }
 
     sessionCharMap.set(client.sessionId, charId);
+    world.registerCharId(client.sessionId, charId);
 
     const p = new GamePlayer();
     p.sessionId = client.sessionId;
