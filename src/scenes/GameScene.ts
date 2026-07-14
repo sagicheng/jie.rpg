@@ -12,7 +12,7 @@ import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
-import { openShop, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
+import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 import { getClient } from '../net/Net';
 import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
 
@@ -93,7 +93,10 @@ export class GameScene extends Phaser.Scene {
   private nameTag: Phaser.GameObjects.Text | null = null;
   public bestiaryDetailContainer: Phaser.GameObjects.Container | null = null;
   public shopPanel: Phaser.GameObjects.Container | null = null;
+  public mallPanel: Phaser.GameObjects.Container | null = null;
   private lastShopItems: any[] = [];
+  /** 旧档迁移：已始解但未存刀名，仅提示一次重选以恢复技能。 */
+  private shikaiReselectDone = false;
   public namingPanelActive = false;
 
   constructor() {
@@ -252,7 +255,7 @@ export class GameScene extends Phaser.Scene {
 
     // 鼠标点击移动（组队非队长禁止）
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel) return;
+      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel || this.mallPanel) return;
       if (this.teamPanelFull || this.dungeonConfirmOpen) return; // 模态界面打开时不移动
       if (this.teamId && this.teamLeaderSid !== this.mySessionId) return; // 非队长不移
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
@@ -1149,7 +1152,14 @@ export class GameScene extends Phaser.Scene {
         room.onStateChange(() => this.syncRemotePlayers());
 
         // 权威世界状态同步
-        room.onMessage('worldSync', (pw: any) => applyWorldSync(this, pw));
+        room.onMessage('worldSync', (pw: any) => {
+          applyWorldSync(this, pw);
+          // 旧档迁移：已始解但服务端未存斩魄刀真名 -> 引导重新选择以恢复始解/卍解技能（仅一次）
+          if (!this.shikaiReselectDone && GameState.hasShikai && !GameState.zanpakuto) {
+            this.shikaiReselectDone = true;
+            this.time.delayedCall(500, () => showShikaiSelection(this));
+          }
+        });
 
         // Stage D：认证失败
         room.onMessage('authError', (msg: string) => {
@@ -1269,6 +1279,7 @@ export class GameScene extends Phaser.Scene {
     if (this.statPanel) { closeStatPanel(this); renderStatPanel(this); }
     if (this.enhancePanel) { closeEnhancePanel(this); toggleEnhancePanel(this); }
     if (this.shopPanel && this.lastShopItems) { openShop(this, this.lastShopItems); }
+    if (this.mallPanel) { openMall(this); }
   }
 
   /** 打开商店并记录数据，便于 worldSync 后自动重渲染。 */

@@ -32,6 +32,7 @@ export interface PlayerWorld {
   dungeonWeekly?: { week: string; count: number };
   dungeon?: { dungeonId: number; stage: number } | null;
   unlocks?: string[];
+  zanpakuto?: string;
   kidoSchool?: string | null;
   kidoNodes?: Record<string, number>;
   kidoEquipped?: string[];
@@ -92,6 +93,14 @@ export function requestRefineReset(itemId: string): boolean {
 export function requestAllocateStat(attr: string): boolean {
   return sendIntent('allocateStat', { attr });
 }
+/** 商城购买（联机权威）。当前仅洗点符。断连被拒。 */
+export function requestMallBuy(itemId: string): boolean {
+  return sendIntent('mallBuy', { itemId });
+}
+/** 洗点（联机权威）：消耗背包洗点符，退还全部已分配属性点。断连被拒。 */
+export function requestRespec(): boolean {
+  return sendIntent('respec', {});
+}
 export function requestClaimQuest(questId: string): boolean {
   return sendIntent('claimQuest', { questId });
 }
@@ -99,8 +108,10 @@ export function requestClaimQuest(questId: string): boolean {
 /** 是否处于联机（已连接 game 房间）。用于「联机发意图 / 单机本地改」分支判断。 */
 export function isOnline(): boolean { return !!activeRoom; }
 
-/** 解锁六大力量体系（始解/卍解/虚化…）。 */
-export function requestUnlock(key: string): boolean { return sendIntent('unlock', { key }); }
+/** 解锁六大力量体系（始解/卍解/虚化…）。始解时一并传入所选斩魄刀真名，由服务端随解锁持久化。 */
+export function requestUnlock(key: string, zanpakuto?: string): boolean { return sendIntent('unlock', { key, zanpakuto }); }
+/** 设置/修正所选斩魄刀真名（持久化）。用于始解首解落库及旧档迁移补存。 */
+export function requestSetZanpakuto(zanpakuto: string): boolean { return sendIntent('setZanpakuto', { zanpakuto }); }
 /** 设置鬼道主修系别。 */
 export function requestKidoSetSchool(school: string): boolean { return sendIntent('kidoSetSchool', { school }); }
 /** 鬼道节点加点。 */
@@ -157,6 +168,9 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
 
   // 六大力量体系解锁（服务端权威）—— 联机下 combat 读取 GameState.unlocks 判断能否始解/卍解/虚化
   GameState.unlocks = Array.isArray(pw.unlocks) ? [...pw.unlocks] : [];
+  // 所选斩魄刀真名（服务端权威 + 持久化）—— 始解/卍解技能表以此查表；仅当服务端有明确值时覆盖，
+  // 旧档无此字段(undefined)则保留本地值，交由 GameScene 旧档迁移逻辑引导重选补存。
+  if (pw.zanpakuto !== undefined) GameState.zanpakuto = pw.zanpakuto;
   // 鬼道（服务端权威 + 持久化）—— 覆盖 Kido 单例，recalcStats 据此算被动加成
   if (pw.kidoSchool !== undefined) Kido.school = pw.kidoSchool as any;
   if (pw.kidoNodes) Kido.nodes = { ...pw.kidoNodes };

@@ -18,8 +18,8 @@ import {
   getEnhanceLabel, getEnhanceGlow,
 } from '../systems/EnhanceSystem';
 import {
-  requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestAllocateStat,
-  requestUnlock, requestKidoSetSchool, requestKidoAllocate, requestClaimBestiaryTier, requestSetTitle, isOnline,
+  requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestAllocateStat, requestMallBuy, requestRespec,
+  requestUnlock, requestSetZanpakuto, requestKidoSetSchool, requestKidoAllocate, requestClaimBestiaryTier, requestSetTitle, isOnline,
 } from '../systems/WorldClient';
 
 // ═══════════════════════════════════════════
@@ -240,7 +240,7 @@ export function showShikaiSelection(scene: GameScene): void {
       sel.on('pointerover', () => { sel.setColor('#ffff88'); sel.setBackgroundColor('#443300aa'); });
       sel.on('pointerout', () => { sel.setColor('#ffcc44'); sel.setBackgroundColor('#33220088'); });
       sel.on('pointerdown', () => {
-        GameState.zanpakuto = zan; if (isOnline()) requestUnlock('shikai'); else GameState.addUnlock('shikai');
+        GameState.zanpakuto = zan; if (isOnline()) { requestUnlock('shikai', zan); requestSetZanpakuto(zan); } else GameState.addUnlock('shikai');
         GameState.recalcStats();
         panel.destroy(true);
         scene.time.delayedCall(300, () => {
@@ -314,6 +314,49 @@ export function openShop(scene: GameScene, _s: any[]): void {
     const cb3 = scene.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cb3.on('pointerover', () => cb3.setColor('#ffaaaa')); cb3.on('pointerout', () => cb3.setColor('#ff6666')); cb3.on('pointerdown', () => { panel.destroy(true); scene.shopPanel = null; scene.resumeFromMenu(); }); panel.add(cb3);
     scene.shopPanel = panel;
   }
+
+export function openMall(scene: GameScene): void {
+  const wasOpen = !!scene.mallPanel;
+  if (scene.mallPanel) { scene.mallPanel.destroy(true); scene.mallPanel = null; }
+  if (!wasOpen) scene.pauseForMenu();
+  const cam = scene.cameras.main;
+  const panel = scene.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2 - 30).setDepth(310);
+  const bg = scene.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-400, -260, 800, 520, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-400, -260, 800, 520, 12); panel.add(bg);
+  panel.add(scene.add.text(0, -230, '商城', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+  panel.add(scene.add.text(0, -200, `金币: ${GameState.gold}`, { fontSize: '14px', color: '#ffcc44', padding: { y: 2 } }).setOrigin(0.5));
+  const items = [{ id: 'respec_charm', name: '洗点符', desc: '使用后退还全部已分配属性点，可重新分配', price: (GameState.level || 1) * 200 }];
+  items.forEach((item) => {
+    const sx = -370, sy = -160;
+    const card = scene.add.graphics(); card.fillStyle(0x111122, 0.6); card.fillRoundedRect(sx, sy, 360, 56, 6); card.lineStyle(1, 0x334466, 0.5); card.strokeRoundedRect(sx, sy, 360, 56, 6); panel.add(card);
+    panel.add(scene.add.text(sx + 12, sy + 6, item.name, { fontSize: '13px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } }));
+    panel.add(scene.add.text(sx + 12, sy + 30, item.desc, { fontSize: '10px', color: '#8888aa', padding: { y: 1 } }));
+    panel.add(scene.add.text(sx + 260, sy + 18, `${item.price} 金币`, { fontSize: '12px', color: '#ffcc44', padding: { y: 2 } }));
+    const canBuy = GameState.gold >= item.price;
+    const buyBtn = scene.add.text(sx + 300, sy + 8, '[购买]', { fontSize: '12px', color: canBuy ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 6, y: 4 } }).setInteractive({ useHandCursor: true });
+    if (canBuy) {
+      buyBtn.on('pointerover', () => buyBtn.setColor('#88ff88'));
+      buyBtn.on('pointerout', () => buyBtn.setColor('#44cc44'));
+      buyBtn.on('pointerdown', () => {
+        scene.isInDialogue = false;
+        if (isOnline()) {
+          if (!requestMallBuy(item.id)) return;
+          openMall(scene); // 重渲染（金币随 worldSync 刷新）
+        } else {
+          scene.showWorldNotif('需联网后到商城购买', false);
+          return;
+        }
+        const bn = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '购买了 ' + item.name, { fontSize: '16px', color: '#ffcc44', fontStyle: 'bold', backgroundColor: '#332200cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
+        scene.tweens.add({ targets: bn, alpha: 0, y: GAME_HEIGHT / 2 - 110, duration: 2500, onComplete: () => bn.destroy() });
+      });
+    }
+    panel.add(buyBtn);
+  });
+  const cb = scene.add.text(370, -240, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+  cb.on('pointerover', () => cb.setColor('#ffaaaa')); cb.on('pointerout', () => cb.setColor('#ff6666'));
+  cb.on('pointerdown', () => { panel.destroy(true); scene.mallPanel = null; scene.resumeFromMenu(); });
+  panel.add(cb);
+  scene.mallPanel = panel;
+}
 
 export function toggleInventory(scene: GameScene): void { if (scene.inventoryPanel) { closeInventory(scene); return; } renderInventoryPanel(scene); }
 
@@ -416,6 +459,21 @@ export function renderInventoryPanel(scene: GameScene): void {
       const ub = scene.add.text(cx + cW / 2, cy + 38, '[使用]', { fontSize: '10px', color: '#44cc44', fontStyle: 'bold', padding: { x: 4, y: 2 }, backgroundColor: '#11221188' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
       ub.on('pointerover', () => { ub.setColor('#88ff88'); ub.setBackgroundColor('#224422aa'); }); ub.on('pointerout', () => { ub.setColor('#44cc44'); ub.setBackgroundColor('#11221188'); });
       ub.on('pointerdown', () => {
+        if (item.id === 'respec_charm') {
+          if (isOnline()) {
+            requestRespec(); // 服务端权威退还属性点，worldSync 刷新背包/属性
+          } else {
+            const sum = GameState.allocatedHP + GameState.allocatedMP + GameState.allocatedATK + GameState.allocatedDEF + GameState.allocatedMATK + GameState.allocatedMDEF + GameState.allocatedSPD;
+            GameState.allocatedHP = GameState.allocatedMP = GameState.allocatedATK = GameState.allocatedDEF = GameState.allocatedMATK = GameState.allocatedMDEF = GameState.allocatedSPD = 0;
+            GameState.statPoints += sum;
+            item.quantity--; if (item.quantity <= 0) { const ri = Inventory.items.findIndex(x => x.id === item.id); if (ri >= 0) Inventory.items.splice(ri, 1); }
+            GameState.recalcStats();
+            scene.scene.get('UIScene').events.emit('updateStats');
+            closeInventory(scene); renderInventoryPanel(scene);
+            scene.showWorldNotif(`洗点成功，已退还 ${sum} 点属性`, true);
+          }
+          return;
+        }
         const ef = getConsumableEffect(item.id);
         if (ef) {
           const ctx2 = { hp: GameState.hp, maxHp: GameState.maxHp, mp: GameState.mp, maxMp: GameState.maxMp, playerStatus: createPlayerStatus(), isDead: false };
@@ -465,6 +523,11 @@ export function renderStatPanel(scene: GameScene): void {
     p.add(scene.add.text(GAME_WIDTH / 2, oy + th / 2, '◆  属 性 面 板  ◆', { fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
     p.add(scene.add.text(ox + ow - 40, oy + th / 2, '✕', { fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true })
       .on('pointerover', function (this: any) { this.setColor('#ff8888'); }).on('pointerout', function (this: any) { this.setColor('#cc6666'); }).on('pointerdown', () => closeStatPanel(scene)));
+    // 商城入口（购买洗点符等）：先关属性面板再开商城，避免菜单嵌套
+    p.add(scene.add.text(ox + ow - 118, oy + th / 2, '商城', { fontSize: '15px', color: '#ffcc88', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#33220088' }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+      .on('pointerover', function (this: any) { this.setColor('#ffe0a0'); this.setBackgroundColor('#553300aa'); })
+      .on('pointerout', function (this: any) { this.setColor('#ffcc88'); this.setBackgroundColor('#33220088'); })
+      .on('pointerdown', () => { closeStatPanel(scene); openMall(scene); }));
 
     // Two-column layout with generous spacing
     const colW = (ow - 100) / 2;
@@ -657,7 +720,7 @@ export function renderStatPanel(scene: GameScene): void {
 
     // Footer
     const fy = oy + oh - 28; const ft = scene.add.graphics(); ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
-    p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, 'C键 开关  |  ESC 关闭  |  属性点一旦分配不可退回（洗点请待商城道具）  |  卸下装备请开背包(B)', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+    p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, 'C键 开关  |  ESC 关闭  |  属性点已分配后如需洗点，请到商城购买「洗点符」使用  |  卸下装备请开背包(B)', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
   }
 
 export function showKidoPanel(scene: GameScene): void {

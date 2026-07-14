@@ -86,6 +86,8 @@ export interface PlayerWorld {
   dungeon: ActiveDungeon | null;
   // 六大力量体系解锁（始解/卍解/虚化/完现术/圣文字/狱解）
   unlocks: string[];
+  // 始解所选斩魄刀真名（与 unlocks 中的 'shikai' 配套；始解/卍解技能表均以此查表，必须持久化）
+  zanpakuto: string;
   // 鬼道（服务端权威 + 持久化，与背包/金币同等重要）
   kidoSchool: string | null;
   kidoNodes: Record<string, number>;
@@ -114,7 +116,7 @@ function seedWorld(): PlayerWorld {
     quests: {}, completedQuests: [], bestiary: {}, gatherNodes: {},
     dailyClaimed: { date: '', ids: [] }, weeklyClaimed: { week: '', ids: [] },
     dungeonWeekly: { week: '', count: 0 }, dungeon: null,
-    unlocks: [], kidoSchool: null, kidoNodes: {}, kidoEquipped: [], kidoPoints: 0,
+    unlocks: [], zanpakuto: '', kidoSchool: null, kidoNodes: {}, kidoEquipped: [], kidoPoints: 0,
     bestiaryTierClaimed: [], unlockedTitles: [], activeTitle: null,
   };
 }
@@ -157,6 +159,7 @@ export class WorldService {
     if (data.dungeonWeekly) w.dungeonWeekly = data.dungeonWeekly;
     if (data.dungeon !== undefined) w.dungeon = data.dungeon;
     if (Array.isArray(data.unlocks)) w.unlocks = data.unlocks;
+    if (typeof data.zanpakuto === 'string') w.zanpakuto = data.zanpakuto;
     if (typeof data.kidoSchool === 'string' || data.kidoSchool === null) w.kidoSchool = data.kidoSchool;
     if (data.kidoNodes) w.kidoNodes = data.kidoNodes;
     if (Array.isArray(data.kidoEquipped)) w.kidoEquipped = data.kidoEquipped;
@@ -204,10 +207,17 @@ export class WorldService {
     return newly;
   }
 
-  /** 解锁六大力量体系之一（始解/卍解/虚化…）。 */
-  addUnlock(pw: PlayerWorld, key: string): OpResult {
+  /** 解锁六大力量体系之一（始解/卍解/虚化…）。zanpakuto 仅在始解时传入，随解锁一并持久化「所选斩魄刀真名」。 */
+  addUnlock(pw: PlayerWorld, key: string, zanpakuto?: string): OpResult {
     if (pw.unlocks.includes(key)) return { ok: false, msg: 'already' };
     pw.unlocks.push(key);
+    if (key === 'shikai' && zanpakuto) pw.zanpakuto = zanpakuto;
+    return { ok: true, msg: 'ok' };
+  }
+
+  /** 设置/修正所选斩魄刀真名（持久化）。用于始解首次解锁落库，以及旧档已解锁但未存刀名时的迁移补存。 */
+  setZanpakuto(pw: PlayerWorld, zanpakuto: string): OpResult {
+    pw.zanpakuto = zanpakuto || '';
     return { ok: true, msg: 'ok' };
   }
 
@@ -475,6 +485,29 @@ export class WorldService {
   private pushAndReturnId(pw: PlayerWorld, item: WorldItem): string {
     pw.inventory.push({ ...item, quantity: 1 });
     return pw.inventory[pw.inventory.length - 1].id;
+  }
+
+  // ───────────────── 商城购买 ─────────────────
+  /** 商城购买（联机权威）。当前仅上架「洗点符」，价格随等级变化（沿用 10-角色系统 §8 洗点费用 = 等级×200 金币）。 */
+  mallBuy(pw: PlayerWorld, itemId: string): OpResult {
+    if (itemId !== 'respec_charm') return { ok: false, msg: '商城无此商品' };
+    const price = (pw.level || 1) * 200;
+    if (!this.spendGold(pw, price)) return { ok: false, msg: '金币不足' };
+    this.grantItem(pw, { id: 'respec_charm', name: '洗点符', type: 'consumable', desc: '使用后退还全部已分配属性点，可重新分配', quantity: 1 });
+    return { ok: true, msg: `购买 洗点符（花费 ${price} 金币）` };
+  }
+
+  /** 洗点（联机权威）。消耗背包中的洗点符，退还全部已分配属性点到 statPoints。客户端不可自减，必须由服务端执行。 */
+  respec(pw: PlayerWorld): OpResult {
+    const sum = (pw.allocatedHP || 0) + (pw.allocatedMP || 0) + (pw.allocatedATK || 0) + (pw.allocatedDEF || 0) + (pw.allocatedMATK || 0) + (pw.allocatedMDEF || 0) + (pw.allocatedSPD || 0);
+    if (sum <= 0) return { ok: false, msg: '当前没有已分配的点数' };
+    const charm = pw.inventory.find(i => i.id === 'respec_charm' && i.type === 'consumable');
+    if (!charm) return { ok: false, msg: '没有洗点符，请先到商城购买' };
+    charm.quantity -= 1;
+    if (charm.quantity <= 0) pw.inventory = pw.inventory.filter(i => i !== charm);
+    pw.allocatedHP = 0; pw.allocatedMP = 0; pw.allocatedATK = 0; pw.allocatedDEF = 0; pw.allocatedMATK = 0; pw.allocatedMDEF = 0; pw.allocatedSPD = 0;
+    pw.statPoints += sum;
+    return { ok: true, msg: `洗点成功，已退还 ${sum} 点属性` };
   }
 
   // ───────────────── 制造 ─────────────────

@@ -228,7 +228,11 @@ export class GameRoom extends Room<GameRoomState> {
           }
           break;
         case 'unlock':
-          res = world.addUnlock(pw, String(data.key || ''));
+          res = world.addUnlock(pw, String(data.key || ''), data.zanpakuto ? String(data.zanpakuto) : undefined);
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
+        case 'setZanpakuto':
+          res = world.setZanpakuto(pw, String(data.zanpakuto || ''));
           if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
           break;
         case 'kidoSetSchool':
@@ -256,6 +260,14 @@ export class GameRoom extends Room<GameRoomState> {
           // 仅当活动副本匹配时才清，避免误清他人/其他副本。
           world.completeDungeon(pw, Number(data.dungeonId) || 0);
           res = { ok: true, msg: '已放弃副本进度' };
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
+        case 'mallBuy':
+          res = world.mallBuy(pw, String(data.itemId || ''));
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
+        case 'respec':
+          res = world.respec(pw);
           if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
           break;
       }
