@@ -16,6 +16,8 @@ import { WebSocketTransport } from '@colyseus/ws-transport';
 import { GameRoom } from './rooms/GameRoom';
 import { BattleRoom } from './rooms/BattleRoom';
 import { DungeonRoom } from './rooms/DungeonRoom';
+import { PvpRoom } from './rooms/PvpRoom';
+import { startArenaTicker } from './arenaService';
 import authRoutes from './auth';
 
 const PORT = Number(process.env.PORT) || 2567;
@@ -37,9 +39,13 @@ gameServer.define('game', GameRoom);
 gameServer.define('battle', BattleRoom).filterBy(['monsterId']);
 // dungeon 房按 dungeonId 隔离：每副本一个独立实例，多人同场；续打复用同实例
 gameServer.define('dungeon', DungeonRoom).filterBy(['dungeonId']);
+// pvp 房：独立匹配房间（由 arenaService 动态创建），玩家 vs 玩家
+gameServer.define('pvp', PvpRoom);
+// 启动竞技场匹配撮合（每秒一次；凑不齐 60s 超时取消，绝不 AI 替代）
+startArenaTicker();
 
 gameServer.listen(PORT).then(() => {
   console.log(`[联机] Colyseus 权威游戏服已启动：ws://localhost:${PORT}`);
   console.log(`[联机] REST API：http://localhost:${PORT}/api`);
-  console.log('[联机] 已注册房间：game(共享地图) / battle(权威战斗) / dungeon(副本)');
+  console.log('[联机] 已注册房间：game(共享地图) / battle(权威战斗) / dungeon(副本) / pvp(竞技场)');
 });

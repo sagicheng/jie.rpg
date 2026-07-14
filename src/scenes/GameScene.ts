@@ -1,4 +1,4 @@
-﻿import Phaser from 'phaser';
+import Phaser from 'phaser';
 import { matId, NODE_TO_MATERIAL } from '../data/materials';
 import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES } from '../config';
 import { DialogueBox, DialogueLine } from '../ui/DialogueBox';
@@ -13,7 +13,7 @@ import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
-import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
+import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching } from '../ui/panels';
 import { getClient } from '../net/Net';
 import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
 
@@ -95,6 +95,7 @@ export class GameScene extends Phaser.Scene {
   public bestiaryDetailContainer: Phaser.GameObjects.Container | null = null;
   public shopPanel: Phaser.GameObjects.Container | null = null;
   public mallPanel: Phaser.GameObjects.Container | null = null;
+  public arenaPanel: Phaser.GameObjects.Container | null = null;
   private lastShopItems: any[] = [];
   /** 旧档迁移：已始解但未存刀名，仅提示一次重选以恢复技能。 */
   private shikaiReselectDone = false;
@@ -1285,6 +1286,23 @@ export class GameScene extends Phaser.Scene {
         room.onMessage('teamError', (msg: string) => {
           this.showWorldNotif(msg, false);
         });
+
+        // ═══ PVP 竞技场消息 ═══
+        // 匹配成功：服务端已创建 PvpRoom 并通过 arenaService 下发房间号
+        room.onMessage('arenaMatch', (data: { roomId: string; mode: string; team: string; token: string }) => {
+          this.enterPvpBattle(data);
+        });
+        // 匹配超时（60s 未凑齐真人）：取消并提示
+        room.onMessage('arenaQueueTimeout', () => {
+          setArenaMatching(false);
+          this.showWorldNotif('匹配超时：未凑齐对手，已取消（绝不 AI 替代）', false);
+        });
+        // 竞技场权威状态（面板展示用）
+        room.onMessage('arenaStatus', (s: any) => {
+          setArenaStatus(s);
+          // 用缓存重渲染面板，不再调用 openArenaPanel（避免重新请求→服务端回 arenaStatus→再渲染的死循环）
+          if (this.arenaPanel) renderArenaPanel(this);
+        });
         room.onError((code: number, msg: string) => console.warn('[game] 房间错误', code, msg));
       })
       .catch((e: any) => console.warn('[game] 联机房间连接失败，单机模式继续', e));
@@ -1533,110 +1551,155 @@ export class GameScene extends Phaser.Scene {
     c.add([g, t, z]);
   }
 
-  /** 打开/刷新独立组队面板：待处理邀请 + 成员操作 + 邀请队员。 */
+  /** 打开/刷新独立组队面板（全屏风格，与 C 属性 / B 背包面板一致）。 */
   private openTeamPanel(): void {
     this.closeTeamPanel();
     const w = GAME_WIDTH, h = GAME_HEIGHT;
     const c = this.add.container(0, 0).setDepth(500).setScrollFactor(0);
 
-    const dim = this.add.graphics();
-    dim.fillStyle(0x000000, 0.5); dim.fillRect(0, 0, w, h);
-    c.add(dim);
+    // 遮罩（对齐 T 界面：整屏半透明，拦截点击）
+    const ov = this.add.graphics();
+    ov.fillStyle(0, 0.55); ov.fillRect(0, 0, w, h);
+    ov.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
+    c.add(ov);
 
-    const panelW = 430, panelH = 470;
-    const px = (w - panelW) / 2, py = (h - panelH) / 2;
-    const panel = this.add.graphics();
-    panel.fillStyle(0x16162a, 0.97); panel.fillRoundedRect(px, py, panelW, panelH, 14);
-    panel.lineStyle(2, 0xc9a96e, 0.8); panel.strokeRoundedRect(px, py, panelW, panelH, 14);
-    c.add(panel);
-    c.add(this.add.text(px + panelW / 2, py + 26, '队伍面板', { fontSize: '22px', color: '#ffe8b0', fontStyle: 'bold' }).setOrigin(0.5));
+    // T 风格文字按钮助手：[ 文字 ] + backgroundColor + hover
+    const TBTN = (x: number, y: number, label: string, color: string, hover: string, cb: () => void): void => {
+      const t = this.add.text(x, y, `[ ${label} ]`, { fontSize: '12px', color, fontStyle: 'bold', backgroundColor: '#002233aa', padding: { x: 10, y: 5 } }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
+      t.on('pointerover', () => t.setColor(hover));
+      t.on('pointerout', () => t.setColor(color));
+      t.on('pointerdown', cb);
+      c.add(t);
+    };
 
-    const closeZ = this.add.zone(px + panelW - 22, py + 22, 32, 32).setInteractive({ useHandCursor: true });
-    c.add(closeZ);
-    c.add(this.add.text(px + panelW - 22, py + 22, '✕', { fontSize: '20px', color: '#ff8888' }).setOrigin(0.5));
-    closeZ.on('pointerdown', () => this.closeTeamPanel());
+    const candidatesAll = (!this.inDungeon)
+      ? [...this.remotePlayers.entries()].filter(([sid]) => !this.teamMembers.some((m) => m.sid === sid))
+      : [];
 
-    let y = py + 58;
+    // 估算高度（min 470 对齐 T，封顶屏幕-40），行高 64
+    const rowH = 64;
+    let rows = 0;
+    if (this.pendingInvites.length > 0) rows += 1 + this.pendingInvites.length;
+    if (this.teamMembers.length > 0) rows += 1 + this.teamMembers.length + 1;
+    rows += 2;
+    if (this.teamPanelInviteOpen) rows += candidatesAll.length;
+    const mw = 560;
+    const mh = Math.max(470, Math.min(70 + rows * rowH + 24, h - 40));
+    const mx = (w - mw) / 2, my = (h - mh) / 2;
 
-    // —— 待处理邀请（多人同时邀请逐条处理）——
+    // 面板背景（对齐 T：0x121222 + 棕金描边 0x6a5a3a）
+    const bg = this.add.graphics();
+    bg.fillStyle(0x121222, 0.985); bg.fillRoundedRect(mx, my, mw, mh, 12);
+    bg.lineStyle(2, 0x6a5a3a, 0.7); bg.strokeRoundedRect(mx, my, mw, mh, 12);
+    c.add(bg);
+
+    // 标题（对齐 T：居中 ◆ 标题 ◆）
+    c.add(this.add.text(mx + mw / 2, my + 26, '◆  队 伍 面 板  ◆', { fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5));
+
+    // 关闭按钮（对齐 T：✕ + hover 变色）
+    const closeT = this.add.text(mx + mw - 30, my + 26, '✕', { fontSize: '20px', color: '#cc6666', padding: { x: 6, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    closeT.on('pointerover', function (this: any) { this.setColor('#ff8888'); });
+    closeT.on('pointerout', function (this: any) { this.setColor('#cc6666'); });
+    closeT.on('pointerdown', () => this.closeTeamPanel());
+    c.add(closeT);
+
+    // 副标题说明（对齐 T）
+    c.add(this.add.text(mx + mw / 2, my + 50, '组队后可一同挑战副本（竞技场不可组队）', { fontSize: '11px', color: '#6677aa', padding: { y: 2 } }).setOrigin(0.5));
+
+    const listX = mx + 24;
+    const listW = mw - 48;
+    let y = my + 70;
+
+    // 行卡片（对齐 T：圆角背景 + 青蓝描边）
+    const drawRow = (ry: number, hgt: number, accent: number): void => {
+      const g = this.add.graphics();
+      g.fillStyle(0x152028, 0.6); g.fillRoundedRect(listX, ry, listW, hgt, 8);
+      g.lineStyle(1, accent, 0.6); g.strokeRoundedRect(listX, ry, listW, hgt, 8);
+      c.add(g);
+    };
+
+    // ── 待处理邀请 ──
     if (this.pendingInvites.length > 0) {
-      c.add(this.add.text(px + 18, y, `待处理邀请 (${this.pendingInvites.length})`, { fontSize: '15px', color: '#ffd9a0', fontStyle: 'bold' }));
+      c.add(this.add.text(listX, y, `待处理邀请 (${this.pendingInvites.length})`, { fontSize: '14px', color: '#ffd980', fontStyle: 'bold', padding: { y: 2 } }));
       y += 26;
       for (const inv of this.pendingInvites) {
-        c.add(this.add.text(px + 18, y + 14, `${inv.fromName} 邀请你组队`, { fontSize: '13px', color: '#ffffff' }).setOrigin(0, 0.5));
-        this.teamPanelButton(c, px + panelW - 152, y + 14, 62, 26, '接受', 0x1a3a1a, '#88ff88', () => {
+        drawRow(y, rowH - 8, 0xc9a96e);
+        c.add(this.add.text(listX + 14, y + (rowH - 8) / 2, `${inv.fromName} 邀请你组队`, { fontSize: '14px', color: '#ffffff', padding: { y: 2 } }).setOrigin(0, 0.5));
+        TBTN(listX + listW - 150, y + (rowH - 8) / 2, '接受', '#88ee88', '#ffffff', () => {
           this.gameRoom?.send('respondInvite', { teamId: inv.teamId, accept: true });
           this.removePendingInvite(inv.teamId, inv.fromSid);
           this.openTeamPanel();
         });
-        this.teamPanelButton(c, px + panelW - 82, y + 14, 62, 26, '拒绝', 0x3a1a1a, '#ff8888', () => {
+        TBTN(listX + listW - 78, y + (rowH - 8) / 2, '拒绝', '#ff8888', '#ffffff', () => {
           this.gameRoom?.send('respondInvite', { teamId: inv.teamId, accept: false });
           this.removePendingInvite(inv.teamId, inv.fromSid);
           this.openTeamPanel();
         });
-        y += 40;
+        y += rowH;
       }
       y += 8;
     }
 
-    // —— 队伍成员 ——
+    // ── 队伍成员 ──
     if (this.teamMembers.length > 0) {
-      c.add(this.add.text(px + 18, y, `队伍成员 (${this.teamMembers.length}/4)`, { fontSize: '15px', color: '#ffd9a0', fontStyle: 'bold' }));
+      c.add(this.add.text(listX, y, `队伍成员 (${this.teamMembers.length}/4)`, { fontSize: '14px', color: '#ffd980', fontStyle: 'bold', padding: { y: 2 } }));
       y += 26;
       const amLeader = this.teamLeaderSid === this.mySessionId;
       for (const m of this.teamMembers) {
         const isLeader = m.sid === this.teamLeaderSid;
         const isMe = m.sid === this.mySessionId;
-        const label = isLeader ? `★ ${m.name}` : isMe ? `▶ ${m.name}` : `  ${m.name}`;
-        c.add(this.add.text(px + 18, y + 14, label, { fontSize: '13px', color: isMe ? '#88ff88' : '#ffffff' }).setOrigin(0, 0.5));
+        const label = isLeader ? `★ ${m.name}（队长）` : isMe ? `▶ ${m.name}（你）` : `  ${m.name}`;
+        drawRow(y, rowH - 8, isMe ? 0xc9a96e : 0x3a5a6a);
+        c.add(this.add.text(listX + 14, y + (rowH - 8) / 2, label, { fontSize: '14px', color: isMe ? '#88ff88' : '#ffffff', padding: { y: 2 } }).setOrigin(0, 0.5));
         if (amLeader && !isMe) {
-          this.teamPanelButton(c, px + panelW - 80, y + 14, 64, 26, '踢出', 0x3a1a1a, '#ff8888', () => {
+          TBTN(listX + listW - 78, y + (rowH - 8) / 2, '踢出', '#ff8888', '#ffffff', () => {
             this.gameRoom?.send('kickMember', { targetSid: m.sid });
             this.openTeamPanel();
           });
         } else if (isMe && !amLeader) {
-          this.teamPanelButton(c, px + panelW - 80, y + 14, 64, 26, '退出', 0x3a2a1a, '#ffcc88', () => {
+          TBTN(listX + listW - 78, y + (rowH - 8) / 2, '退出', '#ffcc88', '#ffffff', () => {
             this.gameRoom?.send('leaveTeam', {});
           });
         }
-        y += 34;
+        y += rowH;
       }
+      y += 6;
       if (amLeader) {
-        this.teamPanelButton(c, px + 18, y + 15, 120, 30, '解散队伍', 0x3a1a1a, '#ff8888', () => {
-          this.gameRoom?.send('disbandTeam', {});
-        });
+        TBTN(listX, y + 16, '解散队伍', '#ff8888', '#ffffff', () => { this.gameRoom?.send('disbandTeam', {}); });
       } else {
-        this.teamPanelButton(c, px + 18, y + 15, 120, 30, '退出队伍', 0x3a2a1a, '#ffcc88', () => {
-          this.gameRoom?.send('leaveTeam', {});
-        });
+        TBTN(listX, y + 16, '退出队伍', '#ffcc88', '#ffffff', () => { this.gameRoom?.send('leaveTeam', {}); });
       }
-      y += 42;
+      y += 44;
     }
 
-    // —— 邀请附近队员（展开列表）——
-    if (!this.inDungeon) {
-      const inviteLabel = this.teamPanelInviteOpen ? '▾ 邀请队员' : '▸ 邀请队员';
-      this.teamPanelButton(c, px + 18, y + 15, 150, 30, inviteLabel, 0x1a2a3a, '#88ccff', () => {
-        this.teamPanelInviteOpen = !this.teamPanelInviteOpen;
-        this.openTeamPanel();
-      });
-      y += 40;
-      if (this.teamPanelInviteOpen) {
-        const candidates = [...this.remotePlayers.entries()].filter(([sid]) => !this.teamMembers.some((m) => m.sid === sid));
-        if (candidates.length === 0) {
-          c.add(this.add.text(px + 24, y + 10, '附近没有可邀请的玩家', { fontSize: '12px', color: '#888899' }));
-          y += 22;
-        } else {
-          for (const [sid, rp] of candidates) {
-            if (y > py + panelH - 40) break; // 防止溢出面板
-            this.teamPanelButton(c, px + 18, y + 14, panelW - 36, 26, `邀请 ${rp.name}`, 0x16261a, '#aaffaa', () => {
-              this.gameRoom?.send('invite', { targetSid: sid });
-              this.showWorldNotif('已发送组队邀请', true);
-              this.teamPanelInviteOpen = false;
-              this.openTeamPanel();
-            });
-            y += 30;
-          }
+    // ── 邀请队员（始终显示） ──
+    c.add(this.add.text(listX, y, '邀请队员', { fontSize: '14px', color: '#ffd980', fontStyle: 'bold', padding: { y: 2 } }));
+    y += 26;
+    const blockBottom = my + mh - 16;
+    TBTN(listX, y + 4, this.teamPanelInviteOpen ? '▾ 收起列表' : '▸ 展开附近玩家', '#88ccff', '#ffffff', () => {
+      this.teamPanelInviteOpen = !this.teamPanelInviteOpen;
+      this.openTeamPanel();
+    });
+    y += 38;
+    if (this.teamPanelInviteOpen) {
+      if (candidatesAll.length === 0) {
+        c.add(this.add.text(listX + 14, y, '附近没有可邀请的玩家', { fontSize: '13px', color: '#667788', padding: { y: 2 } }));
+      } else {
+        let shown = 0;
+        for (const [sid, rp] of candidatesAll) {
+          if (y + rowH > blockBottom) break;
+          drawRow(y, rowH - 8, 0x3a5a6a);
+          c.add(this.add.text(listX + 14, y + (rowH - 8) / 2, rp.name, { fontSize: '14px', color: '#ffffff', padding: { y: 2 } }).setOrigin(0, 0.5));
+          TBTN(listX + listW - 78, y + (rowH - 8) / 2, '邀请', '#99dd99', '#ffffff', () => {
+            this.gameRoom?.send('invite', { targetSid: sid });
+            this.showWorldNotif('已发送组队邀请', true);
+            this.teamPanelInviteOpen = false;
+            this.openTeamPanel();
+          });
+          y += rowH; shown++;
+        }
+        if (shown < candidatesAll.length) {
+          c.add(this.add.text(listX + 14, y, `... 还有 ${candidatesAll.length - shown} 位玩家未显示`, { fontSize: '12px', color: '#556677', padding: { y: 2 } }));
         }
       }
     }
@@ -1644,12 +1707,10 @@ export class GameScene extends Phaser.Scene {
     this.teamPanelFull = c;
   }
 
-  /** 旧接口兼容：收到邀请直接走队列 + 开面板。 */
   private showInvitePrompt(data: { fromName: string; fromSid: string; teamId: string }): void {
     this.addPendingInvite(data);
     this.openTeamPanel();
   }
-
   /** 副本传送阵确认界面：有进行中副本时显示「重连进入（第N阶）」+「放弃进度」，否则「进入副本」。 */
   private showDungeonConfirm(zone: number): void {
     if (this.dungeonConfirmOpen) return;
@@ -1782,6 +1843,25 @@ export class GameScene extends Phaser.Scene {
       monsterId,
       ownerSessionId: this.mySessionId,
       isTeamPull: true,   // 被队友拉进来的，不发 startbattle
+    });
+    this.scene.pause();
+  }
+
+  /** PVP 竞技场：收到 arenaMatch 后暂停地图，启动 PvpBattleScene（携带房间号/队伍/负载）。 */
+  private enterPvpBattle(data: { roomId: string; mode: string; team: string; token: string }): void {
+    if (!this.gameRoom) return;
+    setArenaMatching(false);
+    if (this.arenaPanel) closeArenaPanel(this);
+    const loadout = this.buildBattleLoadout();
+    this.scene.launch('PvpBattleScene', {
+      roomId: data.roomId,
+      token: data.token,
+      charId: this.characterId,
+      team: data.team,
+      gameSid: this.mySessionId,
+      playerName: GameState.playerName || '勇者',
+      mode: data.mode === '4v4' ? '4v4' : '1v1',
+      loadout,
     });
     this.scene.pause();
   }

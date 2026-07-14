@@ -41,12 +41,28 @@ export interface PlayerWorld {
   bestiaryTierClaimed?: number[];
   unlockedTitles?: string[];
   activeTitle?: string | null;
+  arena?: {
+    season: number; points: number; tier: string; seasonBestTier: string;
+    bestTierEver: string; weeklyUsed: number; week: string;
+    history: Array<{ season: number; tier: string; points: number }>;
+  } | null;
 }
 
 /** 副本进度客户端镜像（供地图传送阵提示使用）。 */
 export let dungeonProgress: { dungeonId: number; stage: number } | null = null;
 export let dungeonWeekly: { week: string; count: number } = { week: '', count: 0 };
 export const DUNGEON_WEEKLY_CAP = 3;
+
+/** PVP 竞技场状态客户端镜像（供 C 面板 / 竞技场面板展示，来自 worldSync 的 pw.arena）。 */
+export let arena: any = null;
+export const ARENA_WEEKLY_CAP_CLIENT = 20;
+export const ARENA_TIERS_CLIENT: { id: string; name: string }[] = [
+  { id: 'bronze', name: '青铜' }, { id: 'silver', name: '白银' }, { id: 'gold', name: '黄金' },
+  { id: 'platinum', name: '白金' }, { id: 'diamond', name: '钻石' }, { id: 'king', name: '王者' },
+];
+export function tierNameById(id: string): string {
+  return ARENA_TIERS_CLIENT.find((t) => t.id === id)?.name || '青铜';
+}
 
 let activeRoom: any = null;
 let disconnectNotifier: ((msg: string) => void) | null = null;
@@ -127,6 +143,16 @@ export function requestKidoEquip(nodeId: string): boolean { return sendIntent('k
 export function requestClaimBestiaryTier(tierId: number): boolean { return sendIntent('claimBestiaryTier', { tierId }); }
 /** 装备/卸下称号。 */
 export function requestSetTitle(id: string | null): boolean { return sendIntent('setTitle', { id }); }
+
+// ——— PVP 竞技场匹配（联机权威）———
+/** 进入竞技场匹配队列。mode in {'1v1','4v4'}；token 用于 PvpRoom 鉴权。断连被拒。 */
+export function requestArenaQueue(mode: string, token: string): boolean {
+  return sendIntent('arenaQueue', { mode, token });
+}
+/** 取消竞技场匹配。 */
+export function requestArenaCancel(): boolean { return sendIntent('arenaCancel', {}); }
+/** 请求竞技场状态（服务端回 arenaStatus 消息）。 */
+export function requestArenaStatus(): boolean { return sendIntent('arenaStatus', {}); }
 
 function mapItem(w: WorldItem): any {
   return {
@@ -221,6 +247,9 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
   // 副本进度镜像（地图传送阵提示用）
   dungeonProgress = pw.dungeon ? { dungeonId: pw.dungeon.dungeonId, stage: pw.dungeon.stage ?? 1 } : null;
   dungeonWeekly = pw.dungeonWeekly ? { week: pw.dungeonWeekly.week, count: pw.dungeonWeekly.count } : { week: '', count: 0 };
+
+  // PVP 竞技场状态镜像（C 面板 / 竞技场面板展示）
+  arena = pw.arena ? { ...pw.arena } : null;
 
   // 通知 UIScene 更新数值栏
   if (scene && scene.scene) scene.scene.get('UIScene').events.emit('updateStats');

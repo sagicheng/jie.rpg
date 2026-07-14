@@ -42,6 +42,8 @@ export class CombatPlayer extends Schema {
   @type('string') sessionId = '';
   @type('string') name = '';
   @type('string') color = '';
+  /** PVP 阵营：A / B（区分敌我，绝不借用敌人 AI）。 */
+  @type('string') team = 'A';
   @type('number') hp = 0;
   @type('number') maxHp = 0;
   @type('number') atk = 0;

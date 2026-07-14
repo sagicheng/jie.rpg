@@ -9,6 +9,8 @@ import { Room, Client } from '@colyseus/core';
 import { GameRoomState, GamePlayer, ChatMessage, MonsterState } from '../schema';
 import { world, type OpResult } from '../world';
 import { findAccountByToken, getCharacter, saveCharacterWorld } from '../db';
+import { enqueueArena, dequeueArena, queueSize } from '../arenaService';
+import { isArenaOpen, ARENA_WEEKLY_CAP } from '../arena';
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
 const TEAM_MAX = 4;
@@ -270,6 +272,28 @@ export class GameRoom extends Room<GameRoomState> {
           res = world.respec(pw);
           if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
           break;
+        // ——— PVP 竞技场匹配 ———
+        case 'arenaQueue': {
+          const token = String(data.token || '');
+          const charId = sessionCharMap.get(client.sessionId);
+          if (!token || charId === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          const mode = data.mode === '4v4' ? '4v4' : '1v1';
+          world.ensureArena(pw);
+          if (!isArenaOpen()) { res = { ok: false, msg: '竞技场仅在每周五 18:00-24:00 开放' }; break; }
+          if (pw.arena.weeklyUsed >= ARENA_WEEKLY_CAP) { res = { ok: false, msg: `本周匹配次数已用完（${ARENA_WEEKLY_CAP}次）` }; break; }
+          enqueueArena({ sid: client.sessionId, client, mode, points: pw.arena.points, charId, token, enqueuedAt: Date.now() });
+          res = { ok: true, msg: `已进入${mode === '4v4' ? '4v4' : '1v1'}匹配队列`, data: { mode, queueSize: queueSize(mode) } };
+          break;
+        }
+        case 'arenaCancel':
+          dequeueArena(client.sessionId);
+          res = { ok: true, msg: '已取消匹配' };
+          break;
+        case 'arenaStatus':
+          // 纯状态查询：直接推 arenaStatus 消息；不发 intentResult 回执
+          // （否则客户端中央会反复弹 "ok"，且会触发面板重渲染→再请求→死循环）
+          client.send('arenaStatus', world.arenaStatus(pw));
+          return;
         case 'devGrantSet':
           // Dev 作弊键(Ctrl+E)：发放同区域同品质测试套装（联机权威，落库以免重连丢失）
           res = world.grantSetTestGear(pw, Number(data.zone) || 1, String(data.quality || 'blue'));
@@ -555,6 +579,8 @@ export class GameRoom extends Room<GameRoomState> {
   }
 
   onLeave(client: Client) {
+    // 退出竞技场匹配队列（避免残留假在线）
+    dequeueArena(client.sessionId);
     // 自动退出队伍
     removeFromTeam(this, client.sessionId);
     const teamId = playerTeam.get(client.sessionId); // 重入队?

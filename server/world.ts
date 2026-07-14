@@ -23,6 +23,7 @@ import type { EquipSlot } from '../src/systems/Inventory';
 import { KIDO_NODES, TIER_LOCK, ALL_KIDO_NODES } from '../src/systems/Kido';
 import { getBestiaryTierReached, BESTIARY_TIERS, BESTIARY_TITLES, NAMED_ENEMIES } from '../src/systems/BestiaryData';
 import { saveCharacterWorld } from './db';
+import { newArenaState, ensureArena as arenaEnsure, applyResult as arenaApply, tierName, isArenaOpen, ARENA_WEEKLY_CAP, seasonRewardFor, type ArenaState, type ArenaResult } from './arena';
 
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1080;
@@ -101,6 +102,8 @@ export interface PlayerWorld {
   bestiaryTierClaimed: number[];
   unlockedTitles: string[];
   activeTitle: string | null;
+  // PVP 竞技场（服务端权威 + 持久化）
+  arena: ArenaState;
 }
 
 export interface OpResult { ok: boolean; msg: string; data?: any; }
@@ -122,6 +125,7 @@ function seedWorld(): PlayerWorld {
     dungeonWeekly: { week: '', count: 0 }, dungeon: null,
     unlocks: [], zanpakuto: '', kidoSchool: null, kidoNodes: {}, kidoEquipped: [], kidoPoints: 0,
     bestiaryTierClaimed: [], unlockedTitles: [], activeTitle: null,
+    arena: newArenaState(),
   };
 }
 
@@ -171,6 +175,8 @@ export class WorldService {
     if (Array.isArray(data.bestiaryTierClaimed)) w.bestiaryTierClaimed = data.bestiaryTierClaimed;
     if (Array.isArray(data.unlockedTitles)) w.unlockedTitles = data.unlockedTitles;
     if (typeof data.activeTitle === 'string' || data.activeTitle === null) w.activeTitle = data.activeTitle;
+    if (data.arena && typeof data.arena === 'object') w.arena = data.arena as ArenaState;
+    else w.arena = newArenaState();
     this.worlds.set(sid, w);
     return w;
   }
@@ -280,6 +286,47 @@ export class WorldService {
     if (id !== null && !pw.unlockedTitles.includes(id)) return { ok: false, msg: 'not unlocked' };
     pw.activeTitle = (pw.activeTitle === id) ? null : id;
     return { ok: true, msg: 'ok' };
+  }
+
+  // ───────────────── PVP 竞技场（服务端权威 + 持久化） ─────────────────
+  /** 确保 arena 字段存在并做赛季/周次重置；若跨越赛季边界，发放刚结束赛季的结算奖励。 */
+  ensureArena(pw: PlayerWorld): { seasonEndedTier?: string } {
+    const r = arenaEnsure(pw, new Date());
+    if (r.seasonEndedTier) this.grantArenaSeasonReward(pw, r.seasonEndedTier);
+    return r;
+  }
+
+  /** 竞技场状态（供客户端面板展示）。 */
+  arenaStatus(pw: PlayerWorld): any {
+    this.ensureArena(pw);
+    const a = pw.arena;
+    return {
+      open: isArenaOpen(),
+      season: a.season,
+      points: a.points,
+      tier: a.tier,
+      tierName: tierName(a.tier),
+      seasonBestTier: a.seasonBestTier,
+      bestTierEver: a.bestTierEver,
+      bestTierEverName: tierName(a.bestTierEver),
+      weeklyUsed: a.weeklyUsed,
+      weeklyCap: ARENA_WEEKLY_CAP,
+      weeklyLeft: Math.max(0, ARENA_WEEKLY_CAP - a.weeklyUsed),
+      history: a.history,
+    };
+  }
+
+  /** 记录一场 PVP 结果（胜/负），更新积分/段位/赛季最佳/历史最佳。 */
+  arenaRecordResult(pw: PlayerWorld, won: boolean): ArenaResult {
+    return arenaApply(pw, won);
+  }
+
+  /** 发放赛季结算奖励（按赛季最高段位）。 */
+  grantArenaSeasonReward(pw: PlayerWorld, tierId: string): void {
+    const r = seasonRewardFor(tierId);
+    pw.gold += r.gold;
+    const titleId = `arena_${tierId}`;
+    if (!pw.unlockedTitles.includes(titleId)) pw.unlockedTitles.push(titleId);
   }
 
   remove(sid: string): void { this.worlds.delete(sid); }

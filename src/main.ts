@@ -6,6 +6,7 @@ import { GameScene } from './scenes/GameScene';
 import { CreateCharacterScene } from './scenes/CreateCharacterScene';
 import { BattleScene } from './scenes/BattleScene';
 import { MultiBattleScene } from './scenes/MultiBattleScene';
+import { PvpBattleScene } from './scenes/PvpBattleScene';
 import { DungeonMapScene } from './scenes/DungeonMapScene';
 import { UIScene } from './scenes/UIScene';
 
@@ -22,7 +23,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, TitleScene, CreateCharacterScene, GameScene, BattleScene, DungeonMapScene, MultiBattleScene, UIScene],
+  scene: [BootScene, TitleScene, CreateCharacterScene, GameScene, BattleScene, DungeonMapScene, MultiBattleScene, PvpBattleScene, UIScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
