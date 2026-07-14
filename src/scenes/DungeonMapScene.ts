@@ -57,6 +57,7 @@ export class DungeonMapScene extends Phaser.Scene {
   private rewardTaken = false;
   private clearHandled = false;   // phase=clear 是否已处理（返回传送阵）
   private lastReward: RewardInfo | null = null;
+  private exiting = false;  // 正在退出副本（防止 onLeave / 自动返回重复触发 exitToGame 卡死）
   private dungeonRoom: any = null;
   private dungeonRoomId = ''; // 缓存 roomId，避免 enterBattle 早于连接完成时传空
 
@@ -662,6 +663,7 @@ export class DungeonMapScene extends Phaser.Scene {
 
   private exitToGame(): void {
     if (this.isTransitioning) return;
+    this.exiting = true;
     GameState.zone = this.fromZone;
     const gs = this.scene.get('GameScene') as any;
     gs?.exitDungeon?.(); // 重置主场景 inDungeon 标志，避免返回主世界后仍被副本守卫拦截
@@ -691,6 +693,14 @@ export class DungeonMapScene extends Phaser.Scene {
       this.dungeonRoom = room;
       this.dungeonRoomId = room.roomId;
       room.onStateChange((s: any) => this.onDungeonStateChange(s));
+      room.onLeave(() => {
+        // 服务端销毁房间（完成即毁 / 断连超时）：若仍滞留副本场景，自动返回主场景避免卡死
+        this.dungeonRoom = null;
+        if (this.exiting) return;
+        this.exiting = true;
+        this.showNotif('副本已结束');
+        this.time.delayedCall(300, () => this.exitToGame());
+      });
       room.onMessage('claimStageReward', (data: any) => {
         let msg = `第 ${this.localStage} 阶通关！`;
         msg += `\n金币+${data.gold}  经验+${data.exp}`;
@@ -698,6 +708,10 @@ export class DungeonMapScene extends Phaser.Scene {
         this.showNotif(msg);
         if (this.rewardNPC) { this.rewardNPC.sprite.destroy(); this.rewardNPC.label.destroy(); this.rewardNPC = null; }
         this.spawnPortal(this.localStage >= 3 ? 'exit' : 'next');
+        // 最终阶通关：自动返回主场景并销毁镜像地图（对齐老副本 GoHome + 场景过期即毁）
+        if (this.localStage >= 3) {
+          this.time.delayedCall(2000, () => { if (!this.exiting) this.exitToGame(); });
+        }
       });
       this.onDungeonStateChange(room.state);
     } catch (e: any) {

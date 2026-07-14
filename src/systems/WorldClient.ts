@@ -30,7 +30,7 @@ export interface PlayerWorld {
   dailyClaimed?: { date: string; ids: string[] };
   weeklyClaimed?: { week: string; ids: string[] };
   dungeonWeekly?: { week: string; count: number };
-  dungeon?: { dungeonId: number } | null;
+  dungeon?: { dungeonId: number; stage: number } | null;
   unlocks?: string[];
   kidoSchool?: string | null;
   kidoNodes?: Record<string, number>;
@@ -42,7 +42,7 @@ export interface PlayerWorld {
 }
 
 /** 副本进度客户端镜像（供地图传送阵提示使用）。 */
-export let dungeonProgress: { dungeonId: number } | null = null;
+export let dungeonProgress: { dungeonId: number; stage: number } | null = null;
 export let dungeonWeekly: { week: string; count: number } = { week: '', count: 0 };
 export const DUNGEON_WEEKLY_CAP = 3;
 
@@ -200,7 +200,7 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
   GameState.ensureWeeklyRefresh();
 
   // 副本进度镜像（地图传送阵提示用）
-  dungeonProgress = pw.dungeon ? { dungeonId: pw.dungeon.dungeonId } : null;
+  dungeonProgress = pw.dungeon ? { dungeonId: pw.dungeon.dungeonId, stage: pw.dungeon.stage ?? 1 } : null;
   dungeonWeekly = pw.dungeonWeekly ? { week: pw.dungeonWeekly.week, count: pw.dungeonWeekly.count } : { week: '', count: 0 };
 
   // 通知 UIScene 更新数值栏

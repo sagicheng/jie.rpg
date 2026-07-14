@@ -49,6 +49,10 @@ export class DungeonRoom extends Room<DungeonRoomState> {
         const pw = world.get(dp.gameSid);
         if (pw) world.completeDungeon(pw, this.state.dungeonId);
       });
+      // 完成即毁图：清进度后兜底强制销毁房间（对齐老副本场景过期 +1s）。
+      // disconnect() 会先断开全部在场客户端（触发其 room.onLeave → 自动返回主场景），
+      // 再 dispose 房间，确保即便有客户端滞留，房间也不会成为孤儿实例。
+      setTimeout(() => { try { this.disconnect(); } catch (e) { /* 已销毁 */ } }, 2500);
     } else {
       this.state.stage = s + 1;
       // 回写持久化 stage：掉线后重连可续到本阶（而非第1阶重来）

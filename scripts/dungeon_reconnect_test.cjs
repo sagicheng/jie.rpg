@@ -73,7 +73,7 @@ function readDB(charName) {
   console.log('=== 《解》副本掉线续打 集成测试 ===');
   console.log(`账号: ${account}  角色: ${charName}`);
 
-  const result = { entered: false, claimed: false, resumedStage: -1, weekly: -1, stageRestored: false, noDoubleCharge: false };
+  const result = { entered: false, claimed: false, resumedStage: -1, weekly: -1, stageRestored: false, noDoubleCharge: false, resumedAdvanced: false, completedCleared: false, roomDisposed: false };
   let client, gameRoom, dRoom, dRoom2;
 
   try {
@@ -123,14 +123,29 @@ function readDB(charName) {
     result.stageRestored = result.resumedStage === 2; // 续到原阶（非 1）才是真续打
     console.log(`[重连续打] 房间 stage=${result.resumedStage} (期望 2=续到原阶, 1=进度丢失) → ${result.stageRestored ? 'PASS' : 'FAIL'}`);
 
-    // 7) 关 game 房触发存档 → 读 DB 验证周次不重复计
+    // 7) 续打到原阶后继续通关剩余阶 → 完成（验证「完成即毁图」）
+    dRoom2.send('claimStage', { stage: result.resumedStage }); // stage2 → 3
+    await sleep(600);
+    const stageAfterResume2 = dRoom2.state ? dRoom2.state.stage : -1;
+    result.resumedAdvanced = stageAfterResume2 === 3;
+    console.log(`[续打推进] 房间 stage=${stageAfterResume2} (期望 3) → ${result.resumedAdvanced ? 'PASS' : 'FAIL'}`);
+
+    let roomLeft = false;
+    try { dRoom2.onLeave(() => { roomLeft = true; }); } catch {}
+    dRoom2.send('claimStage', { stage: 3 }); // 完成第3阶 → completeDungeon 清进度 + 兜底销毁房间
+    await sleep(3000); // 等服务端「完成即毁」（setTimeout dispose 2.5s + 余量）
+    result.roomDisposed = roomLeft;
+    console.log(`[完成即毁] 房间在 ~3s 内销毁 → ${result.roomDisposed ? 'PASS' : 'FAIL'}`);
+
+    // 8) 关 game 房触发存档 → 读 DB 验证：周次不重复计 + 完成后 dungeon 被清空（无僵尸续打）
     await gameRoom.leave();
     await sleep(800);
     const pw = readDB(charName);
     result.weekly = pw?.dungeonWeekly?.count ?? -1;
-    result.dungeonStage = pw?.dungeon?.stage ?? null;
+    result.dungeonAfter = pw && pw.dungeon ? pw.dungeon : null;
     result.noDoubleCharge = result.weekly === 1;
-    console.log(`[DB] 周次=${result.weekly} (期望 1) → ${result.noDoubleCharge ? 'PASS' : 'FAIL'} | dungeon.stage=${result.dungeonStage}`);
+    result.completedCleared = result.dungeonAfter === null;
+    console.log(`[DB] 周次=${result.weekly} (期望 1) → ${result.noDoubleCharge ? 'PASS' : 'FAIL'} | 完成后 dungeon=${JSON.stringify(result.dungeonAfter)} (期望 null) → ${result.completedCleared ? 'PASS' : 'FAIL'}`);
   } catch (e) {
     console.error('TEST ERROR', e && e.message ? e.message : e);
   } finally {
@@ -140,9 +155,10 @@ function readDB(charName) {
     try { if (client) client.close(); } catch {}
   }
 
-  const allPass = result.entered && result.claimed && result.stageRestored && result.noDoubleCharge;
+  const allPass = result.entered && result.claimed && result.stageRestored && result.noDoubleCharge
+    && result.resumedAdvanced && result.completedCleared && result.roomDisposed;
   console.log('\n=== 结果 ===');
   console.log(JSON.stringify(result, null, 2));
-  console.log(allPass ? '✅ 掉线续打: PASS' : '❌ 掉线续打: FAIL');
+  console.log(allPass ? '✅ 掉线续打 + 完成即毁图: PASS' : '❌ 测试: FAIL');
   process.exit(allPass ? 0 : 1);
 })();

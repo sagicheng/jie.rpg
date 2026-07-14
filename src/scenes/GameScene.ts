@@ -527,7 +527,7 @@ export class GameScene extends Phaser.Scene {
       this.nearbyDungeon = true;
       const remaining = Math.max(0, DUNGEON_WEEKLY_CAP - dungeonWeekly.count);
       const active = dungeonProgress && dungeonProgress.dungeonId === GameState.zone;
-      this.promptText.setText(active ? `按 F 继续副本${GameState.zone}` : `按 F 进入副本${GameState.zone}（本周剩余 ${remaining} 次）`);
+      this.promptText.setText(active ? `按 F 继续副本${GameState.zone}（第 ${dungeonProgress!.stage} 阶）` : `按 F 进入副本${GameState.zone}（本周剩余 ${remaining} 次）`);
       this.promptText.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60);
       this.promptText.setVisible(true);
     } else {
@@ -1598,7 +1598,7 @@ export class GameScene extends Phaser.Scene {
     this.openTeamPanel();
   }
 
-  /** 副本传送阵确认界面（进入副本 / 暂不进入）。 */
+  /** 副本传送阵确认界面：有进行中副本时显示「重连进入（第N阶）」+「放弃进度」，否则「进入副本」。 */
   private showDungeonConfirm(zone: number): void {
     if (this.dungeonConfirmOpen) return;
     this.dungeonConfirmOpen = true;
@@ -1608,22 +1608,42 @@ export class GameScene extends Phaser.Scene {
     const dim = this.add.graphics();
     dim.fillStyle(0x000000, 0.55); dim.fillRect(0, 0, w, h);
     c.add(dim);
-    const pw = 360, ph = 190;
+    const active = dungeonProgress && dungeonProgress.dungeonId === zone;
+    const pw = 360, ph = active ? 224 : 190;
     const px = (w - pw) / 2, py = (h - ph) / 2;
     const panel = this.add.graphics();
     panel.fillStyle(0x16162a, 0.97); panel.fillRoundedRect(px, py, pw, ph, 14);
     panel.lineStyle(2, 0xaa66ff, 0.8); panel.strokeRoundedRect(px, py, pw, ph, 14);
     c.add(panel);
-    c.add(this.add.text(px + pw / 2, py + 42, `进入副本 ${zone}？`, { fontSize: '22px', color: '#e8d8ff', fontStyle: 'bold' }).setOrigin(0.5));
-    const remaining = Math.max(0, DUNGEON_WEEKLY_CAP - dungeonWeekly.count);
-    const active = dungeonProgress && dungeonProgress.dungeonId === zone;
-    c.add(this.add.text(px + pw / 2, py + 78, active ? '继续当前副本进度' : `本周剩余 ${remaining} 次`, { fontSize: '13px', color: '#bbaadd' }).setOrigin(0.5));
-    this.teamPanelButton(c, px + pw / 2 - 90, py + 138, 150, 44, '进入副本', 0x2a1a3a, '#cdaaff', () => {
-      this.closeDungeonConfirm(); this.enterDungeon(zone);
-    });
-    this.teamPanelButton(c, px + pw / 2 + 90, py + 138, 150, 44, '暂不进入', 0x2a2a2a, '#cccccc', () => {
-      this.closeDungeonConfirm();
-    });
+    if (active) {
+      // 进行中副本：断线重连入口（对齐老副本「继续挑战」）
+      c.add(this.add.text(px + pw / 2, py + 36, `继续副本 ${zone}`, { fontSize: '22px', color: '#e8d8ff', fontStyle: 'bold' }).setOrigin(0.5));
+      c.add(this.add.text(px + pw / 2, py + 72, `当前进度：第 ${dungeonProgress!.stage} 阶 / 共 3 阶`, { fontSize: '14px', color: '#9ad8ff' }).setOrigin(0.5));
+      c.add(this.add.text(px + pw / 2, py + 96, '中断进度已保存，重连进入将从该阶继续', { fontSize: '12px', color: '#bbaadd' }).setOrigin(0.5));
+      // 主按钮：重连进入（免费续阶，复用 enterDungeon 的续打逻辑）
+      this.teamPanelButton(c, px + pw / 2 - 95, py + 148, 175, 46, `重连进入`, 0x3a2a4a, '#cdaaff', () => {
+        this.closeDungeonConfirm(); this.enterDungeon(zone);
+      });
+      // 次按钮：放弃进度（清 pw.dungeon，不计费；对应老副本「覆盖之前挑战记录」）
+      this.teamPanelButton(c, px + pw / 2 + 95, py + 148, 175, 46, '放弃进度', 0x4a2a2a, '#ffb0b0', () => {
+        this.closeDungeonConfirm();
+        this.gameRoom?.send('intent', { op: 'abandonDungeon', dungeonId: zone });
+      });
+      // 暂不进入
+      this.teamPanelButton(c, px + pw / 2, py + 192, 150, 36, '暂不进入', 0x2a2a2a, '#cccccc', () => {
+        this.closeDungeonConfirm();
+      });
+    } else {
+      c.add(this.add.text(px + pw / 2, py + 42, `进入副本 ${zone}？`, { fontSize: '22px', color: '#e8d8ff', fontStyle: 'bold' }).setOrigin(0.5));
+      const remaining = Math.max(0, DUNGEON_WEEKLY_CAP - dungeonWeekly.count);
+      c.add(this.add.text(px + pw / 2, py + 78, `本周剩余 ${remaining} 次`, { fontSize: '13px', color: '#bbaadd' }).setOrigin(0.5));
+      this.teamPanelButton(c, px + pw / 2 - 90, py + 138, 150, 44, '进入副本', 0x2a1a3a, '#cdaaff', () => {
+        this.closeDungeonConfirm(); this.enterDungeon(zone);
+      });
+      this.teamPanelButton(c, px + pw / 2 + 90, py + 138, 150, 44, '暂不进入', 0x2a2a2a, '#cccccc', () => {
+        this.closeDungeonConfirm();
+      });
+    }
   }
   private closeDungeonConfirm(): void {
     if (this.dungeonConfirmPanel) { this.dungeonConfirmPanel.destroy(true); this.dungeonConfirmPanel = null; }

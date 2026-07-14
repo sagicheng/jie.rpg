@@ -251,6 +251,13 @@ export class GameRoom extends Room<GameRoomState> {
           res = world.setTitle(pw, (data.id === undefined || data.id === null) ? null : String(data.id));
           if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
           break;
+        case 'abandonDungeon':
+          // 放弃进行中的副本进度（清 pw.dungeon，不计费；与 completeDungeon 同源）。
+          // 仅当活动副本匹配时才清，避免误清他人/其他副本。
+          world.completeDungeon(pw, Number(data.dungeonId) || 0);
+          res = { ok: true, msg: '已放弃副本进度' };
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
       }
       client.send('intentResult', res);
       client.send('worldSync', pw);
