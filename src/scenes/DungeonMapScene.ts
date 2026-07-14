@@ -49,7 +49,6 @@ export class DungeonMapScene extends Phaser.Scene {
   /** 是否由队长带队跟随进入：是则镜像队长阶段进度，自己不领奖/不进下一阶。 */
   private followEnter = false;
   private followStageInit = false;  // 队员初始进入副本时一次性镜像服务端 stage（避免实时镜像导致提前跳阶）
-  private leaderStageInit = false;  // 队长初始进入副本时一次性从服务端 stage 同步（支持"掉线重连续到原阶"）
   /** 自身颜色（进房时由 GameScene 传入，用于远端队友 tint + 上报给 dungeon room）。 */
   private myColor = '#4ecdc4';
   private localStage = 1;        // 当前显示的地图层（跟随服务端 stage）
@@ -713,7 +712,13 @@ export class DungeonMapScene extends Phaser.Scene {
           this.time.delayedCall(2000, () => { if (!this.exiting) this.exitToGame(); });
         }
       });
-      this.onDungeonStateChange(room.state);
+      this.onDungeonStateChange(room.state, true); // 首帧（room.state 可能尚未就绪）只刷 HUD，不锁定阶段初始化
+      // 安全兜底：极少数情况下首帧 onStateChange 在回调注册前已触发而丢失，
+      // 延迟用已就绪的 room.state 一次性对齐（续打落到服务端持久化阶，而非卡在 1 阶）。
+      this.time.delayedCall(250, () => {
+        if (this.exiting || !this.dungeonRoom) return;
+        if (this.followEnter && !this.followStageInit) this.onDungeonStateChange(this.dungeonRoom.state);
+      });
     } catch (e: any) {
       // 包括：周次耗尽（服务器 onJoin throw Error）、网络错误等
       this.showNotif(e?.message || '无法进入副本');
@@ -721,18 +726,19 @@ export class DungeonMapScene extends Phaser.Scene {
     }
   }
 
-  private onDungeonStateChange(s: any): void {
+  private onDungeonStateChange(s: any, fromInitialCall = false): void {
     if (!s) return;
     this.updateStageHUD();
-    // 跟随者：阶段进度由队长权威驱动，直接镜像服务端 stage（含进入时已在中途的情况）
-    // 跟随者仅首次进入副本时一次性镜像服务端 stage（对齐队长当前阶），
-    // 后续阶段推进由队长 transitionToStage 显式广播 teamDungeonStage 驱动，
-    // 不再实时镜像——避免服务端 stage 在队长领奖瞬间就+1 导致队员提前跳阶。
-    if (this.followEnter && !this.followStageInit) { this.syncToServerStage(s.stage); this.followStageInit = true; }
-    // 队长：进本时一次性从服务端 stage 同步 localStage（含"最后一人掉线→房间销毁→重连开新房间续到原阶"场景）。
-    // 正常首进服务端 stage=1 与 localStage=1 相等→no-op；断连重连服务端 stage=N>1→对齐到 N，避免客户端卡在 1 阶发错 claimStage 被拒。
-    // 仅首次同步，后续推进由队长自身 transitionToStage 驱动，不与权威状态变更冲突。
-    if (!this.followEnter && !this.leaderStageInit) { this.syncToServerStage(s.stage); this.leaderStageInit = true; }
+    if (fromInitialCall) return; // 首帧（room.state 可能尚未就绪）只刷 HUD，不锁定阶段初始化
+    if (this.followEnter) {
+      // 跟随者：仅首次进入一次性镜像服务端 stage（对齐队长当前阶）；
+      // 后续推进由队长 transitionToStage 广播 teamDungeonStage 驱动，避免服务端领奖瞬间 +1 提前跳阶。
+      if (!this.followStageInit) { this.syncToServerStage(s.stage); this.followStageInit = true; }
+    } else {
+      // 队长：始终以服务端权威 stage 对齐 localStage（含"最后一人掉线→房间销毁→重连开新房间续到原阶"）。
+      // transitionToStage 推进时 isTransitioning=true，syncToServerStage 内部守卫跳过，不会与权威状态变更冲突。
+      this.syncToServerStage(s.stage);
+    }
     // 不在此处理阶段通关——本场景的完成检测由 onMultiBattleEnd 逐怪追踪（全部明雷击杀后
     // 调 handleStageCleared 生成领奖 NPC）。阶段推进与领奖通过 claimReward → claimStage
     // 权威驱动（DungeonRoom 服务端发奖+推进 stage）。若在此通过 serverStage/phase 变化

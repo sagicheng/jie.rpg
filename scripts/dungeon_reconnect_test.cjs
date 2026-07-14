@@ -107,8 +107,12 @@ function readDB(charName) {
     // 5) 最后一人掉线 → 房间销毁
     await dRoom.leave();
     dRoom = null;
-    await sleep(2000); // 等 autoDispose 真正销毁房间
-    console.log('  -> 已断开副本连接（模拟最后一人掉线，房间应销毁）');
+    // 关键：副本房间 .filterBy(['dungeonId'])，joinOrCreate 会复用同 dungeonId 的存活房间。
+    // 必须等旧房间被 autoDispose 真正销毁，下一步 client2 的 joinOrCreate 才会【开新房间】，
+    // 从而真实验证「新房间靠 pw.dungeon.stage 还原」（Math.max(1, pw.dungeon.stage)），
+    // 而非被房间复用掩盖（旧房间 state 本就是 2）。否则测试会假 PASS。
+    await sleep(5000);
+    console.log('  -> 已断开副本连接并等待旧房间销毁（模拟最后一人掉线，强制下次进本开新房间）');
 
     // 5b) 落库验证：claim 到 stage2 后，DungeonRoom 已在关键节点 persistBySid，
     //     DB 中应已写入 dungeon.stage=2（这是真机重连续阶的真相来源）。
