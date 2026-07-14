@@ -17,6 +17,7 @@ import { ZONE_CONFIGS } from '../src/systems/Zones';
 import { NODE_TO_MATERIAL, matId } from '../src/data/materials';
 import { MAIN_QUESTS, SIDE_QUESTS, DAILY_QUESTS, WEEKLY_QUESTS, DAILY_CAP, WEEKLY_CAP, todayStr, weekStr } from '../src/systems/QuestData';
 import { expForLevel } from '../src/systems/BattleData';
+import { makeSetId } from '../src/systems/SetSystem';
 import { POINTS_PER_LEVEL } from '../src/config';
 import type { EquipSlot } from '../src/systems/Inventory';
 import { KIDO_NODES, TIER_LOCK, ALL_KIDO_NODES } from '../src/systems/Kido';
@@ -48,15 +49,17 @@ const DECOMP_MATERIALS: Record<string, Array<{ name: string; qty: number }>> = {
 };
 const DECOMP_GOLD_BASE: Record<string, number> = { white: 30, green: 60, blue: 100, purple: 200, gold: 400 };
 const CRAFT_RECIPES: Record<string, { cost: Record<string, number>; result: WorldItem }> = {
-  '铁剑': { cost: { '铁矿石': 3, '灵木枝': 1 }, result: { id: '铁剑', name: '铁剑', type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as EquipSlot, stats: { atk: 5 }, quality: 'green' } },
-  '铁甲': { cost: { '铁矿石': 5, '麻布片': 2 }, result: { id: '铁甲', name: '铁甲', type: 'equipment', desc: '手工制造', quantity: 1, slot: 'body' as EquipSlot, stats: { def: 8, hp: 10 }, quality: 'green' } },
-  '铁手甲': { cost: { '铁矿石': 2, '灵木枝': 1 }, result: { id: '铁手甲', name: '铁手甲', type: 'equipment', desc: '手工制造', quantity: 1, slot: 'bracer' as EquipSlot, stats: { atk: 3, def: 3 }, quality: 'green' } },
+  '铁剑': { cost: { '铁矿石': 3, '灵木枝': 1 }, result: { id: '铁剑', name: '铁剑', type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as EquipSlot, stats: { atk: 5 }, quality: 'green', zone: 1 } },
+  '铁甲': { cost: { '铁矿石': 5, '麻布片': 2 }, result: { id: '铁甲', name: '铁甲', type: 'equipment', desc: '手工制造', quantity: 1, slot: 'body' as EquipSlot, stats: { def: 8, hp: 10 }, quality: 'green', zone: 1 } },
+  '铁手甲': { cost: { '铁矿石': 2, '灵木枝': 1 }, result: { id: '铁手甲', name: '铁手甲', type: 'equipment', desc: '手工制造', quantity: 1, slot: 'bracer' as EquipSlot, stats: { atk: 3, def: 3 }, quality: 'green', zone: 1 } },
 };
 
 export interface WorldItem {
   id: string; name: string; type: string; desc: string; quantity: number;
   slot?: EquipSlot; stats?: Partial<Record<string, number>>; quality?: string;
   set?: string; // 套装标识 `${zone}_${quality}`
+  /** 制造装备所属区域（用于合成后打套装标；商店装备的 zone 由 ZONE_CONFIGS.tier 推导，不存此字段）。 */
+  zone?: number;
   enhanceLevel?: number; refineStats?: Array<{ key: string; value: number }>;
 }
 
@@ -478,7 +481,7 @@ export class WorldService {
     const s = this.shopCatalogItem(itemId);
     if (!s) return { ok: false, msg: '无此商品' };
     if (!this.spendGold(pw, s.price)) return { ok: false, msg: '金币不足' };
-    const bought: WorldItem = { id: s.id, name: s.name, type: 'equipment', desc: s.desc || '', quantity: 1, slot: s.slot as EquipSlot, stats: s.stats as Partial<Record<string, number>>, quality: s.quality || 'white' };
+    const bought: WorldItem = { id: s.id, name: s.name, type: 'equipment', desc: s.desc || '', quantity: 1, slot: s.slot as EquipSlot, stats: s.stats as Partial<Record<string, number>>, quality: s.quality || 'white', set: (s as any).set };
     // 与单机行为一致：购买后直接装备（旧装备回包）
     this.equip(pw, this.pushAndReturnId(pw, bought));
     return { ok: true, msg: `购买并装备 ${s.name}`, data: { gold: pw.gold } };
@@ -512,15 +515,46 @@ export class WorldService {
   }
 
   // ───────────────── 制造 ─────────────────
-  craft(pw: PlayerWorld, recipeName: string): OpResult {
+  craft(pw: PlayerWorld, recipeName: string, zone?: number): OpResult {
     const r = CRAFT_RECIPES[recipeName];
     if (!r) return { ok: false, msg: '无此配方' };
     for (const [mat, qty] of Object.entries(r.cost)) {
       if (this.countMaterial(pw, mat) < qty) return { ok: false, msg: `${mat}不足` };
     }
     for (const [mat, qty] of Object.entries(r.cost)) this.takeMaterial(pw, mat, qty);
-    this.grantItem(pw, r.result);
+    // 制造装备按「区域(玩家当前所在区，缺省回退配方 zone/1) + 品质」打套装标，
+    // 与同区同品质掉落/商店装备共享套装（设计确认：制造装备即归属玩家当前所在区）。
+    const zoneForSet = zone ?? r.result.zone ?? 1;
+    const made: WorldItem = { ...r.result, set: makeSetId(zoneForSet, r.result.quality || 'green') };
+    this.grantItem(pw, made);
     return { ok: true, msg: `制造成功：${recipeName}`, data: { name: recipeName } };
+  }
+
+  // ───────────────── 测试用：发放套装测试装备 ─────────────────
+  /**
+   * Dev 作弊键(Ctrl+E) 触发：发放一套「同区域 + 同品质」的测试装备（5 防具 + 4 饰品）并全部装备，
+   * 便于在联机下直接验证套装加成（无需靠掉落 RNG 凑齐）。
+   * 仅测试用途，经 intent 授权、服务端权威发放并 worldSync 下发；落库以免重连丢失。
+   */
+  grantSetTestGear(pw: PlayerWorld, zone: number, quality: string): OpResult {
+    const setId = makeSetId(zone, quality);
+    const armorSlots: EquipSlot[] = ['head', 'body', 'bracer', 'boots', 'belt'];
+    const jewelSlots: EquipSlot[] = ['ring', 'necklace', 'charm', 'pendant'];
+    const names: Record<string, string> = { head: '头盔', body: '铠甲', bracer: '护腕', boots: '靴子', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
+    const armorStats: Record<string, number> = { def: 30, hp: 30 };
+    const jewelStats: Record<string, number> = { matk: 25, mp: 25 };
+    const give = (slot: EquipSlot, stats: Record<string, number>) => {
+      const item: WorldItem = {
+        id: `devset_${setId}_${slot}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
+        name: `测试·${names[slot]}`, type: 'equipment', desc: `测试套装·第${zone}区·${quality}`,
+        quantity: 1, slot, stats, quality, set: setId,
+      };
+      this.grantItem(pw, item);
+      this.equip(pw, item.id);
+    };
+    armorSlots.forEach(s => give(s, armorStats));
+    jewelSlots.forEach(s => give(s, jewelStats));
+    return { ok: true, msg: `已发放测试套装 第${zone}区·${quality}（5防具+4饰品已装备）` };
   }
 
   // ───────────────── 强化 / 精炼 / 分解 / 重铸 ─────────────────

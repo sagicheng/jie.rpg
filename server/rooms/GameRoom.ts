@@ -215,7 +215,7 @@ export class GameRoom extends Room<GameRoomState> {
         case 'unequip': res = world.unequip(pw, String(data.slot || '') as any); break;
         case 'questProgress': world.updateQuest(pw, String(data.type || ''), String(data.target || ''), Number(data.amount) || 1); res = { ok: true, msg: 'progress' }; break;
         case 'claimQuest': res = world.claimQuest(pw, String(data.questId || '')); break;
-        case 'craft': res = world.craft(pw, String(data.recipeName || '')); break;
+        case 'craft': res = world.craft(pw, String(data.recipeName || ''), data.zone !== undefined ? Number(data.zone) : undefined); break;
         case 'enhance': res = world.enhance(pw, String(data.itemId || '')); break;
         case 'refine': res = world.refine(pw, String(data.itemId || '')); break;
         case 'decompose': res = world.decompose(pw, String(data.itemId || '')); break;
@@ -268,6 +268,11 @@ export class GameRoom extends Room<GameRoomState> {
           break;
         case 'respec':
           res = world.respec(pw);
+          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
+          break;
+        case 'devGrantSet':
+          // Dev 作弊键(Ctrl+E)：发放同区域同品质测试套装（联机权威，落库以免重连丢失）
+          res = world.grantSetTestGear(pw, Number(data.zone) || 1, String(data.quality || 'blue'));
           if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
           break;
       }

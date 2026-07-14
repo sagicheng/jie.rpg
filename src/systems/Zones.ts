@@ -1,4 +1,5 @@
 /** 区域配置数据 — Bleach原著世界观 21区域完整版 */
+import { makeSetId } from './SetSystem';
 
 export interface ZoneNPC {
   x: number; y: number;
@@ -9,7 +10,7 @@ export interface ZoneNPC {
     text: string;
     choices?: Array<{ text: string; callback: string }>;
   }>;
-  shop?: Array<{ name: string; price: number; id: string; slot: string; stats: Record<string, number>; desc: string; quality?: string }>;
+  shop?: Array<{ name: string; price: number; id: string; slot: string; stats: Record<string, number>; desc: string; quality?: string; set?: string }>;
 }
 
 export interface ZoneEnemy {
@@ -41,7 +42,7 @@ export interface ZoneConfig {
 }
 
 // ── 商店物品生成辅助 ──
-function shop(tier: number, prefix: string, ids: string[]): Array<{ name: string; price: number; id: string; slot: string; stats: Record<string, number>; desc: string; quality?: string }> {
+function shop(tier: number, prefix: string, ids: string[]): Array<{ name: string; price: number; id: string; slot: string; stats: Record<string, number>; desc: string; quality?: string; set?: string }> {
   const base = [8, 10, 6, 5, 4, 6, 3, 6, 4]; // def/hp/atk/spd/etc baselines
   const m = 1 + (tier - 1) * 0.55;
   const slots = ['head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
@@ -65,6 +66,8 @@ function shop(tier: number, prefix: string, ids: string[]): Array<{ name: string
     stats: statMap[slot],
     desc: `${prefix}·${slot} ${Object.entries(statMap[slot]).map(([k, v]) => `${k}+${v}`).join(' ')}`,
     quality: 'white',
+    // 商店装备按「区域(=tier) + 品质」纳套装：与同区同品质掉落/制造装备共享套装标识。
+    set: slot ? makeSetId(tier, 'white') : undefined,
   }));
   const potions = [
     { name: tier <= 3 ? '回复药' : tier <= 6 ? '强效回复药' : tier <= 9 ? '高级回复药' : '终极回复药', price: [80, 180, 350, 600][Math.min(3, Math.floor((tier - 1) / 3))], id: `potion_z${tier}`, slot: '', stats: {}, desc: `回复${[100, 300, 600, 1000][Math.min(3, Math.floor((tier - 1) / 3))]}HP` },

@@ -8,13 +8,14 @@ import { getEnemyData, NAMED_ENEMIES } from '../systems/BestiaryData';
 import { Inventory } from '../systems/Inventory';
 import { SaveManager } from '../systems/SaveManager';
 import { ZONE_CONFIGS, getDungeonPortal } from '../systems/Zones';
+import { makeSetId } from '../systems/SetSystem';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
 import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel } from '../ui/panels';
 import { getClient } from '../net/Net';
-import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
+import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -282,8 +283,9 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Dev cheats
-    const ctrl = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
-    this.ctrlKey = ctrl;
+    // Dev cheats：改用 window 级 keydown 监听（不依赖画布焦点），
+    // 并对 Ctrl/Meta 组合键 preventDefault，避免被浏览器默认快捷键（书签/保存/全选等）拦截。
+    this.ctrlKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
     const showDevNotif = (msg: string, color = '#88ff88') => {
       const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, msg, {
         fontSize: '18px', color, fontStyle: 'bold',
@@ -291,50 +293,89 @@ export class GameScene extends Phaser.Scene {
       }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
       this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 80, duration: 1500, onComplete: () => n.destroy() });
     };
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A).on('down', () => {
-      if (ctrl.isDown) {
-        GameState.allocatedATK += 50; GameState.allocatedMATK += 50;
-        GameState.recalcStats(); GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
-        showDevNotif(`ATK+50 MATK+50 (ATK:${GameState.atk} MATK:${GameState.matk})`, '#ff6644');
-        this.scene.get('UIScene').events.emit('updateStats');
+    const onDevKey = (e: KeyboardEvent) => {
+      // 正在输入框（如命名）时不触发，避免误触
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+      if (!e.ctrlKey && !e.metaKey) return;
+      const k = e.key.toLowerCase();
+      switch (k) {
+        case 'a':
+          GameState.allocatedATK += 50; GameState.allocatedMATK += 50;
+          GameState.recalcStats(); GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
+          showDevNotif(`ATK+50 MATK+50 (ATK:${GameState.atk} MATK:${GameState.matk})`, '#ff6644');
+          this.scene.get('UIScene').events.emit('updateStats');
+          break;
+        case 's':
+          GameState.statPoints += 10; this.scene.get('UIScene').events.emit('updateStats'); showDevNotif('属性点+10', '#44ccff');
+          break;
+        case 'd':
+          GameState.gold += 10000; showDevNotif('金币+10000', '#ffcc44');
+          break;
+        case 'f':
+          GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp; showDevNotif('HP/MP全满', '#88ff88');
+          break;
+        case 'g':
+          GameState.exp += expForLevel(GameState.level + 1); GameState.checkLevelUp(); showDevNotif('经验+1级', '#ccaaff'); this.scene.get('UIScene').events.emit('updateStats');
+          break;
+        case 'h':
+          for (const name of Object.keys(NAMED_ENEMIES)) { for (let i = 0; i < 100; i++) GameState.recordKill(name); }
+          showDevNotif('全图鉴解锁(击杀x100)', '#ffcc44');
+          break;
+        case 'j':
+          GameState.recordKill('大虚·亚丘卡斯'); showDevNotif('Boss击杀+1', '#ff4444');
+          break;
+        case 'z':
+          if (GameState.hasShikai) showDevNotif('始解已解锁（再选刀可更换真名）', '#ffcc44');
+          showShikaiSelection(this);
+          break;
+        case 'e': {
+          // Dev 作弊键：发放同区域同品质测试套装，免掉落 RNG 凑齐，便于验证套装加成
+          const zone = GameState.zone;
+          const quality = 'blue';
+          const setId = makeSetId(zone, quality);
+          const armorSlots = ['head', 'body', 'bracer', 'boots', 'belt'];
+          const jewelSlots = ['ring', 'necklace', 'charm', 'pendant'];
+          const names: Record<string, string> = { head: '头盔', body: '铠甲', bracer: '护腕', boots: '靴子', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
+          const build = (slot: string, stats: Record<string, number>) => ({
+            id: `devset_${setId}_${slot}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
+            name: `测试·${names[slot] ?? slot}`, type: 'equipment' as const, desc: `测试套装·第${zone}区·${quality}`,
+            quantity: 1, slot: slot as any, stats, quality, set: setId,
+          });
+          if (isOnline()) {
+            requestDevGrantSet(zone, quality);
+            showDevNotif(`已申请测试套装·第${zone}区·${quality}`, '#ff88ff');
+          } else {
+            [...armorSlots, ...jewelSlots].forEach((slot) => {
+              const stats: Record<string, number> = armorSlots.includes(slot) ? { def: 30, hp: 30 } : { matk: 25, mp: 25 };
+              const piece = build(slot, stats);
+              const eq = Inventory.equipment as any;
+              const old = eq[slot];
+              if (old) Inventory.items.push(old);
+              eq[slot] = piece;
+            });
+            GameState.recalcStats();
+            this.scene.get('UIScene').events.emit('updateStats');
+            this.refreshOpenPanels?.();
+            showDevNotif(`测试套装已装备·第${zone}区·${quality}`, '#ff88ff');
+          }
+          break;
+        }
+        default:
+          return; // 非调试键不拦截（Ctrl+C/V/X 等保持原行为）
       }
-    });
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S).on('down', () => {
-      if (ctrl.isDown) { GameState.statPoints += 10; this.scene.get('UIScene').events.emit('updateStats'); showDevNotif('属性点+10', '#44ccff'); }
-    });
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D).on('down', () => {
-      if (ctrl.isDown) { GameState.gold += 10000; showDevNotif('金币+10000', '#ffcc44'); }
-    });
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F).on('down', () => {
-      if (ctrl.isDown) { GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp; showDevNotif('HP/MP全满', '#88ff88'); }
-    });
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.G).on('down', () => {
-      if (ctrl.isDown) { GameState.exp += expForLevel(GameState.level + 1); GameState.checkLevelUp(); showDevNotif('经验+1级', '#ccaaff'); this.scene.get('UIScene').events.emit('updateStats'); }
-    });
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onDevKey);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => window.removeEventListener('keydown', onDevKey));
+    this.events.once(Phaser.Scenes.Events.DESTROY, () => window.removeEventListener('keydown', onDevKey));
+
     // 单独 G 键：开关独立组队面板（与 CTRL+G dev 升级区分）
     this.input.keyboard!.addKey('G').on('down', () => {
       if (this.ctrlKey.isDown) return;
       if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
       if (this.dungeonConfirmOpen) return; // 确认框优先
       this.toggleTeamPanel();
-    });
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.H).on('down', () => {
-      if (ctrl.isDown) {
-        for (const name of Object.keys(NAMED_ENEMIES)) { 
-          for (let i = 0; i < 100; i++) GameState.recordKill(name); 
-        }
-        showDevNotif('全图鉴解锁(击杀x100)', '#ffcc44');
-      }
-    });
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.J).on('down', () => {
-      if (ctrl.isDown) { GameState.recordKill('大虚·亚丘卡斯'); showDevNotif('Boss击杀+1', '#ff4444'); }
-    });
-    // 测试辅助：Ctrl+Z 触发完整始解选刀流程（与正式 shikai_trial 任务一致）
-    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z).on('down', () => {
-      if (ctrl.isDown) {
-        if (GameState.hasShikai) showDevNotif('始解已解锁（再选刀可更换真名）', '#ffcc44');
-        showShikaiSelection(this);
-      }
     });
 
     this.zoneText = this.add.text(16, 12, `${ZONE_NAMES[GameState.zone]}`, {
@@ -1082,12 +1123,12 @@ export class GameScene extends Phaser.Scene {
   private openCraft(): void { this.isInDialogue = false; this.pauseForMenu(); const cam = this.cameras.main; const panel = this.add.container(Math.round(cam.scrollX) + GAME_WIDTH / 2, Math.round(cam.scrollY) + GAME_HEIGHT / 2).setDepth(310); const bg = this.add.graphics(); bg.fillStyle(0x1a1a2e, 0.97); bg.fillRoundedRect(-350, -200, 700, 400, 12); bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(-350, -200, 700, 400, 12); panel.add(bg); panel.add(this.add.text(0, -160, '制造', { fontSize: '22px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 3 } }).setOrigin(0.5)); panel.add(this.add.text(0, -120, '收集材料来制造装备', { fontSize: '14px', color: '#888899', padding: { y: 2 } }).setOrigin(0.5)); const recipes = [{ name: '铁剑', cost: { '\u94c1\u77ff\u77f3': 3, '\u7075\u6728\u679d': 1 } }, { name: '铁甲', cost: { '\u94c1\u77ff\u77f3': 5, '\u9ebb\u5e03\u7247': 2 } }, { name: '铁手甲', cost: { '\u94c1\u77ff\u77f3': 2, '\u7075\u6728\u679d': 1 } }]; recipes.forEach((r, i2) => { const ry = -70 + i2 * 60; panel.add(this.add.text(-300, ry, r.name, { fontSize: '16px', color: '#ddddff', fontStyle: 'bold', padding: { y: 2 } })); const costs = Object.entries(r.cost).map(([k, v]) => { const owned = Inventory.items.find(i2 => i2.name === k)?.quantity || 0; return `${k}: ${owned}/${v}`; }).join('  '); panel.add(this.add.text(-100, ry + 4, costs, { fontSize: '11px', color: '#8888aa', padding: { y: 1 } })); const canCraft = Object.entries(r.cost).every(([k, v]) => (Inventory.items.find(i2 => i2.name === k)?.quantity || 0) >= v); const btn2 = this.add.text(200, ry - 2, '[制造]', { fontSize: '14px', color: canCraft ? '#44cc44' : '#666666', fontStyle: 'bold', padding: { x: 10, y: 6 }, backgroundColor: canCraft ? '#11221188' : '#11111188' }).setInteractive({ useHandCursor: true }); if (canCraft) { btn2.on('pointerover', () => btn2.setColor('#88ff88')); btn2.on('pointerout', () => btn2.setColor('#44cc44')); btn2.on('pointerdown', () => {
   if (this.gameRoom) {
     // 联机：制造走服务端权威（扣材料/产装备），成功由 worldSync 刷新背包，结果由 intentResult 提示
-    if (!requestCraft(r.name)) return;
+    if (!requestCraft(r.name, GameState.zone)) return;
     GameState.updateQuestProgress('craft', r.name, 1);
     panel.destroy(true); this.openCraft(); return;
   }
   Object.entries(r.cost).forEach(([k, v]) => { const it = Inventory.items.find(i2 => i2.name === k); if (it) it.quantity = Math.max(0, (it.quantity || 0) - v); });
-  Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green' });
+  Inventory.addItem({ id: r.name, name: r.name, type: 'equipment', desc: '手工制造', quantity: 1, slot: 'weapon' as any, stats: { atk: 5 }, quality: 'green', set: makeSetId(GameState.zone, 'green') });
   GameState.updateQuestProgress('craft', r.name, 1);
   panel.destroy(true); this.resumeFromMenu(); this.scene.get('UIScene').events.emit('updateStats');
   const cn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, `制造成功：${r.name}`, { fontSize: '16px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);

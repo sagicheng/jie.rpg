@@ -74,8 +74,8 @@ export function requestEquip(itemId: string): boolean {
 export function requestUnequip(slot: string): boolean {
   return sendIntent('unequip', { slot });
 }
-export function requestCraft(recipeName: string): boolean {
-  return sendIntent('craft', { recipeName });
+export function requestCraft(recipeName: string, zone?: number): boolean {
+  return sendIntent('craft', { recipeName, zone });
 }
 export function requestEnhance(itemId: string): boolean {
   return sendIntent('enhance', { itemId });
@@ -101,6 +101,10 @@ export function requestMallBuy(itemId: string): boolean {
 /** 洗点（联机权威）：消耗背包洗点符，退还全部已分配属性点。断连被拒。 */
 export function requestRespec(): boolean {
   return sendIntent('respec', {});
+}
+/** Dev 作弊键(Ctrl+E)：联机下向服务端申请发放「同区域同品质」测试套装（服务端权威发放并 worldSync 下发）。 */
+export function requestDevGrantSet(zone: number, quality: string): boolean {
+  return sendIntent('devGrantSet', { zone, quality });
 }
 export function requestClaimQuest(questId: string): boolean {
   return sendIntent('claimQuest', { questId });

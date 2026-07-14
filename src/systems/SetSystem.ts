@@ -81,6 +81,18 @@ function addBonus(into: SetBonus, from?: SetBonus): void {
   }
 }
 
+/**
+ * 累积加成：把「件数 ≤ count」的所有档位加成全部叠加。
+ * 例：穿 4 件 = 2pc + 3pc + 4pc 三档之和（设计注释「按件数累积激活」）。
+ */
+function accumulate(count: number, table: Record<number, SetBonus>): SetBonus {
+  const out: SetBonus = {};
+  for (const t of [2, 3, 4, 5]) {
+    if (count >= t && table[t]) addBonus(out, table[t]);
+  }
+  return out;
+}
+
 /** 单套装进度（供 UI 展示） */
 export interface SetProgress {
   setId: string;
@@ -110,8 +122,8 @@ export function computeSetBonuses(equipment: Equipment): SetBonus {
   const total: SetBonus = {};
   for (const setId of Object.keys(counts)) {
     const c = counts[setId];
-    addBonus(total, ARMOR_SET_BONUSES[c.armor]);
-    addBonus(total, JEWELRY_SET_BONUSES[c.jewel]);
+    addBonus(total, accumulate(c.armor, ARMOR_SET_BONUSES));
+    addBonus(total, accumulate(c.jewel, JEWELRY_SET_BONUSES));
   }
   return total;
 }
@@ -134,8 +146,8 @@ export function listSetProgress(equipment: Equipment): SetProgress[] {
   for (const setId of Object.keys(counts)) {
     const c = counts[setId];
     const active: SetBonus = {};
-    addBonus(active, ARMOR_SET_BONUSES[c.armor]);
-    addBonus(active, JEWELRY_SET_BONUSES[c.jewel]);
+    addBonus(active, accumulate(c.armor, ARMOR_SET_BONUSES));
+    addBonus(active, accumulate(c.jewel, JEWELRY_SET_BONUSES));
     out.push({
       setId,
       name: setName(setId),
