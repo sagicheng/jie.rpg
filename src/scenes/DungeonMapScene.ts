@@ -49,6 +49,7 @@ export class DungeonMapScene extends Phaser.Scene {
   /** 是否由队长带队跟随进入：是则镜像队长阶段进度，自己不领奖/不进下一阶。 */
   private followEnter = false;
   private followStageInit = false;  // 队员初始进入副本时一次性镜像服务端 stage（避免实时镜像导致提前跳阶）
+  private leaderStageInit = false;  // 队长初始进入副本时一次性从服务端 stage 同步（支持"掉线重连续到原阶"）
   /** 自身颜色（进房时由 GameScene 传入，用于远端队友 tint + 上报给 dungeon room）。 */
   private myColor = '#4ecdc4';
   private localStage = 1;        // 当前显示的地图层（跟随服务端 stage）
@@ -714,6 +715,10 @@ export class DungeonMapScene extends Phaser.Scene {
     // 后续阶段推进由队长 transitionToStage 显式广播 teamDungeonStage 驱动，
     // 不再实时镜像——避免服务端 stage 在队长领奖瞬间就+1 导致队员提前跳阶。
     if (this.followEnter && !this.followStageInit) { this.syncToServerStage(s.stage); this.followStageInit = true; }
+    // 队长：进本时一次性从服务端 stage 同步 localStage（含"最后一人掉线→房间销毁→重连开新房间续到原阶"场景）。
+    // 正常首进服务端 stage=1 与 localStage=1 相等→no-op；断连重连服务端 stage=N>1→对齐到 N，避免客户端卡在 1 阶发错 claimStage 被拒。
+    // 仅首次同步，后续推进由队长自身 transitionToStage 驱动，不与权威状态变更冲突。
+    if (!this.followEnter && !this.leaderStageInit) { this.syncToServerStage(s.stage); this.leaderStageInit = true; }
     // 不在此处理阶段通关——本场景的完成检测由 onMultiBattleEnd 逐怪追踪（全部明雷击杀后
     // 调 handleStageCleared 生成领奖 NPC）。阶段推进与领奖通过 claimReward → claimStage
     // 权威驱动（DungeonRoom 服务端发奖+推进 stage）。若在此通过 serverStage/phase 变化

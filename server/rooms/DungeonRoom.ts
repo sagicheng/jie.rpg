@@ -42,16 +42,21 @@ export class DungeonRoom extends Room<DungeonRoomState> {
         if (target) target.send('claimStageReward', { gold: rw.gold, exp: rw.exp, loot: rw.loot.map(i => i.name) });
       });
 
-      if (s >= 3) {
-        this.state.phase = 'clear';
-        // 全队标记副本完成（清除各自的活动副本，下次进入重新计次）
-        this.state.players.forEach((dp: any) => {
-          const pw = world.get(dp.gameSid);
-          if (pw) world.completeDungeon(pw, this.state.dungeonId);
-        });
-      } else {
-        this.state.stage = s + 1;
-      }
+    if (s >= 3) {
+      this.state.phase = 'clear';
+      // 全队标记副本完成（清除各自的活动副本，下次进入重新计次）
+      this.state.players.forEach((dp: any) => {
+        const pw = world.get(dp.gameSid);
+        if (pw) world.completeDungeon(pw, this.state.dungeonId);
+      });
+    } else {
+      this.state.stage = s + 1;
+      // 回写持久化 stage：掉线后重连可续到本阶（而非第1阶重来）
+      this.state.players.forEach((dp: any) => {
+        const pw = world.get(dp.gameSid);
+        if (pw && pw.dungeon) pw.dungeon.stage = s + 1;
+      });
+    }
     });
 
     // 副本内位置同步（队友可见）：更新在场玩家 x/y，@colyseus/schema 自动广播给同房间
@@ -72,6 +77,11 @@ export class DungeonRoom extends Room<DungeonRoomState> {
       // 客户端 joinOrCreate 的 Promise 会 reject，DungeonMapScene 收到 catch 后退出副本。
       throw new Error(res.msg || '本周副本次数已用完');
     }
+    // 续打：用持久化的 stage 初始化房间进度。
+    //  - 房间存活（还有别人）：沿用房间内最新 stage。
+    //  - 房间已销毁（最后一人掉线）：重连开新房间，用 pw.dungeon.stage 续到原阶（而非从第1阶重来）。
+    // Math.max 避免新加入队员把进度拉低。
+    this.state.stage = Math.max(this.state.stage, (pw.dungeon && pw.dungeon.stage) || 1);
     const dp = new DungeonPlayer();
     dp.dungeonSid = client.sessionId;
     dp.gameSid = gameSid;

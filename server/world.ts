@@ -58,9 +58,14 @@ export interface WorldItem {
   enhanceLevel?: number; refineStats?: Array<{ key: string; value: number }>;
 }
 
-/** 副本进行中的活动副本（联机权威，断连不丢；用于周次计次的"续打免计费"判定）。 */
+/**
+ * 副本进行中的活动副本（联机权威，断连不丢；用于周次计次的"续打免计费"判定）。
+ * stage 一并持久化：房间因 autoDispose 销毁后，重连仍可续到原阶（而非从第1阶重来）。
+ */
 export interface ActiveDungeon {
   dungeonId: number;
+  /** 当前所处阶（1~3）。逐阶领奖推进；持久化以支撑"最后一人掉线也能续打"。 */
+  stage: number;
 }
 
 export interface PlayerWorld {
@@ -384,7 +389,7 @@ export class WorldService {
       return { ok: false, msg: '本周副本次数已用完（共享3次）' };
     }
     pw.dungeonWeekly.count += 1;
-    pw.dungeon = { dungeonId };
+    pw.dungeon = { dungeonId, stage: 1 };
     return { ok: true, msg: '进入副本', data: { resumed: false, remaining: DUNGEON_WEEKLY_CAP - pw.dungeonWeekly.count } };
   }
 
