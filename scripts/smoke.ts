@@ -10,27 +10,47 @@ import { ZONE_CONFIGS } from '../src/systems/Zones';
 import { NODE_TO_MATERIAL } from '../src/data/materials';
 
 const ENDPOINT = 'ws://localhost:2567';
+const REST = 'http://localhost:2567/api';
 const GW = 1920, GH = 1080;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// 鉴权引导：联机服 GameRoom 入房强制 token+characterId，故 smoke 需先注册+建角。
+async function mkChar(user: string) {
+  const reg: any = await (await fetch(`${REST}/register`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: user, password: 'test1234', security: 'sec1234' }),
+  })).json();
+  const ch: any = await (await fetch(`${REST}/character/create`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: reg.token, name: user, element: 'fire' }),
+  })).json();
+  return { token: reg.token as string, charId: ch.character.id as number };
+}
 
 async function main() {
   const clientA = new Client(ENDPOINT);
   const clientB = new Client(ENDPOINT);
 
+  // 鉴权角色：A/B 复用贯穿全局；world2 用独立全新角色验证"重连重新种子"。
+  const authA = await mkChar('smk_alfa');
+  const authB = await mkChar('smk_bravo');
+  const authW2 = await mkChar('smk_world2');
+
   // ——— 1) 共享地图：移动同步 + 聊天 ———
-  const roomA = await clientA.joinOrCreate('game', { name: '甲' });
-  const roomB = await clientB.joinOrCreate('game', { name: '乙' });
+  const roomA = await clientA.joinOrCreate('game', { token: authA.token, characterId: authA.charId });
+  const roomB = await clientB.joinOrCreate('game', { token: authB.token, characterId: authB.charId });
   await wait(300);
 
   await roomA.send('move', { x: 123, y: 456 });
-  await roomB.send('chat', { text: '组队吗' });
+  const aMsgs: any[] = [];
+  roomA.onMessage('chat', (m: any) => aMsgs.push(m));
+  await roomB.send('chat', { channel: 'world', text: '组队吗' });
   await wait(300);
 
   const aInB = (roomB.state as any).players.get(roomA.sessionId);
   const moved = !!aInB && aInB.x === 123 && aInB.y === 456;
 
-  const msgs = [...(roomA.state as any).messages.values()] as any[];
-  const chatted = msgs.some((m) => m.text === '组队吗');
+  const chatted = aMsgs.some((m) => m.text === '组队吗' && m.channel === 'world');
 
   console.log(`[地图] A 的位置被 B 实时同步看到 : ${moved ? 'OK' : 'BAD'}`);
   console.log(`[地图] B 的聊天被 A 收到         : ${chatted ? 'OK' : 'BAD'}`);
@@ -71,8 +91,8 @@ async function main() {
   await battleB.leave();
 
   // ——— 3) 怪物锁定 / 复原 / 刷新（服务端状态机）———
-  const roomC = await clientA.joinOrCreate('game', { name: '甲' });
-  const roomD = await clientB.joinOrCreate('game', { name: '乙' }); // 同一 game 房间
+  const roomC = await clientA.joinOrCreate('game', { token: authA.token, characterId: authA.charId });
+  const roomD = await clientB.joinOrCreate('game', { token: authB.token, characterId: authB.charId }); // 同一 game 房间
   await wait(200);
 
   // 安全读取怪物状态（colyseus.js 在 map 无条目时该字段为 undefined）
@@ -114,8 +134,8 @@ async function main() {
   console.log(`[怪物] 击杀后按时刷新         : ${killOk && respawnOk ? 'OK' : 'BAD'}`);
 
   // ——— 4) 战斗中标记（远端名牌「战斗中」标签，组队前置）———
-  const roomE = await clientA.joinOrCreate('game', { name: '丙' });
-  const roomF = await clientB.joinOrCreate('game', { name: '丁' });
+  const roomE = await clientA.joinOrCreate('game', { token: authA.token, characterId: authA.charId });
+  const roomF = await clientB.joinOrCreate('game', { token: authB.token, characterId: authB.charId });
   await wait(200);
   await roomE.send('setBattling', { v: true });
   await wait(200);
@@ -131,8 +151,8 @@ async function main() {
   console.log(`[战斗] 退出战斗清除 battling : ${battlingOff ? 'OK' : 'BAD'}`);
 
   // ——— 5) 地图怪权威战斗：battle 房间单人权威结算胜利 → 回写 game 房间 killMonster 广播给另一玩家 ———
-  const roomG = await clientA.joinOrCreate('game', { name: '戊' });
-  const roomH = await clientB.joinOrCreate('game', { name: '己' });
+  const roomG = await clientA.joinOrCreate('game', { token: authA.token, characterId: authA.charId });
+  const roomH = await clientB.joinOrCreate('game', { token: authB.token, characterId: authB.charId });
   await wait(200);
 
   const realEnemy = {
@@ -174,8 +194,8 @@ async function main() {
   console.log(`[地图怪权威] 胜利回写kill同步 : ${mapKillSyncOk ? 'OK' : 'BAD'}`);
 
   // ——— 6) 地图怪隔离：A 碰怪1 / B 碰怪2 必须各自独立房，绝不组队打同一只（修复"被拉进同一场"bug）———
-  const roomI = await clientA.joinOrCreate('game', { name: '庚' });
-  const roomJ = await clientB.joinOrCreate('game', { name: '辛' });
+  const roomI = await clientA.joinOrCreate('game', { token: authA.token, characterId: authA.charId });
+  const roomJ = await clientB.joinOrCreate('game', { token: authB.token, characterId: authB.charId });
   await wait(200);
 
   const ba: any = await clientA.joinOrCreate('battle', { name: '庚', enemyData: realEnemy, monsterId: 'z1:0' });
@@ -197,8 +217,8 @@ async function main() {
   console.log(`[隔离] 互不混入对方战斗   : ${aSolo && bSolo ? 'OK' : 'BAD'}`);
 
   // ——— 7) 权威结算真实性：技能/道具/目标选择不"秒胜"，且连续两场战斗服务端不崩（回归 Bug①/Bug②）———
-  const roomK = await clientA.joinOrCreate('game', { name: '壬' });
-  const roomL = await clientB.joinOrCreate('game', { name: '癸' });
+  const roomK = await clientA.joinOrCreate('game', { token: authA.token, characterId: authA.charId });
+  const roomL = await clientB.joinOrCreate('game', { token: authB.token, characterId: authB.charId });
   await wait(200);
 
   const loEnemy = {
@@ -266,8 +286,8 @@ async function main() {
 
   // ——— 8) 怪组数量 + 数值真实性（回归 Bug①怪单只 / Bug②数值崩坏）———
   // 用真实 1 级玩家属性 + Boss(妖将)+随从 阵容，验证：怪组>1 / Boss对低防玩家伤害>1 / 玩家不能2回合秒Boss
-  const roomM = await clientA.joinOrCreate('game', { name: '子' });
-  const roomN = await clientB.joinOrCreate('game', { name: '丑' });
+  const roomM = await clientA.joinOrCreate('game', { token: authA.token, characterId: authA.charId });
+  const roomN = await clientB.joinOrCreate('game', { token: authB.token, characterId: authB.charId });
   await wait(200);
 
   const bossEnemy = {
@@ -363,7 +383,7 @@ async function main() {
   const numOk = groupOk && smallGroupOk && bossDmgOk && noTwoShotOk && rewardOk;
 
   // ——— 9) 权威世界状态：进房即收到 worldSync（服务端单一真相源）———
-  const roomW: any = await clientA.joinOrCreate('game', { name: '世' });
+  const roomW: any = await clientA.joinOrCreate('game', { token: authA.token, characterId: authA.charId });
   let lastSync: any = null;
   let lastResult: any = null;
   roomW.onMessage('worldSync', (pw: any) => { lastSync = pw; });
@@ -422,7 +442,7 @@ async function main() {
   const goldBeforeLeave = lastSync ? lastSync.gold : -1;
   await roomW.leave();
   await wait(400);
-  const roomW2: any = await clientA.joinOrCreate('game', { name: '世2' });
+  const roomW2: any = await clientA.joinOrCreate('game', { token: authW2.token, characterId: authW2.charId });
   let lastSync2: any = null;
   roomW2.onMessage('worldSync', (pw: any) => { lastSync2 = pw; });
   await wait(400);

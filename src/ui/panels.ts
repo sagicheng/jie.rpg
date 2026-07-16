@@ -1809,7 +1809,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       const chatLines = scene.add.container(chatX + 8, chatY + 30);
       content.add(chatLines);
       scene.guildChatLines = chatLines;
-      (GameState.guildChatLog || []).forEach((m: any) => {
+      (GameState.chatLog || []).filter((m: any) => m.channel === 'guild').forEach((m: any) => {
         chatLines.add(scene.add.text(0, chatLines.length * 15, `${m.fromName}：${m.text}`, {
           fontSize: '12px', color: m.fromCharId === scene.characterId ? '#9fe6ff' : '#cdd6e8',
           wordWrap: { width: chatW - 16 }, padding: { y: 1 },

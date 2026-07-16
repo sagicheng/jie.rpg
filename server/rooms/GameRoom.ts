@@ -6,7 +6,7 @@
  */
 
 import { Room, Client } from '@colyseus/core';
-import { GameRoomState, GamePlayer, ChatMessage, MonsterState } from '../schema';
+import { GameRoomState, GamePlayer, MonsterState } from '../schema';
 import { world, type OpResult } from '../world';
 import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld } from '../db';
 import { enqueueArena, dequeueArena, queueSize } from '../arenaService';
@@ -49,6 +49,19 @@ function registerGuildOnline(client: Client, charId: number, name: string): void
 
 function unregisterGuildOnline(client: Client): void {
   onlineGuild.forEach((set) => set.delete(client.sessionId));
+}
+
+/**
+ * 全量在线客户端注册表（模块级，跨 GameRoom 实例共享）。
+ * sessionId → { client, charId, name }，用于组队/私聊/活动跨房间投递。
+ */
+const onlineClients = new Map<string, { client: Client; charId: number; name: string }>();
+
+function registerOnline(client: Client, charId: number, name: string): void {
+  onlineClients.set(client.sessionId, { client, charId, name });
+}
+function unregisterOnline(client: Client): void {
+  onlineClients.delete(client.sessionId);
 }
 
 // ——— 队伍辅助函数 ———
@@ -139,28 +152,67 @@ export class GameRoom extends Room<GameRoomState> {
       p.x = data.x; p.y = data.y;
     });
 
-    this.onMessage('chat', (client, data: { text?: string }) => {
-      const p = this.state.players.get(client.sessionId);
-      const msg = new ChatMessage();
-      msg.name = p?.name ?? '匿名';
-      msg.text = String(data.text ?? '').slice(0, 200);
-      msg.t = Date.now();
-      this.state.messages.push(msg);
-      if (this.state.messages.length > 50) this.state.messages.shift();
-    });
-
-    // 公会聊天：仅同公会在线成员（跨房间）可接收
-    this.onMessage('guildChat', (client, data: { text?: string }) => {
+    // 统一聊天：单入口，按 channel 分流（world/system 房间内；guild/team/whisper/event 跨房间或定向）
+    this.onMessage('chat', (client, data: { channel?: string; text?: string; targetCharId?: number }) => {
+      const channel = typeof data?.channel === 'string' ? data.channel : 'world';
+      // 服务端专属频道：客户端不得伪造
+      if (channel === 'event' || channel === 'system') return;
       const charId = sessionCharMap.get(client.sessionId);
       if (charId === undefined) return;
-      const gid = getMemberGuild(charId);
-      if (gid === null) return;
       const text = typeof data?.text === 'string' ? data.text.trim().slice(0, 200) : '';
       if (!text) return;
       const name = getCharacter(charId)?.name || '匿名';
-      const payload = { fromName: name, fromCharId: charId, text, ts: Date.now() };
-      const set = onlineGuild.get(gid);
-      if (set) set.forEach(({ client: c }) => c.send('guildChat', payload));
+      const ts = Date.now();
+      const payload = { channel, fromName: name, fromCharId: charId, text, ts };
+
+      if (channel === 'world') {
+        this.clients.forEach((c) => c.send('chat', payload));
+        return;
+      }
+      if (channel === 'guild') {
+        const gid = getMemberGuild(charId);
+        if (gid === null) return;
+        const set = onlineGuild.get(gid);
+        if (set) set.forEach(({ client: c }) => c.send('chat', payload));
+        return;
+      }
+      if (channel === 'team') {
+        const teamId = playerTeam.get(client.sessionId);
+        if (!teamId) return;
+        const team = teams.get(teamId);
+        if (!team) return;
+        team.members.forEach((_, sid) => {
+          const rec = onlineClients.get(sid);
+          if (rec) rec.client.send('chat', payload);
+        });
+        return;
+      }
+      if (channel === 'whisper') {
+        const target = typeof data?.targetCharId === 'number' ? data.targetCharId : 0;
+        if (!target || target === charId) return;
+        // 定向发给目标（跨房间）
+        onlineClients.forEach((rec) => {
+          if (rec.charId === target) rec.client.send('chat', { ...payload, channel: 'whisper', targetCharId: target });
+        });
+        // 回显给发送者
+        client.send('chat', { ...payload, channel: 'whisper', targetCharId: target });
+        return;
+      }
+    });
+
+    // 测试专用：仅 CHAT_DEV=1 时接受，用于触发服务端专属频道（活动/系统）广播
+    this.onMessage('devChat', (client, data: { channel?: string; text?: string }) => {
+      if (process.env.CHAT_DEV !== '1') return;
+      const channel = data?.channel;
+      if (channel !== 'event' && channel !== 'system') return;
+      const text = String(data?.text ?? '').slice(0, 200);
+      if (!text) return;
+      const payload = { channel, fromName: channel === 'event' ? '活动' : '系统', fromCharId: 0, text, ts: Date.now() };
+      if (channel === 'event') {
+        onlineClients.forEach((rec) => rec.client.send('chat', payload));
+      } else {
+        this.clients.forEach((c) => c.send('chat', payload));
+      }
     });
 
     this.onMessage('setTitle', (client, data: { title?: string }) => {
@@ -597,6 +649,7 @@ export class GameRoom extends Room<GameRoomState> {
     sessionCharMap.set(client.sessionId, charId);
     world.registerCharId(client.sessionId, charId);
     registerGuildOnline(client, charId, ch.name);
+    registerOnline(client, charId, ch.name);
 
     const p = new GamePlayer();
     p.sessionId = client.sessionId;
@@ -608,7 +661,7 @@ export class GameRoom extends Room<GameRoomState> {
     this.state.players.set(client.sessionId, p);
 
     client.send('worldSync', pw);
-    this.broadcast('system', `${p.name} 进入了地图`);
+    this.broadcastChat('system', `${p.name} 进入了地图`);
   }
 
   onLeave(client: Client) {
@@ -633,6 +686,7 @@ export class GameRoom extends Room<GameRoomState> {
       }
       sessionCharMap.delete(client.sessionId);
       unregisterGuildOnline(client);
+      unregisterOnline(client);
     }
 
     this.state.players.delete(client.sessionId);
@@ -641,6 +695,12 @@ export class GameRoom extends Room<GameRoomState> {
         m.state = 'available'; m.owner = ''; m.respawnAt = 0;
       }
     });
+  }
+
+  /** 服务端推送聊天（房间内频道：system 等）。客户端不可伪造。 */
+  private broadcastChat(channel: string, text: string, fromName = '系统'): void {
+    const payload = { channel, fromName, fromCharId: 0, text, ts: Date.now() };
+    this.clients.forEach((c) => c.send('chat', payload));
   }
 
   private saveAllOnline(): void {

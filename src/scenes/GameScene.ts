@@ -16,6 +16,14 @@ import { BOSS_CONFIG } from '../systems/BossMechanics';
 import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel } from '../ui/panels';
 import { GuildClient } from '../systems/GuildClient';
 import { getClient } from '../net/Net';
+
+/** 统一聊天频道配色与前缀 */
+const CHAT_COLORS: Record<string, string> = {
+  world: '#cdd6e8', guild: '#9fe6a0', team: '#9fc6ff', whisper: '#e6b3ff', system: '#ffd27f', event: '#ff8f8f',
+};
+const CHAT_PREFIX: Record<string, string> = {
+  world: '[世界] ', guild: '[公会] ', team: '[队伍] ', system: '[系统] ', event: '[活动] ',
+};
 import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
 
 interface NPCData {
@@ -69,7 +77,14 @@ export class GameScene extends Phaser.Scene {
   private dungeonConfirmPanel: Phaser.GameObjects.Container | null = null;
   // 公会面板（J 键开关）
   public guildPanel: Phaser.GameObjects.Container | null = null;
-  public guildChatLines: Phaser.GameObjects.Container | null = null; // 公会聊天行容器（实时追加）
+  public guildChatLines: Phaser.GameObjects.Container | null = null; // 公会面板内聊天行容器（实时追加）
+  // 全局聊天 HUD（底部常驻，统一多频道）
+  public chatHud: Phaser.GameObjects.Container | null = null;
+  public chatHudLines: Phaser.GameObjects.Container | null = null;
+  public chatInputEl: HTMLInputElement | null = null;
+  public chatInputFocused = false;
+  public chatChannel = 'world';
+  private chatChannelText: Phaser.GameObjects.Text | null = null;
   private lastSent = { x: -9999, y: -9999, t: 0 };
   private netHint!: Phaser.GameObjects.Text;
   /** 权威战斗结束后的奖励报告，等场景 RESUME 时弹出（避免被战斗场景遮挡）。 */
@@ -392,6 +407,16 @@ export class GameScene extends Phaser.Scene {
       this.toggleGuildPanel();
     });
 
+    // Enter 键：聚焦全局聊天输入框（模态/战斗/副本中不抢占）
+    this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER).on('down', () => {
+      if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
+      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel || this.guildPanel || this.inventoryPanel || this.statPanel) return;
+      if (!this.chatInputFocused) this.focusChatInput();
+    });
+
+    // 全局聊天 HUD（底部常驻）
+    this.createChatHud();
+
     this.zoneText = this.add.text(16, 12, `${ZONE_NAMES[GameState.zone]}`, {
       fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
       backgroundColor: '#000000aa', padding: { x: 8, y: 2 },
@@ -448,6 +473,7 @@ export class GameScene extends Phaser.Scene {
   update(): void {
     this.enemies.forEach(e => { e.label.setPosition(e.sprite.x, e.sprite.y - e.sprite.height / 2 - 10); });
     if (this.isInDialogue) { this.player.setVelocity(0, 0); return; }
+    if (this.chatInputFocused) { this.player.setVelocity(0, 0); return; }
     const speed = this.ctrlKey.isDown ? 500 : 160;
     let vx = 0, vy = 0;
     // 组队非队长：禁止本地移动，位置由服务端强制同步到队长
@@ -1227,10 +1253,8 @@ export class GameScene extends Phaser.Scene {
 
         room.onMessage('intentResult', (res: any) => this.onIntentResult(res));
         room.onLeave(() => { this.clearRemotePlayers(); setActiveRoom(null); });
-        room.onMessage('system', () => {});
-
-        // 实时公会聊天
-        room.onMessage('guildChat', (m: { fromName: string; fromCharId: number; text: string; ts: number }) => this.onGuildChat(m));
+        // 统一聊天（多频道：world/guild/team/whisper/system/event）
+        room.onMessage('chat', (m: { channel: string; fromName: string; fromCharId: number; text: string; ts: number }) => this.onChat(m));
 
         // 进房后拉取公会归属（供聊天发送/面板首屏）
         GuildClient.info(this.authToken, this.characterId).then((r: any) => {
@@ -1578,24 +1602,123 @@ export class GameScene extends Phaser.Scene {
     this.pauseForMenu();
     this.guildPanel = renderGuildPanel(this);
   }
-  /** 实时公会聊天：追加到本地日志 + 若面板开着则增量渲染。 */
-  public onGuildChat(msg: { fromName: string; fromCharId: number; text: string; ts: number }): void {
-    GameState.guildChatLog.push(msg);
-    if (GameState.guildChatLog.length > 50) GameState.guildChatLog.shift();
-    if (this.guildChatLines) {
-      const line = this.add.text(8, this.guildChatLines.length * 15, `${msg.fromName}：${msg.text}`, {
+  /** 统一聊天接收：追加到本地日志 + 按频道路由渲染（公会面板聊天区 + 全局 HUD）。 */
+  public onChat(msg: { channel: string; fromName: string; fromCharId: number; text: string; ts: number }): void {
+    this.appendChatLine(msg.channel, msg.fromName, msg.fromCharId, msg.text);
+  }
+
+  private appendChatLine(channel: string, fromName: string, fromCharId: number, text: string): void {
+    GameState.chatLog.push({ channel, fromName, fromCharId, text, ts: Date.now() });
+    if (GameState.chatLog.length > 200) GameState.chatLog.shift();
+    // 公会面板内聊天区（仅 guild 频道）
+    if (channel === 'guild' && this.guildChatLines) {
+      const line = this.add.text(8, this.guildChatLines.length * 15, `${fromName}：${text}`, {
         fontSize: '12px',
-        color: msg.fromCharId === this.characterId ? '#9fe6ff' : '#cdd6e8',
+        color: fromCharId === this.characterId ? '#9fe6ff' : '#cdd6e8',
         wordWrap: { width: 296 }, padding: { y: 1 },
       });
       this.guildChatLines.add(line);
     }
+    // 全局聊天 HUD
+    if (this.chatHudLines) {
+      const color = CHAT_COLORS[channel] || '#cdd6e8';
+      const prefix = channel === 'whisper'
+        ? (fromCharId === this.characterId ? '→[私聊] ' : '[私聊] ')
+        : (CHAT_PREFIX[channel] || '');
+      const line = this.add.text(0, this.chatHudLines.length * 16, `${prefix}${fromName}：${text}`, {
+        fontSize: '12px', color, wordWrap: { width: 360 }, padding: { y: 1 },
+      });
+      this.chatHudLines.add(line);
+      while (this.chatHudLines.length > 12) this.chatHudLines.removeAt(0, true);
+    }
+  }
+
+  /** 发送统一聊天（任一频道）。 */
+  public sendChat(channel: string, text: string, targetCharId = 0): void {
+    const t = (text || '').trim();
+    if (!t) return;
+    this.gameRoom?.send('chat', { channel, text: t, targetCharId });
   }
   /** 发送公会聊天（仅同公会在线成员可见）。 */
   public sendGuildChat(text: string): void {
-    const t = (text || '').trim();
-    if (!t) return;
-    this.gameRoom?.send('guildChat', { text: t });
+    this.sendChat('guild', text);
+  }
+
+  // ——— 全局聊天 HUD（底部常驻，统一多频道）———
+  private createChatHud(): void {
+    if (this.chatHud) return;
+    const W = this.scale.width, H = this.scale.height;
+    const c = this.add.container(0, 0).setDepth(5000).setScrollFactor(0);
+    this.chatHud = c;
+    const boxX = 12, boxY = H - 250, boxW = 380, boxH = 176;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0c0c18, 0.55); bg.fillRoundedRect(boxX, boxY, boxW, boxH, 8);
+    bg.lineStyle(1, 0x334466, 0.5); bg.strokeRoundedRect(boxX, boxY, boxW, boxH, 8);
+    c.add(bg);
+    c.add(this.add.text(boxX + 10, boxY + 6, '聊天 (Enter 发言)', { fontSize: '12px', color: '#88aacc', fontStyle: 'bold' }).setOrigin(0, 0.5));
+    this.chatChannelText = this.add.text(boxX + boxW - 10, boxY + 6, '[世界]', { fontSize: '12px', color: '#aaccff' }).setOrigin(1, 0.5);
+    c.add(this.chatChannelText);
+    this.chatHudLines = this.add.container(boxX + 8, boxY + 26);
+    c.add(this.chatHudLines);
+    // 输入框（常驻，不自动聚焦）
+    this.chatInputEl = this.spawnChatInput();
+    this.chatInputEl.addEventListener('focus', () => { this.chatInputFocused = true; if (this.input.keyboard) this.input.keyboard.enabled = false; });
+    this.chatInputEl.addEventListener('blur', () => { this.chatInputFocused = false; if (this.input.keyboard) this.input.keyboard.enabled = true; });
+    this.chatInputEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        const v = this.chatInputEl!.value; this.chatInputEl!.value = ''; this.chatInputEl!.blur();
+        this.submitChat(v);
+      } else if (e.key === 'Escape') {
+        this.chatInputEl!.value = ''; this.chatInputEl!.blur();
+      }
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this.chatInputEl && this.chatInputEl.parentNode) this.chatInputEl.parentNode.removeChild(this.chatInputEl);
+    });
+  }
+
+  private spawnChatInput(): HTMLInputElement {
+    const el = document.createElement('input');
+    el.type = 'text'; el.maxLength = 200; el.value = '';
+    el.placeholder = 'Enter 发言 · /g 公会 /t 队伍 /w<ID> 私聊';
+    el.style.cssText = 'position:absolute;font-size:15px;color:#fff;background:#0a0a1e;border:1px solid #446688;border-radius:4px;outline:none;z-index:9999;';
+    const canvas = this.game.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const gw = this.scale.width, gh = this.scale.height;
+    const sx = rect.width / gw, sy = rect.height / gh;
+    const w = 366, h = 30;
+    const lx = 14, ly = gh - 60;
+    el.style.left = (rect.left + lx * sx) + 'px';
+    el.style.top = (rect.top + ly * sy) + 'px';
+    el.style.width = (w * sx) + 'px'; el.style.height = (h * sy) + 'px';
+    document.body.appendChild(el);
+    return el;
+  }
+
+  private focusChatInput(): void {
+    this.createChatHud();
+    this.chatInputEl?.focus();
+  }
+
+  private submitChat(raw: string): void {
+    const v = (raw || '').trim();
+    if (!v) return;
+    let channel = this.chatChannel;
+    let targetCharId = 0;
+    let text = v;
+    if (v.startsWith('/g ')) { channel = 'guild'; text = v.slice(3).trim(); }
+    else if (v.startsWith('/t ')) { channel = 'team'; text = v.slice(3).trim(); }
+    else if (v.startsWith('/w')) {
+      const m = v.match(/^\/w(\d+)\s+(.*)$/);
+      if (m) { channel = 'whisper'; targetCharId = parseInt(m[1], 10); text = m[2].trim(); }
+      else { this.appendChatLine('system', '系统', 0, '私聊格式：/w<角色ID> 内容'); return; }
+    }
+    if (!text) return;
+    if (channel === 'guild' && !GameState.guildId) { this.appendChatLine('system', '系统', 0, '你不在公会'); return; }
+    if (channel === 'team' && !this.teamId) { this.appendChatLine('system', '系统', 0, '你不在队伍'); return; }
+    if (channel === 'whisper' && !targetCharId) { this.appendChatLine('system', '系统', 0, '请指定私聊对象 ID'); return; }
+    this.sendChat(channel, text, targetCharId);
   }
 
   /** 组队面板内通用按钮（graphics + text + 交互 zone）。 */

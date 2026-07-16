@@ -32,7 +32,6 @@ export class MonsterState extends Schema {
 
 export class GameRoomState extends Schema {
   @type({ map: GamePlayer }) players = new MapSchema<GamePlayer>();
-  @type([ChatMessage]) messages = new ArraySchema<ChatMessage>();
   /** 共享怪物权威状态：key = `${zone}:${序号}`。服务端驱动锁定/死亡/刷新，自动广播给同房所有客户端。 */
   @type({ map: MonsterState }) monsters = new MapSchema<MonsterState>();
 }

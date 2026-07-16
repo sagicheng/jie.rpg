@@ -190,13 +190,13 @@ async function main(): Promise<void> {
 
     // charlie 不应收到公会聊天
     let charlieGot = false;
-    gc.onMessage('guildChat', () => { charlieGot = true; });
+    gc.onMessage('chat', (m: any) => { if (m.channel === 'guild') charlieGot = true; });
 
-    // alfa 收 bravo 的聊天
+    // alfa 收 bravo 的聊天（统一 chat 通道，channel='guild'）
     const alfaGot: any = await new Promise<any>((resolve) => {
       const timer = setTimeout(() => resolve(null), 8000);
-      ga.onMessage('guildChat', (m: any) => { clearTimeout(timer); resolve(m); });
-      gb.send('guildChat', { text: '公会大家好' });
+      ga.onMessage('chat', (m: any) => { if (m.channel === 'guild') { clearTimeout(timer); resolve(m); } });
+      gb.send('chat', { channel: 'guild', text: '公会大家好' });
     });
     assert('同公会 alfa 收到聊天', !!alfaGot && alfaGot.text === '公会大家好' && alfaGot.fromName === 'g_e2e_bravo');
     assert('非成员 charlie 未收到', charlieGot === false);
@@ -204,8 +204,8 @@ async function main(): Promise<void> {
     // 发送者自身也收到（回显）：用 alfa 客户端发+收，避免与上方 bravo 同客户端时序竞态
     const alfaEcho: any = await new Promise<any>((resolve) => {
       const timer = setTimeout(() => resolve(null), 8000);
-      ga.onMessage('guildChat', (m: any) => { clearTimeout(timer); resolve(m); });
-      ga.send('guildChat', { text: '我是成员' });
+      ga.onMessage('chat', (m: any) => { if (m.channel === 'guild') { clearTimeout(timer); resolve(m); } });
+      ga.send('chat', { channel: 'guild', text: '我是成员' });
     });
     assert('发送者自身回显收到', !!alfaEcho && alfaEcho.text === '我是成员' && alfaEcho.fromCharId === alfa.charId);
 

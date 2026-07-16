@@ -14,7 +14,8 @@ export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
     guildId: number | null = null;
     guildName = '';
     guildRank: 'leader' | 'elder' | 'member' | '' = '';
-    guildChatLog: Array<{ fromName: string; fromCharId: number; text: string; ts: number }> = [];
+    /** 统一聊天记录：多频道（world/guild/team/whisper/system/event）合并，按 channel 分流展示 */
+    chatLog: Array<{ channel: string; fromName: string; fromCharId: number; text: string; ts: number }> = [];
     level = 1;
     exp = 0;
     statPoints = 0;
@@ -31,7 +32,7 @@ export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
       this.gold = 0; this.x = 400; this.y = 500; this.zone = 1;
       this.hasCreated = false; this.newGame = true;
       this.discoveredZones = [1];
-      this.guildId = null; this.guildName = ''; this.guildRank = ''; this.guildChatLog = [];
+      this.guildId = null; this.guildName = ''; this.guildRank = ''; this.chatLog = [];
       Inventory.reset();
       Kido.reset();
     }
