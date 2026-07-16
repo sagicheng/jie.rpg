@@ -13,7 +13,7 @@ import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
-import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel } from '../ui/panels';
+import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel, renderFriendPanel } from '../ui/panels';
 import { GuildClient } from '../systems/GuildClient';
 import { applyGuildStatBonus } from '../systems/GuildSkills';
 import { getClient } from '../net/Net';
@@ -78,12 +78,16 @@ export class GameScene extends Phaser.Scene {
   private dungeonConfirmPanel: Phaser.GameObjects.Container | null = null;
   // 公会面板（J 键开关）
   public guildPanel: Phaser.GameObjects.Container | null = null;
+  // 好友面板（K 键开关）
+  public friendPanel: Phaser.GameObjects.Container | null = null;
   // 全局聊天 HUD（底部常驻，统一多频道）
   public chatHud: Phaser.GameObjects.Container | null = null;
   public chatHudLines: Phaser.GameObjects.Container | null = null;
   public chatInputEl: HTMLInputElement | null = null;
   public chatInputFocused = false;
   public chatChannel = 'world';
+  /** 当前私聊目标角色 ID（好友面板"私聊"按钮或 /w 设定，submitChat 复用）。 */
+  private whisperTargetCharId = 0;
   private chatChannelText: Phaser.GameObjects.Text | null = null;
   private lastSent = { x: -9999, y: -9999, t: 0 };
   private netHint!: Phaser.GameObjects.Text;
@@ -276,7 +280,7 @@ export class GameScene extends Phaser.Scene {
 
     // 鼠标点击移动（组队非队长禁止）
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel || this.mallPanel || this.guildPanel) return;
+      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel || this.mallPanel || this.guildPanel || this.friendPanel) return;
       if (this.teamPanelFull || this.dungeonConfirmOpen) return; // 模态界面打开时不移动
       if (this.teamId && this.teamLeaderSid !== this.mySessionId) return; // 非队长不移
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
@@ -405,6 +409,15 @@ export class GameScene extends Phaser.Scene {
       if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
       if (this.inventoryPanel || this.statPanel) return;
       this.toggleGuildPanel();
+    });
+
+    // K 键：开关好友面板
+    this.input.keyboard!.addKey('K').on('down', () => {
+      if (this.ctrlKey.isDown) return;
+      if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
+      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
+      if (this.inventoryPanel || this.statPanel) return;
+      this.toggleFriendPanel();
     });
 
     // Enter 键：聚焦全局聊天输入框（模态/战斗/副本中不抢占）
@@ -1270,6 +1283,38 @@ export class GameScene extends Phaser.Scene {
         room.onLeave(() => { this.clearRemotePlayers(); setActiveRoom(null); });
         // 统一聊天（多频道：world/guild/team/whisper/system/event）
         room.onMessage('chat', (m: { channel: string; fromName: string; fromCharId: number; text: string; ts: number }) => this.onChat(m));
+        // 好友实时通知（申请/接受/拒绝/移除/上下线）——定向推送，客户端无法伪造
+        room.onMessage('friendNotify', (m: any) => {
+          const name = (m.name || m.fromName || '好友') as string;
+          const cid: number = m.charId != null ? m.charId : (m.fromCharId != null ? m.fromCharId : -1);
+          switch (m.type) {
+            case 'request':
+              this.showWorldNotif(`${name} 申请加你为好友`, true);
+              if (this.friendPanel) this.refreshFriendPanel();
+              break;
+            case 'accepted':
+              this.showWorldNotif(`${name} 已接受你的好友申请`, true);
+              if (this.friendPanel) this.refreshFriendPanel();
+              break;
+            case 'declined':
+              this.showWorldNotif(`${name} 拒绝了你的好友申请`, false);
+              break;
+            case 'removed':
+              this.showWorldNotif(`${name} 将你从好友列表移除了`, false);
+              if (this.friendPanel) this.refreshFriendPanel();
+              break;
+            case 'online':
+              if (cid >= 0) GameState.friendOnline[cid] = true;
+              this.showWorldNotif(`${name} 上线了`, true);
+              if (this.friendPanel) this.refreshFriendPanel();
+              break;
+            case 'offline':
+              if (cid >= 0) GameState.friendOnline[cid] = false;
+              this.showWorldNotif(`${name} 下线了`, false);
+              if (this.friendPanel) this.refreshFriendPanel();
+              break;
+          }
+        });
 
         // 进房后拉取公会归属（供聊天发送/面板首屏/战斗加成）
         GuildClient.info(this.authToken, this.characterId).then((r: any) => {
@@ -1412,6 +1457,7 @@ export class GameScene extends Phaser.Scene {
     if (this.enhancePanel) { closeEnhancePanel(this); toggleEnhancePanel(this); }
     if (this.shopPanel && this.lastShopItems) { openShop(this, this.lastShopItems); }
     if (this.mallPanel) { openMall(this); }
+    if (this.friendPanel) { renderFriendPanel(this); }
   }
 
   /** 打开商店并记录数据，便于 worldSync 后自动重渲染。 */
@@ -1626,6 +1672,33 @@ export class GameScene extends Phaser.Scene {
     this.pauseForMenu();
     this.guildPanel = renderGuildPanel(this, resetTab);
   }
+
+  // ——— 好友面板（K 键）———
+  private toggleFriendPanel(): void {
+    if (this.friendPanel) this.closeFriendPanel();
+    else this.openFriendPanel();
+  }
+  public closeFriendPanel(): void {
+    if (this.friendPanel) { this.friendPanel.destroy(true); this.friendPanel = null; }
+    this.resumeFromMenu();
+  }
+  public openFriendPanel(): void {
+    this.closeFriendPanel();
+    this.pauseForMenu();
+    this.friendPanel = renderFriendPanel(this);
+  }
+  /** 好友面板内刷新（申请后/实时通知到达时重拉列表）。 */
+  private refreshFriendPanel(): void {
+    if (this.friendPanel) { this.closeFriendPanel(); this.openFriendPanel(); }
+  }
+  /** 从好友面板"私聊"按钮进入：关闭面板 + 切到私聊频道 + 设定目标 + 聚焦输入框。 */
+  public whisperTo(charId: number, name?: string): void {
+    this.closeFriendPanel();
+    this.whisperTargetCharId = charId;
+    this.switchChatChannel('whisper');
+    this.focusChatInput();
+    if (name) this.appendChatLine('system', '系统', 0, `正在私聊 ${name}（角色ID ${charId}），直接输入内容发送`);
+  }
   /** 统一聊天接收：追加到本地日志 + 按频道路由渲染（公会面板聊天区 + 全局 HUD）。 */
   public onChat(msg: { channel: string; fromName: string; fromCharId: number; text: string; ts: number }): void {
     this.appendChatLine(msg.channel, msg.fromName, msg.fromCharId, msg.text);
@@ -1822,6 +1895,8 @@ export class GameScene extends Phaser.Scene {
     if (!text) return;
     if (channel === 'guild' && !GameState.guildId) { this.appendChatLine('system', '系统', 0, '你不在公会'); return; }
     if (channel === 'team' && !this.teamId) { this.appendChatLine('system', '系统', 0, '你不在队伍'); return; }
+    // whisper 频道：若无 /w 前缀，则复用好友面板"私聊"设定的目标 ID
+    if (channel === 'whisper' && !targetCharId && this.whisperTargetCharId) targetCharId = this.whisperTargetCharId;
     if (channel === 'whisper' && !targetCharId) { this.appendChatLine('system', '系统', 0, '请指定私聊对象 ID'); return; }
     // 斜杠前缀切换了频道时，同步刷新标签 UI
     if (channel !== this.chatChannel) this.switchChatChannel(channel);

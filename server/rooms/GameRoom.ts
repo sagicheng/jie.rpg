@@ -8,10 +8,11 @@
 import { Room, Client } from '@colyseus/core';
 import { GameRoomState, GamePlayer, MonsterState } from '../schema';
 import { world, type OpResult } from '../world';
-import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld, addGuildExp, addMemberContribution } from '../db';
+import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld, addGuildExp, addMemberContribution, getFriends } from '../db';
 import { guildShopBuy } from '../guildShop';
 import { enqueueArena, dequeueArena, queueSize } from '../arenaService';
 import { isArenaOpen, ARENA_WEEKLY_CAP } from '../arena';
+import { zoneName } from '../zoneNames';
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
 const TEAM_MAX = 4;
@@ -56,13 +57,38 @@ function unregisterGuildOnline(client: Client): void {
  * 全量在线客户端注册表（模块级，跨 GameRoom 实例共享）。
  * sessionId → { client, charId, name }，用于组队/私聊/活动跨房间投递。
  */
-const onlineClients = new Map<string, { client: Client; charId: number; name: string }>();
+const onlineClients = new Map<string, { client: Client; charId: number; name: string; location: string }>();
 
-function registerOnline(client: Client, charId: number, name: string): void {
-  onlineClients.set(client.sessionId, { client, charId, name });
+function registerOnline(client: Client, charId: number, name: string, location = ''): void {
+  onlineClients.set(client.sessionId, { client, charId, name, location });
 }
 function unregisterOnline(client: Client): void {
   onlineClients.delete(client.sessionId);
+}
+
+/** 向指定 charId 的所有在线会话定向推送消息（跨房间，仿公会聊天）。 */
+export function sendToCharId(charId: number, msgType: string, data: any): boolean {
+  let sent = false;
+  onlineClients.forEach((rec) => {
+    if (rec.charId === charId) { rec.client.send(msgType, data); sent = true; }
+  });
+  return sent;
+}
+
+/** 取某 charId 的当前在线地图场景名（不在线返回 null）。 */
+export function getOnlineLocation(charId: number): string | null {
+  for (const rec of onlineClients.values()) {
+    if (rec.charId === charId) return rec.location || '';
+  }
+  return null;
+}
+
+/** 好友上下线通知：向该玩家的所有在线好友推送 friendNotify。 */
+function notifyFriendsOnline(charId: number, online: boolean): void {
+  const whoName = getCharacter(charId)?.name || '';
+  for (const f of getFriends(charId)) {
+    sendToCharId(f.charId, 'friendNotify', { type: online ? 'online' : 'offline', charId, name: whoName });
+  }
 }
 
 // ——— 队伍辅助函数 ———
@@ -673,7 +699,9 @@ export class GameRoom extends Room<GameRoomState> {
     sessionCharMap.set(client.sessionId, charId);
     world.registerCharId(client.sessionId, charId);
     registerGuildOnline(client, charId, ch.name);
-    registerOnline(client, charId, ch.name);
+    registerOnline(client, charId, ch.name, zoneName(pw.zone));
+    // 好友上下线通知（向在线好友推送）
+    notifyFriendsOnline(charId, true);
 
     const p = new GamePlayer();
     p.sessionId = client.sessionId;
@@ -711,6 +739,8 @@ export class GameRoom extends Room<GameRoomState> {
       sessionCharMap.delete(client.sessionId);
       unregisterGuildOnline(client);
       unregisterOnline(client);
+      // 好友离线通知（下线后向在线好友推送）
+      notifyFriendsOnline(charId, false);
     }
 
     this.state.players.delete(client.sessionId);

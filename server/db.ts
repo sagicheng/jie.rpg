@@ -76,6 +76,15 @@ db.exec(`
     level    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (guild_id, skill_id)
   );
+
+  CREATE TABLE IF NOT EXISTS friends (
+    char_id        INTEGER NOT NULL,
+    friend_char_id INTEGER NOT NULL,
+    status         TEXT NOT NULL,   -- 'pending' | 'accepted'
+    role           TEXT NOT NULL,   -- 'requester' | 'receiver' | 'friend'
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (char_id, friend_char_id)
+  );
 `);
 
 // 存量库迁移：为已存在的 guilds / guild_members 补贡献列（新库由上方 CREATE 直接带列，此处仅兜底）
@@ -360,6 +369,66 @@ export function getGuildSkillLevel(guildId: number, skillId: string): number {
 export function setGuildSkillLevel(guildId: number, skillId: string, level: number): void {
   db.prepare(`INSERT INTO guild_skills (guild_id, skill_id, level) VALUES (?, ?, ?)
     ON CONFLICT(guild_id, skill_id) DO UPDATE SET level = excluded.level`).run(guildId, skillId, level);
+}
+
+// ============= 好友系统 =============
+
+export interface FriendRow {
+  char_id: number;
+  friend_char_id: number;
+  status: string;   // 'pending' | 'accepted'
+  role: string;     // 'requester' | 'receiver' | 'friend'
+  created_at: string;
+}
+
+/** 按角色名精确查找（用于按名添加好友）。 */
+export function getCharacterByName(name: string): CharacterRow | undefined {
+  return db.prepare('SELECT * FROM characters WHERE name = ?').get(name) as CharacterRow | undefined;
+}
+
+/** 我的好友列表（已接受，含对方角色名）。 */
+export function getFriends(charId: number): Array<{ charId: number; name: string }> {
+  return db.prepare(`
+    SELECT f.friend_char_id AS charId, c.name AS name
+    FROM friends f JOIN characters c ON c.id = f.friend_char_id
+    WHERE f.char_id = ? AND f.status = 'accepted'
+  `).all(charId) as Array<{ charId: number; name: string }>;
+}
+
+/** 收到的好友申请（role='receiver'）。 */
+export function getFriendRequests(charId: number): Array<{ charId: number; name: string }> {
+  return db.prepare(`
+    SELECT f.friend_char_id AS charId, c.name AS name
+    FROM friends f JOIN characters c ON c.id = f.friend_char_id
+    WHERE f.char_id = ? AND f.status = 'pending' AND f.role = 'receiver'
+  `).all(charId) as Array<{ charId: number; name: string }>;
+}
+
+/** 任意关系行（pending 或 accepted，任一方向），用于去重/存在性判断。 */
+export function getFriendship(charId: number, otherId: number): FriendRow | undefined {
+  return db.prepare('SELECT * FROM friends WHERE (char_id = ? AND friend_char_id = ?) OR (char_id = ? AND friend_char_id = ?)')
+    .get(charId, otherId, otherId, charId) as FriendRow | undefined;
+}
+
+/** 发送好友申请：双向镜像两行（requester / receiver）。 */
+export function addFriendRequest(requesterId: number, receiverId: number): void {
+  const tx = db.transaction((a: number, b: number) => {
+    db.prepare("INSERT INTO friends (char_id, friend_char_id, status, role) VALUES (?, ?, 'pending', 'requester')").run(a, b);
+    db.prepare("INSERT INTO friends (char_id, friend_char_id, status, role) VALUES (?, ?, 'pending', 'receiver')").run(b, a);
+  });
+  tx(requesterId, receiverId);
+}
+
+/** 接受申请：双向置为 accepted / friend。 */
+export function acceptFriend(requesterId: number, receiverId: number): void {
+  db.prepare("UPDATE friends SET status = 'accepted', role = 'friend' WHERE (char_id = ? AND friend_char_id = ?) OR (char_id = ? AND friend_char_id = ?)")
+    .run(requesterId, receiverId, receiverId, requesterId);
+}
+
+/** 删除好友关系（拒绝 / 移除）：双向删除。 */
+export function removeFriend(charId: number, friendId: number): void {
+  db.prepare('DELETE FROM friends WHERE (char_id = ? AND friend_char_id = ?) OR (char_id = ? AND friend_char_id = ?)')
+    .run(charId, friendId, friendId, charId);
 }
 
 export default db;

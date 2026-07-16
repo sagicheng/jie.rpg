@@ -21,6 +21,10 @@ export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
     guildContribution = 0;      // 公会贡献池
     guildMyContribution = 0;    // 个人累计贡献
     guildSkills: Record<string, number> = {};
+    /** 好友系统（客户端缓存，面板打开/收到 friendNotify 时由 REST 拉取） */
+    friendList: Array<{ charId: number; name: string; online: boolean; location: string }> = [];
+    friendRequests: Array<{ charId: number; name: string }> = [];
+    friendOnline: Record<number, boolean> = {};
     /** 统一聊天记录：多频道（world/guild/team/whisper/system/event）合并，按 channel 分流展示 */
     chatLog: Array<{ channel: string; fromName: string; fromCharId: number; text: string; ts: number }> = [];
     level = 1;
@@ -42,6 +46,7 @@ export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
       this.guildId = null; this.guildName = ''; this.guildRank = ''; this.chatLog = [];
       this.guildLevel = 1; this.guildExp = 0; this.guildExpCap = 0;
       this.guildContribution = 0; this.guildMyContribution = 0; this.guildSkills = {};
+      this.friendList = []; this.friendRequests = []; this.friendOnline = {};
       Inventory.reset();
       Kido.reset();
     }

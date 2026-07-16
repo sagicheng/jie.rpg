@@ -20,6 +20,7 @@ import { PvpRoom } from './rooms/PvpRoom';
 import { startArenaTicker } from './arenaService';
 import authRoutes from './auth';
 import guildRoutes from './guild';
+import friendRoutes from './friends';
 
 const PORT = Number(process.env.PORT) || 2567;
 
@@ -29,6 +30,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/api', authRoutes);
 app.use('/api/guild', guildRoutes);
+app.use('/api/friend', friendRoutes);
 
 // Colyseus（WebSocket 实时通信）
 const httpServer = http.createServer(app);

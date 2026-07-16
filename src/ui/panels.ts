@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, ZANPAKUTO_GROWTH } from '../config';
 import { GameState } from '../systems/GameState';
 import { GuildClient } from '../systems/GuildClient';
+import { FriendClient } from '../systems/FriendClient';
 import { GUILD_SKILLS, guildSkillCost } from '../systems/GuildSkills';
 import { SaveManager } from '../systems/SaveManager';
 import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../systems/BestiaryData';
@@ -2088,6 +2089,176 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
             // 服务端处理有延迟：400ms 后重拉 /info 刷新余额（intentResult 即时提示，worldSync 下发物品/称号）
             scene.time.delayedCall(400, () => refresh());
           });
+      });
+    }
+
+    return c;
+  }
+
+  // ═════════════════════════════════════════
+  // 好友面板（K 键）— 非实时管理走 REST，实时通知走 game 房 friendNotify
+  // ═════════════════════════════════════════
+
+  export function renderFriendPanel(scene: GameScene): Phaser.GameObjects.Container {
+    const cam = scene.cameras.main;
+    const cx = Math.round(cam.scrollX) + GAME_WIDTH / 2, cy = Math.round(cam.scrollY) + GAME_HEIGHT / 2;
+    const c = scene.add.container(cx, cy).setDepth(500);
+
+    // 全屏遮罩（拦截面板外点击）
+    const ov = scene.add.graphics();
+    ov.fillStyle(0, 0.55); ov.fillRect(-GAME_WIDTH / 2, -GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT);
+    ov.setInteractive(new Phaser.Geom.Rectangle(-GAME_WIDTH / 2, -GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains);
+    c.add(ov);
+
+    const PW = 1000, PH = 720;
+    const px = -PW / 2, py = -PH / 2;
+
+    const bg = scene.add.graphics();
+    bg.fillStyle(0x121222, 0.98); bg.fillRoundedRect(px, py, PW, PH, 14);
+    bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(px, py, PW, PH, 14);
+    c.add(bg);
+
+    const tb = scene.add.graphics(); tb.fillStyle(0x1a1a36, 1); tb.fillRoundedRect(px + 2, py + 2, PW - 4, 48, { tl: 12, tr: 12, bl: 0, br: 0 }); c.add(tb);
+    c.add(scene.add.text(px + 20, py + 24, '好友', { fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+    const close = scene.add.text(px + PW - 20, py + 24, '✕', { fontSize: '22px', color: '#aa6677', fontStyle: 'bold' }).setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
+    close.on('pointerdown', () => scene.closeFriendPanel());
+    close.on('pointerover', () => close.setColor('#ff8899'));
+    close.on('pointerout', () => close.setColor('#aa6677'));
+    c.add(close);
+
+    const divider = scene.add.graphics();
+    divider.lineStyle(1, 0x334466, 0.4); divider.lineBetween(px + PW / 2, py + 58, px + PW / 2, py + PH - 10);
+    c.add(divider);
+
+    // HTML 输入框（角色名），随面板销毁自动清理
+    const inputs: { el: HTMLInputElement | HTMLTextAreaElement; lx: number; ly: number; w: number; h: number }[] = [];
+    const repositionInputs = (): void => {
+      const canvas = scene.game.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const sx = rect.width / GAME_WIDTH, sy = rect.height / GAME_HEIGHT;
+      for (const it of inputs) {
+        it.el.style.left = (rect.left + (cx + it.lx) * sx - (it.w * sx) / 2) + 'px';
+        it.el.style.top = (rect.top + (cy + it.ly) * sy - (it.h * sy) / 2) + 'px';
+        it.el.style.width = (it.w * sx) + 'px';
+        it.el.style.height = (it.h * sy) + 'px';
+      }
+    };
+    const placeInput = (lx: number, ly: number, w = 280, h = 34, maxLen = 12, initial = ''): HTMLInputElement => {
+      const el = document.createElement('input');
+      el.type = 'text'; el.maxLength = maxLen; el.value = initial;
+      el.style.cssText = 'position:absolute;font-size:15px;color:#ddd;background:#0a0a1e;border:1px solid #446688;border-radius:5px;padding:4px 8px;outline:none;z-index:9999;';
+      const canvas = scene.game.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const sx = rect.width / GAME_WIDTH, sy = rect.height / GAME_HEIGHT;
+      el.style.left = (rect.left + (cx + lx) * sx - (w * sx) / 2) + 'px';
+      el.style.top = (rect.top + (cy + ly) * sy - (h * sy) / 2) + 'px';
+      el.style.width = (w * sx) + 'px'; el.style.height = (h * sy) + 'px';
+      document.body.appendChild(el); el.focus();
+      inputs.push({ el, lx, ly, w, h });
+      return el;
+    };
+    scene.scale.on('resize', repositionInputs);
+    c.once(Phaser.GameObjects.Events.DESTROY, () => {
+      scene.scale.off('resize', repositionInputs);
+      inputs.forEach(it => { try { if (it.el.parentNode) it.el.parentNode.removeChild(it.el); } catch {} });
+    });
+
+    const btn = (lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void): void => {
+      const bw = Math.max(56, label.length * 15 + 20), bh = 28;
+      const g = scene.add.graphics();
+      g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+      g.lineStyle(1, 0xc9a96e, 0.5); g.strokeRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+      const t = scene.add.text(lx, ly, label, { fontSize: '13px', color: textColor, fontStyle: 'bold' }).setOrigin(0.5);
+      const z = scene.add.zone(lx, ly, bw, bh).setInteractive({ useHandCursor: true });
+      z.on('pointerover', () => { g.clear(); g.fillStyle(color, 1); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+      z.on('pointerout', () => { g.clear(); g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+      z.on('pointerdown', cb);
+      c.add([g, t, z]);
+    };
+
+    const refresh = () => { scene.closeFriendPanel(); scene.openFriendPanel(); };
+    const toast = (msg: string) => {
+      const t = scene.add.text(0, py + 64, msg, { fontSize: '14px', color: '#ffcc88', fontStyle: 'bold' }).setOrigin(0.5);
+      c.add(t);
+      scene.time.delayedCall(1800, () => t.destroy());
+    };
+
+    const loading = scene.add.text(0, 0, '加载中…', { fontSize: '16px', color: '#8899bb' }).setOrigin(0.5);
+    c.add(loading);
+
+    Promise.all([
+      FriendClient.list(scene.authToken, scene.characterId),
+      FriendClient.requests(scene.authToken, scene.characterId),
+    ]).then(([lr, rr]: any[]) => {
+      loading.destroy();
+      if (!lr || !lr.ok) { c.add(scene.add.text(0, 0, '加载失败：' + (lr?.msg || '未知错误'), { fontSize: '14px', color: '#cc6644' }).setOrigin(0.5)); return; }
+      GameState.friendList = lr.friends || [];
+      GameState.friendRequests = (rr && rr.ok) ? (rr.requests || []) : [];
+      GameState.friendOnline = {};
+      GameState.friendList.forEach((f: any) => { GameState.friendOnline[f.charId] = f.online; });
+      renderBody();
+    }).catch(() => { loading.setText('网络错误'); });
+
+    function renderBody(): void {
+      // ── 左列：好友列表 ──
+      const lx = px + 30;
+      c.add(scene.add.text(lx, py + 70, '好友列表', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      const friends = GameState.friendList;
+      if (friends.length === 0) {
+        c.add(scene.add.text(lx, py + 110, '（暂无好友，在右侧用角色名添加）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0));
+      } else {
+        friends.forEach((f: any, i: number) => {
+          const ry = py + 100 + i * 64;
+          if (i % 2 === 0) {
+            const rowBg = scene.add.graphics(); rowBg.fillStyle(0x1a1a2e, 0.4); rowBg.fillRoundedRect(lx - 6, ry - 22, 470, 56, 6); c.add(rowBg);
+          }
+          const dot = scene.add.graphics(); dot.fillStyle(f.online ? 0x44dd66 : 0x555566, 1); dot.fillCircle(lx + 4, ry - 4, 6); c.add(dot);
+          c.add(scene.add.text(lx + 18, ry - 10, f.name, { fontSize: '15px', color: '#cdd6e8', fontStyle: 'bold' }).setOrigin(0, 0.5));
+          const locText = f.online ? (f.location || '在线') : '离线';
+          c.add(scene.add.text(lx + 18, ry + 12, locText, { fontSize: '12px', color: f.online ? '#88cc99' : '#667788' }).setOrigin(0, 0.5));
+          btn(lx + 372, ry - 2, '私聊', 0x33507a, '#bcd4ff', () => { scene.whisperTo(f.charId, f.name); });
+          btn(lx + 430, ry - 2, '移除', 0x6a2a2a, '#ffb0b0', () => {
+            FriendClient.remove(scene.authToken, scene.characterId, f.charId).then((res: any) => {
+              if (res.ok) { toast('已移除好友'); refresh(); } else toast(res.msg || '移除失败');
+            });
+          });
+        });
+      }
+
+      // ── 右列：申请 + 添加 ──
+      const rx = px + 520;
+      c.add(scene.add.text(rx, py + 70, '好友申请', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      const reqs = GameState.friendRequests;
+      if (reqs.length === 0) {
+        c.add(scene.add.text(rx, py + 110, '（暂无申请）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0));
+      } else {
+        reqs.forEach((q: any, i: number) => {
+          const ry = py + 100 + i * 50;
+          if (i % 2 === 0) {
+            const rowBg = scene.add.graphics(); rowBg.fillStyle(0x1a1a2e, 0.4); rowBg.fillRoundedRect(rx - 6, ry - 18, 450, 40, 6); c.add(rowBg);
+          }
+          c.add(scene.add.text(rx, ry, q.name, { fontSize: '15px', color: '#cdd6e8', fontStyle: 'bold' }).setOrigin(0, 0.5));
+          btn(rx + 360, ry, '接受', 0x2a6e4a, '#cfeedd', () => {
+            FriendClient.accept(scene.authToken, scene.characterId, q.charId).then((res: any) => res.ok ? (toast('已添加为好友'), refresh()) : toast(res.msg));
+          });
+          btn(rx + 418, ry, '拒绝', 0x6a2a2a, '#ffb0b0', () => {
+            FriendClient.decline(scene.authToken, scene.characterId, q.charId).then((res: any) => res.ok ? (toast('已拒绝'), refresh()) : toast(res.msg));
+          });
+        });
+      }
+
+      // 添加好友（按角色名）
+      const ay = py + 360;
+      c.add(scene.add.text(rx, ay - 30, '添加好友（输入角色名）', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      c.add(scene.add.text(rx, ay, '角色名', { fontSize: '13px', color: '#8899bb' }).setOrigin(0, 0.5));
+      const nameInput = placeInput(rx + 90, ay, 260, 34, 12);
+      btn(rx + 420, ay, '发送申请', 0x33507a, '#bcd4ff', () => {
+        const nm = nameInput.value.trim();
+        if (!nm) { toast('请输入角色名'); return; }
+        FriendClient.add(scene.authToken, scene.characterId, nm).then((res: any) => {
+          if (res.ok) { toast('已向「' + res.targetName + '」发送申请'); refresh(); }
+          else toast(res.msg || '发送失败');
+        });
       });
     }
 

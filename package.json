@@ -12,7 +12,8 @@
     "smoke": "tsx scripts/smoke.ts",
     "test:arena:e2e": "tsx scripts/test-arena-e2e.ts",
     "test:guild:e2e": "tsx scripts/test-guild.ts",
-    "test:chat:e2e": "tsx scripts/test-chat.ts"
+    "test:chat:e2e": "tsx scripts/test-chat.ts",
+    "test:friend:e2e": "tsx scripts/test-friend.ts"
   },
   "dependencies": {
     "@colyseus/core": "^0.15.57",
