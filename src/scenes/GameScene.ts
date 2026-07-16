@@ -13,7 +13,8 @@ import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
-import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching } from '../ui/panels';
+import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel } from '../ui/panels';
+import { GuildClient } from '../systems/GuildClient';
 import { getClient } from '../net/Net';
 import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
 
@@ -52,8 +53,8 @@ export class GameScene extends Phaser.Scene {
   /** 联机 game 房间连接（panels.ts 等 UI 模块据其判读走服务端权威或本地逻辑）。 */
   public gameRoom: any = null;
   private mySessionId = '';
-  private authToken = '';
-  private characterId = 0;
+  public authToken = '';
+  public characterId = 0;
   private remotePlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; tag: Phaser.GameObjects.Text; tx: number; ty: number; name: string; title: string }> = new Map();
   // 队伍状态（多人组队·Stage D+）
   private teamId = '';
@@ -66,6 +67,9 @@ export class GameScene extends Phaser.Scene {
   private teamPanelInviteOpen = false;
   private dungeonConfirmOpen = false;
   private dungeonConfirmPanel: Phaser.GameObjects.Container | null = null;
+  // 公会面板（J 键开关）
+  public guildPanel: Phaser.GameObjects.Container | null = null;
+  public guildChatLines: Phaser.GameObjects.Container | null = null; // 公会聊天行容器（实时追加）
   private lastSent = { x: -9999, y: -9999, t: 0 };
   private netHint!: Phaser.GameObjects.Text;
   /** 权威战斗结束后的奖励报告，等场景 RESUME 时弹出（避免被战斗场景遮挡）。 */
@@ -377,6 +381,15 @@ export class GameScene extends Phaser.Scene {
       if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
       if (this.dungeonConfirmOpen) return; // 确认框优先
       this.toggleTeamPanel();
+    });
+
+    // J 键：开关公会面板
+    this.input.keyboard!.addKey('J').on('down', () => {
+      if (this.ctrlKey.isDown) return;
+      if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
+      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
+      if (this.inventoryPanel || this.statPanel) return;
+      this.toggleGuildPanel();
     });
 
     this.zoneText = this.add.text(16, 12, `${ZONE_NAMES[GameState.zone]}`, {
@@ -1216,6 +1229,18 @@ export class GameScene extends Phaser.Scene {
         room.onLeave(() => { this.clearRemotePlayers(); setActiveRoom(null); });
         room.onMessage('system', () => {});
 
+        // 实时公会聊天
+        room.onMessage('guildChat', (m: { fromName: string; fromCharId: number; text: string; ts: number }) => this.onGuildChat(m));
+
+        // 进房后拉取公会归属（供聊天发送/面板首屏）
+        GuildClient.info(this.authToken, this.characterId).then((r: any) => {
+          if (r && r.ok && r.inGuild) {
+            GameState.guildId = r.guild.id; GameState.guildName = r.guild.name; GameState.guildRank = r.myRank;
+          } else {
+            GameState.guildId = null; GameState.guildName = ''; GameState.guildRank = '';
+          }
+        }).catch(() => { GameState.guildId = null; });
+
         // ═════ 组队消息 ————
 
         // 收到邀请：入列（支持多人同时邀请逐条处理），并自动打开组队面板处理
@@ -1536,6 +1561,41 @@ export class GameScene extends Phaser.Scene {
   }
   private closeTeamPanel(): void {
     if (this.teamPanelFull) { this.teamPanelFull.destroy(true); this.teamPanelFull = null; }
+  }
+
+  // ——— 公会面板（J 键）———
+  private toggleGuildPanel(): void {
+    if (this.guildPanel) this.closeGuildPanel();
+    else this.openGuildPanel();
+  }
+  public closeGuildPanel(): void {
+    if (this.guildPanel) { this.guildPanel.destroy(true); this.guildPanel = null; }
+    this.guildChatLines = null;
+    this.resumeFromMenu();
+  }
+  public openGuildPanel(): void {
+    this.closeGuildPanel();
+    this.pauseForMenu();
+    this.guildPanel = renderGuildPanel(this);
+  }
+  /** 实时公会聊天：追加到本地日志 + 若面板开着则增量渲染。 */
+  public onGuildChat(msg: { fromName: string; fromCharId: number; text: string; ts: number }): void {
+    GameState.guildChatLog.push(msg);
+    if (GameState.guildChatLog.length > 50) GameState.guildChatLog.shift();
+    if (this.guildChatLines) {
+      const line = this.add.text(8, this.guildChatLines.length * 15, `${msg.fromName}：${msg.text}`, {
+        fontSize: '12px',
+        color: msg.fromCharId === this.characterId ? '#9fe6ff' : '#cdd6e8',
+        wordWrap: { width: 296 }, padding: { y: 1 },
+      });
+      this.guildChatLines.add(line);
+    }
+  }
+  /** 发送公会聊天（仅同公会在线成员可见）。 */
+  public sendGuildChat(text: string): void {
+    const t = (text || '').trim();
+    if (!t) return;
+    this.gameRoom?.send('guildChat', { text: t });
   }
 
   /** 组队面板内通用按钮（graphics + text + 交互 zone）。 */

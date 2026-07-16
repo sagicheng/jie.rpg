@@ -2,6 +2,7 @@ import type { GameScene } from '../scenes/GameScene';
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, ZANPAKUTO_GROWTH } from '../config';
 import { GameState } from '../systems/GameState';
+import { GuildClient } from '../systems/GuildClient';
 import { SaveManager } from '../systems/SaveManager';
 import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../systems/BestiaryData';
 import { expForLevel } from '../systems/BattleData';
@@ -1596,4 +1597,230 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     // 底部提示栏（与 B 面板一致）
     const fy = oy + oh - 28; const ft = scene.add.graphics(); ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
     p.add(scene.add.text(GAME_WIDTH / 2, fy + 12, 'ESC 关闭', { fontSize: '11px', color: '#556688', padding: { y: 2 } }).setOrigin(0.5));
+  }
+
+  // ═══════════════════════════════════════════
+  // 公会面板（J 键）— 非实时管理走 REST，实时聊天走 game 房
+  // ═══════════════════════════════════════════
+
+  const RANK_NAME: Record<string, string> = { leader: '会长', elder: '长老', member: '成员' };
+
+  export function renderGuildPanel(scene: GameScene): Phaser.GameObjects.Container {
+    const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
+    const c = scene.add.container(cx, cy).setDepth(500).setScrollFactor(0);
+
+    // 全屏遮罩
+    const ov = scene.add.graphics();
+    ov.fillStyle(0, 0.55); ov.fillRect(-cx, -cy, GAME_WIDTH, GAME_HEIGHT);
+    ov.setInteractive(new Phaser.Geom.Rectangle(-cx, -cy, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains);
+    c.add(ov);
+
+    const PW = 1000, PH = 720;
+    const px = -PW / 2, py = -PH / 2;
+    const bg = scene.add.graphics();
+    bg.fillStyle(0x121222, 0.98); bg.fillRoundedRect(px, py, PW, PH, 14);
+    bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(px, py, PW, PH, 14);
+    c.add(bg);
+
+    // 标题栏
+    const tb = scene.add.graphics(); tb.fillStyle(0x1a1a36, 1); tb.fillRoundedRect(px + 2, py + 2, PW - 4, 48, { tl: 12, tr: 12, bl: 0, br: 0 }); c.add(tb);
+    c.add(scene.add.text(px + 20, py + 24, '公会', { fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+    const close = scene.add.text(px + PW - 20, py + 24, '✕', { fontSize: '22px', color: '#aa6677', fontStyle: 'bold' }).setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
+    close.on('pointerdown', () => scene.closeGuildPanel());
+    close.on('pointerover', () => close.setColor('#ff8899'));
+    close.on('pointerout', () => close.setColor('#aa6677'));
+    c.add(close);
+
+    const content = scene.add.container(0, 0);
+    c.add(content);
+
+    // HTML 输入框（中文输入支持），随面板销毁自动清理
+    const inputs: HTMLInputElement[] = [];
+    const placeInput = (lx: number, ly: number, w = 280, h = 34, maxLen = 12, initial = ''): HTMLInputElement => {
+      const el = document.createElement('input');
+      el.type = 'text'; el.maxLength = maxLen; el.value = initial;
+      el.style.cssText = 'position:absolute;font-size:16px;color:#fff;background:#0a0a1e;border:1px solid #446688;border-radius:4px;text-align:center;outline:none;z-index:9999;';
+      const canvas = scene.game.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const sx = rect.width / GAME_WIDTH, sy = rect.height / GAME_HEIGHT;
+      el.style.left = (rect.left + (cx + lx) * sx - (w * sx) / 2) + 'px';
+      el.style.top = (rect.top + (cy + ly) * sy - (h * sy) / 2) + 'px';
+      el.style.width = (w * sx) + 'px'; el.style.height = (h * sy) + 'px';
+      document.body.appendChild(el); el.focus();
+      inputs.push(el);
+      return el;
+    };
+    c.once(Phaser.GameObjects.Events.DESTROY, () => inputs.forEach(el => { if (el.parentNode) el.parentNode.removeChild(el); }));
+
+    // 通用按钮
+    const btn = (lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void): void => {
+      const bw = Math.max(56, label.length * 15 + 20), bh = 28;
+      const g = scene.add.graphics();
+      g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+      g.lineStyle(1, 0xc9a96e, 0.5); g.strokeRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+      const t = scene.add.text(lx, ly, label, { fontSize: '13px', color: textColor, fontStyle: 'bold' }).setOrigin(0.5);
+      const z = scene.add.zone(lx, ly, bw, bh).setInteractive({ useHandCursor: true });
+      z.on('pointerover', () => { g.clear(); g.fillStyle(color, 1); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+      z.on('pointerout', () => { g.clear(); g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+      z.on('pointerdown', cb);
+      content.add([g, t, z]);
+    };
+
+    const refresh = () => { scene.closeGuildPanel(); scene.openGuildPanel(); };
+    const toast = (msg: string) => {
+      const t = scene.add.text(0, py + 64, msg, { fontSize: '14px', color: '#ffcc88', fontStyle: 'bold' }).setOrigin(0.5);
+      content.add(t);
+      scene.time.delayedCall(1800, () => t.destroy());
+    };
+
+    const loading = scene.add.text(0, 0, '加载中…', { fontSize: '16px', color: '#8899bb' }).setOrigin(0.5);
+    content.add(loading);
+
+    GuildClient.info(scene.authToken, scene.characterId).then((r: any) => {
+      if (!r || !r.ok) { loading.setText('加载失败：' + (r?.msg || '未知错误')); return; }
+      loading.destroy();
+      if (!r.inGuild) renderNoGuild();
+      else renderInGuild(r);
+    }).catch(() => { loading.setText('网络错误'); });
+
+    // ── 未加入公会：创建 + 浏览申请 ──
+    function renderNoGuild(): void {
+      const lx = px + 36;
+      content.add(scene.add.text(lx, py + 76, '创建公会', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      content.add(scene.add.text(lx, py + 116, '公会名（2-12字）：', { fontSize: '14px', color: '#aabbcc' }).setOrigin(0, 0.5));
+      const nameInput = placeInput(lx + 200, py + 116, 240, 34, 12);
+      content.add(scene.add.text(lx, py + 156, '公告（可选）：', { fontSize: '14px', color: '#aabbcc' }).setOrigin(0, 0.5));
+      const noticeInput = placeInput(lx + 200, py + 156, 420, 34, 200);
+      btn(lx + 70, py + 206, '创建公会', 0x2a6e4a, '#cfeedd', () => {
+        const name = nameInput.value.trim();
+        if (!name) { toast('请输入公会名'); return; }
+        GuildClient.create(scene.authToken, scene.characterId, name, noticeInput.value.trim()).then((res: any) => {
+          if (res.ok) { toast('公会创建成功！'); refresh(); }
+          else toast(res.msg || '创建失败');
+        });
+      });
+
+      const rx = px + 520;
+      content.add(scene.add.text(rx, py + 76, '公会列表', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      GuildClient.list(scene.authToken).then((res: any) => {
+        if (!res || !res.ok) return;
+        const list = res.guilds || [];
+        if (list.length === 0) content.add(scene.add.text(rx, py + 116, '（暂无公会）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0.5));
+        list.slice(0, 15).forEach((g: any, i: number) => {
+          const ry = py + 116 + i * 34;
+          content.add(scene.add.text(rx, ry, `〈${g.name}〉 Lv.${g.level}  (${g.memberCount}人)`, { fontSize: '14px', color: '#cdd6e8' }).setOrigin(0, 0.5));
+          btn(rx + 330, ry, '申请', 0x33507a, '#bcd4ff', () => {
+            GuildClient.apply(scene.authToken, scene.characterId, g.id, '').then((ar: any) => {
+              if (ar.ok) toast('已提交申请，等待审批');
+              else toast(ar.msg || '申请失败');
+            });
+          });
+        });
+      });
+    }
+
+    // ── 已加入公会：信息 + 成员管理 + 申请审批 + 公告 + 聊天 ──
+    function renderInGuild(r: any): void {
+      const g = r.guild;
+      const meIsLeader = r.myRank === 'leader';
+      const meIsElder = r.myRank === 'elder';
+      content.add(scene.add.text(px + 30, py + 66, `〈${g.name}〉`, { fontSize: '22px', color: '#ffe8b0', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      content.add(scene.add.text(px + 30, py + 102, `我的职位：${RANK_NAME[r.myRank]}　成员：${g.memberCount}人　等级：Lv.${g.level}`, { fontSize: '14px', color: '#aabbcc' }).setOrigin(0, 0.5));
+      content.add(scene.add.text(px + 30, py + 128, `公告：${g.notice || '（无）'}`, { fontSize: '13px', color: '#8899bb', wordWrap: { width: 440 } }).setOrigin(0, 0.5));
+
+      // 成员列表（左列）
+      content.add(scene.add.text(px + 30, py + 162, '成员', { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      (g.members || []).forEach((m: any, i: number) => {
+        const ry = py + 190 + i * 27;
+        if (ry > py + 560) return; // 简易截断
+        const isLeader = m.rank === 'leader';
+        content.add(scene.add.text(px + 30, ry, m.name, { fontSize: '14px', color: isLeader ? '#ffd27a' : '#cdd6e8' }).setOrigin(0, 0.5));
+        content.add(scene.add.text(px + 220, ry, `[${RANK_NAME[m.rank]}]`, { fontSize: '13px', color: '#8899bb' }).setOrigin(0, 0.5));
+        if (meIsLeader && !isLeader) {
+          btn(px + 330, ry, m.rank === 'elder' ? '降成员' : '升长老', 0x33507a, '#bcd4ff', () => {
+            GuildClient.setRank(scene.authToken, scene.characterId, m.charId, m.rank === 'elder' ? 'member' : 'elder')
+              .then((res: any) => res.ok ? refresh() : toast(res.msg));
+          });
+          btn(px + 415, ry, '转让', 0x6a4a2a, '#ffd9a0', () => {
+            GuildClient.transfer(scene.authToken, scene.characterId, m.charId)
+              .then((res: any) => res.ok ? (toast('已转让会长'), refresh()) : toast(res.msg));
+          });
+          btn(px + 480, ry, '踢出', 0x6a2a2a, '#ffb0b0', () => {
+            GuildClient.kick(scene.authToken, scene.characterId, m.charId)
+              .then((res: any) => res.ok ? refresh() : toast(res.msg));
+          });
+        } else if (meIsElder && m.rank === 'member') {
+          btn(px + 420, ry, '踢出', 0x6a2a2a, '#ffb0b0', () => {
+            GuildClient.kick(scene.authToken, scene.characterId, m.charId)
+              .then((res: any) => res.ok ? refresh() : toast(res.msg));
+          });
+        }
+      });
+
+      // 待审申请（右列上）
+      const apps = r.applications || [];
+      if ((meIsLeader || meIsElder) && apps.length > 0) {
+        const ax = px + 540;
+        content.add(scene.add.text(ax, py + 162, '待审申请', { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+        apps.slice(0, 4).forEach((a: any, i: number) => {
+          const ry = py + 192 + i * 30;
+          content.add(scene.add.text(ax, ry, a.name, { fontSize: '13px', color: '#cdd6e8' }).setOrigin(0, 0.5));
+          btn(ax + 160, ry, '同意', 0x2a6e4a, '#cfeedd', () => {
+            GuildClient.handleApply(scene.authToken, scene.characterId, a.id, true)
+              .then((res: any) => res.ok ? refresh() : toast(res.msg));
+          });
+          btn(ax + 235, ry, '拒绝', 0x6a2a2a, '#ffb0b0', () => {
+            GuildClient.handleApply(scene.authToken, scene.characterId, a.id, false)
+              .then((res: any) => res.ok ? refresh() : toast(res.msg));
+          });
+        });
+      }
+
+      // 公告编辑（会长/长老，右列中）
+      if (meIsLeader || meIsElder) {
+        const nx = px + 540;
+        content.add(scene.add.text(nx, py + 330, '修改公告：', { fontSize: '13px', color: '#aabbcc' }).setOrigin(0, 0.5));
+        const nInput = placeInput(nx + 120, py + 330, 320, 30, 200, g.notice || '');
+        btn(nx + 410, py + 330, '保存', 0x2a6e4a, '#cfeedd', () => {
+          GuildClient.setNotice(scene.authToken, scene.characterId, nInput.value.trim())
+            .then((res: any) => res.ok ? (toast('公告已更新'), refresh()) : toast(res.msg));
+        });
+      }
+
+      // 退出 / 解散（左列底）
+      btn(px + 70, py + PH - 46, '退出公会', 0x6a4a2a, '#ffd9a0', () => {
+        GuildClient.leave(scene.authToken, scene.characterId)
+          .then((res: any) => res.ok ? (toast('已退出公会'), refresh()) : toast(res.msg));
+      });
+      if (meIsLeader) {
+        btn(px + 220, py + PH - 46, '解散公会', 0x6a2a2a, '#ffb0b0', () => {
+          GuildClient.disband(scene.authToken, scene.characterId)
+            .then((res: any) => res.ok ? (toast('公会已解散'), refresh()) : toast(res.msg));
+        });
+      }
+
+      // 公会聊天（右列底）
+      const chatX = px + 540, chatY = py + 372, chatW = 440, chatH = 270;
+      const cbox = scene.add.graphics();
+      cbox.fillStyle(0x0c0c18, 0.6); cbox.fillRoundedRect(chatX, chatY, chatW, chatH, 8);
+      cbox.lineStyle(1, 0x334466, 0.5); cbox.strokeRoundedRect(chatX, chatY, chatW, chatH, 8);
+      content.add(cbox);
+      content.add(scene.add.text(chatX + 12, chatY + 8, '公会聊天', { fontSize: '13px', color: '#aaccdd', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      const chatLines = scene.add.container(chatX + 8, chatY + 30);
+      content.add(chatLines);
+      scene.guildChatLines = chatLines;
+      (GameState.guildChatLog || []).forEach((m: any) => {
+        chatLines.add(scene.add.text(0, chatLines.length * 15, `${m.fromName}：${m.text}`, {
+          fontSize: '12px', color: m.fromCharId === scene.characterId ? '#9fe6ff' : '#cdd6e8',
+          wordWrap: { width: chatW - 16 }, padding: { y: 1 },
+        }));
+      });
+      const chatInput = placeInput(chatX + 150, chatY + chatH + 24, 280, 32, 200);
+      btn(chatX + 400, chatY + chatH + 24, '发送', 0x33507a, '#bcd4ff', () => {
+        const t = chatInput.value.trim();
+        if (t) { scene.sendGuildChat(t); chatInput.value = ''; }
+      });
+    }
+
+    return c;
   }

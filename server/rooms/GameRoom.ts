@@ -8,7 +8,7 @@
 import { Room, Client } from '@colyseus/core';
 import { GameRoomState, GamePlayer, ChatMessage, MonsterState } from '../schema';
 import { world, type OpResult } from '../world';
-import { findAccountByToken, getCharacter, saveCharacterWorld } from '../db';
+import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld } from '../db';
 import { enqueueArena, dequeueArena, queueSize } from '../arenaService';
 import { isArenaOpen, ARENA_WEEKLY_CAP } from '../arena';
 
@@ -32,6 +32,24 @@ const playerTeam = new Map<string, string>();   // playerSid → teamId
 
 /** sessionId → characterId 映射 */
 const sessionCharMap = new Map<string, number>();
+
+/**
+ * 公会在线成员注册表（模块级，跨 GameRoom 实例共享）。
+ * guildId → (sessionId → { client, charId, name }) ，用于公会聊天跨房间广播。
+ */
+const onlineGuild = new Map<number, Map<string, { client: Client; charId: number; name: string }>>();
+
+function registerGuildOnline(client: Client, charId: number, name: string): void {
+  const gid = getMemberGuild(charId);
+  if (gid === null) return;
+  let set = onlineGuild.get(gid);
+  if (!set) { set = new Map(); onlineGuild.set(gid, set); }
+  set.set(client.sessionId, { client, charId, name });
+}
+
+function unregisterGuildOnline(client: Client): void {
+  onlineGuild.forEach((set) => set.delete(client.sessionId));
+}
 
 // ——— 队伍辅助函数 ———
 
@@ -129,6 +147,20 @@ export class GameRoom extends Room<GameRoomState> {
       msg.t = Date.now();
       this.state.messages.push(msg);
       if (this.state.messages.length > 50) this.state.messages.shift();
+    });
+
+    // 公会聊天：仅同公会在线成员（跨房间）可接收
+    this.onMessage('guildChat', (client, data: { text?: string }) => {
+      const charId = sessionCharMap.get(client.sessionId);
+      if (charId === undefined) return;
+      const gid = getMemberGuild(charId);
+      if (gid === null) return;
+      const text = typeof data?.text === 'string' ? data.text.trim().slice(0, 200) : '';
+      if (!text) return;
+      const name = getCharacter(charId)?.name || '匿名';
+      const payload = { fromName: name, fromCharId: charId, text, ts: Date.now() };
+      const set = onlineGuild.get(gid);
+      if (set) set.forEach(({ client: c }) => c.send('guildChat', payload));
     });
 
     this.onMessage('setTitle', (client, data: { title?: string }) => {
@@ -564,6 +596,7 @@ export class GameRoom extends Room<GameRoomState> {
 
     sessionCharMap.set(client.sessionId, charId);
     world.registerCharId(client.sessionId, charId);
+    registerGuildOnline(client, charId, ch.name);
 
     const p = new GamePlayer();
     p.sessionId = client.sessionId;
@@ -599,6 +632,7 @@ export class GameRoom extends Room<GameRoomState> {
         try { saveCharacterWorld(charId, JSON.stringify(pw)); } catch {}
       }
       sessionCharMap.delete(client.sessionId);
+      unregisterGuildOnline(client);
     }
 
     this.state.players.delete(client.sessionId);

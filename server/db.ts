@@ -39,6 +39,34 @@ db.exec(`
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(account_id, name)
   );
+
+  CREATE TABLE IF NOT EXISTS guilds (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL UNIQUE,
+    leader_char_id  INTEGER NOT NULL,
+    notice          TEXT NOT NULL DEFAULT '',
+    level           INTEGER NOT NULL DEFAULT 1,
+    exp             INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS guild_members (
+    guild_id  INTEGER NOT NULL REFERENCES guilds(id),
+    char_id   INTEGER NOT NULL,
+    rank      TEXT NOT NULL DEFAULT 'member',   -- 'leader' | 'elder' | 'member'
+    joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (guild_id, char_id),
+    UNIQUE (char_id)                              -- 一个角色仅属一个公会
+  );
+
+  CREATE TABLE IF NOT EXISTS guild_applications (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id   INTEGER NOT NULL REFERENCES guilds(id),
+    char_id    INTEGER NOT NULL,
+    message    TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (guild_id, char_id)                    -- 同一公会不可重复申请
+  );
 `);
 
 // ============= 账号操作 =============
@@ -115,6 +143,140 @@ export function getCharacter(charId: number): CharacterRow | undefined {
 /** 保存角色世界数据（JSON 序列化）。 */
 export function saveCharacterWorld(charId: number, worldData: string): void {
   db.prepare('UPDATE characters SET world_data = ? WHERE id = ?').run(worldData, charId);
+}
+
+// ============= 公会系统 =============
+
+export interface GuildRow {
+  id: number;
+  name: string;
+  leader_char_id: number;
+  notice: string;
+  level: number;
+  exp: number;
+  created_at: string;
+}
+
+export interface GuildMemberRow {
+  guild_id: number;
+  char_id: number;
+  rank: string;
+  joined_at: string;
+}
+
+export interface GuildAppRow {
+  id: number;
+  guild_id: number;
+  char_id: number;
+  message: string;
+  created_at: string;
+}
+
+/** 角色当前所属公会 id（无则 null）。 */
+export function getMemberGuild(charId: number): number | null {
+  const row = db.prepare('SELECT guild_id FROM guild_members WHERE char_id = ?').get(charId) as { guild_id: number } | undefined;
+  return row ? row.guild_id : null;
+}
+
+export function getGuild(guildId: number): GuildRow | undefined {
+  return db.prepare('SELECT * FROM guilds WHERE id = ?').get(guildId) as GuildRow | undefined;
+}
+
+export function getGuildByName(name: string): GuildRow | undefined {
+  return db.prepare('SELECT * FROM guilds WHERE name = ?').get(name) as GuildRow | undefined;
+}
+
+/** 公会成员数。 */
+export function getGuildMemberCount(guildId: number): number {
+  const row = db.prepare('SELECT COUNT(*) AS n FROM guild_members WHERE guild_id = ?').get(guildId) as { n: number };
+  return row.n;
+}
+
+/** 公会成员列表（含角色名/元素，按 会长>长老>入会时间 排序）。 */
+export function getGuildMembers(guildId: number): Array<{ charId: number; name: string; element: string; rank: string }> {
+  return db.prepare(`
+    SELECT m.char_id AS charId, c.name AS name, c.element AS element, m.rank AS rank
+    FROM guild_members m JOIN characters c ON c.id = m.char_id
+    WHERE m.guild_id = ?
+    ORDER BY (m.rank = 'leader') DESC, (m.rank = 'elder') DESC, m.joined_at ASC
+  `).all(guildId) as Array<{ charId: number; name: string; element: string; rank: string }>;
+}
+
+/** 公会申请列表（含申请人角色名）。 */
+export function getGuildApplications(guildId: number): Array<{ id: number; charId: number; name: string; message: string }> {
+  return db.prepare(`
+    SELECT a.id AS id, a.char_id AS charId, c.name AS name, a.message AS message
+    FROM guild_applications a JOIN characters c ON c.id = a.char_id
+    WHERE a.guild_id = ? ORDER BY a.created_at ASC
+  `).all(guildId) as Array<{ id: number; charId: number; name: string; message: string }>;
+}
+
+export function getApplication(appId: number): GuildAppRow | undefined {
+  return db.prepare('SELECT * FROM guild_applications WHERE id = ?').get(appId) as GuildAppRow | undefined;
+}
+
+/** 公会浏览列表（id/名/等级/成员数），按等级+人数降序。 */
+export function listGuilds(limit = 50): Array<{ id: number; name: string; level: number; memberCount: number }> {
+  return db.prepare(`
+    SELECT g.id AS id, g.name AS name, g.level AS level, COUNT(m.char_id) AS memberCount
+    FROM guilds g LEFT JOIN guild_members m ON m.guild_id = g.id
+    GROUP BY g.id ORDER BY g.level DESC, memberCount DESC LIMIT ?
+  `).all(limit) as Array<{ id: number; name: string; level: number; memberCount: number }>;
+}
+
+/** 创建公会（事务：插 guilds + 插 leader 为 member）。已在该公会/其他公会则抛错。 */
+export function createGuild(name: string, leaderCharId: number): number {
+  const tx = db.transaction((gname: string, lid: number) => {
+    if (getMemberGuild(lid) !== null) throw new Error('ALREADY_IN_GUILD');
+    const res = db.prepare('INSERT INTO guilds (name, leader_char_id) VALUES (?, ?)').run(gname, lid);
+    const gid = Number(res.lastInsertRowid);
+    db.prepare("INSERT INTO guild_members (guild_id, char_id, rank) VALUES (?, ?, 'leader')").run(gid, lid);
+    return gid;
+  });
+  return tx(name, leaderCharId);
+}
+
+export function addMember(guildId: number, charId: number, rank: string = 'member'): void {
+  db.prepare('INSERT OR REPLACE INTO guild_members (guild_id, char_id, rank) VALUES (?, ?, ?)').run(guildId, charId, rank);
+}
+
+export function removeMember(guildId: number, charId: number): void {
+  db.prepare('DELETE FROM guild_members WHERE guild_id = ? AND char_id = ?').run(guildId, charId);
+}
+
+export function setMemberRank(guildId: number, charId: number, rank: string): void {
+  db.prepare('UPDATE guild_members SET rank = ? WHERE guild_id = ? AND char_id = ?').run(rank, guildId, charId);
+}
+
+export function setGuildLeader(guildId: number, charId: number): void {
+  db.prepare('UPDATE guilds SET leader_char_id = ? WHERE id = ?').run(charId, guildId);
+}
+
+export function updateGuildNotice(guildId: number, notice: string): void {
+  db.prepare('UPDATE guilds SET notice = ? WHERE id = ?').run(notice, guildId);
+}
+
+export function addApplication(guildId: number, charId: number, message: string): void {
+  db.prepare('INSERT INTO guild_applications (guild_id, char_id, message) VALUES (?, ?, ?)').run(guildId, charId, message);
+}
+
+export function removeApplication(appId: number): void {
+  db.prepare('DELETE FROM guild_applications WHERE id = ?').run(appId);
+}
+
+/** 移除某角色在所有公会的待审申请（入会成功后清掉，避免跨公会重复）。 */
+export function removeApplicationsForChar(charId: number): void {
+  db.prepare('DELETE FROM guild_applications WHERE char_id = ?').run(charId);
+}
+
+/** 解散公会：删成员 + 申请 + 公会本体。 */
+export function disbandGuild(guildId: number): void {
+  const tx = db.transaction((gid: number) => {
+    db.prepare('DELETE FROM guild_members WHERE guild_id = ?').run(gid);
+    db.prepare('DELETE FROM guild_applications WHERE guild_id = ?').run(gid);
+    db.prepare('DELETE FROM guilds WHERE id = ?').run(gid);
+  });
+  tx(guildId);
 }
 
 export default db;

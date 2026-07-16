@@ -10,6 +10,11 @@ export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
     playerName = '隐世';
     zone = 1;
     discoveredZones: number[] = [1];
+    // 公会（客户端缓存，进房后由 REST 拉取；实时聊天不依赖此）
+    guildId: number | null = null;
+    guildName = '';
+    guildRank: 'leader' | 'elder' | 'member' | '' = '';
+    guildChatLog: Array<{ fromName: string; fromCharId: number; text: string; ts: number }> = [];
     level = 1;
     exp = 0;
     statPoints = 0;
@@ -26,6 +31,7 @@ export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
       this.gold = 0; this.x = 400; this.y = 500; this.zone = 1;
       this.hasCreated = false; this.newGame = true;
       this.discoveredZones = [1];
+      this.guildId = null; this.guildName = ''; this.guildRank = ''; this.guildChatLog = [];
       Inventory.reset();
       Kido.reset();
     }

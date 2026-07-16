@@ -19,6 +19,7 @@ import { DungeonRoom } from './rooms/DungeonRoom';
 import { PvpRoom } from './rooms/PvpRoom';
 import { startArenaTicker } from './arenaService';
 import authRoutes from './auth';
+import guildRoutes from './guild';
 
 const PORT = Number(process.env.PORT) || 2567;
 
@@ -27,6 +28,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use('/api', authRoutes);
+app.use('/api/guild', guildRoutes);
 
 // Colyseus（WebSocket 实时通信）
 const httpServer = http.createServer(app);
