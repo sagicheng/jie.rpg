@@ -1363,7 +1363,12 @@ export function toggleBestiaryPanel(scene: GameScene): void { if (scene.bestiary
 
 export function closeBestiaryPanel(scene: GameScene): void { if (scene.titlePanel) { scene.titlePanel.destroy(true); scene.titlePanel = null; } if (scene.bestiaryPanel) { scene.bestiaryPanel.destroy(true); scene.bestiaryPanel = null; scene.resumeFromMenu(); } }
 
-export function closeTitlePanel(scene: GameScene): void { if (scene.titlePanel) { scene.titlePanel.destroy(true); scene.titlePanel = null; } }
+export function closeTitlePanel(scene: GameScene): void {
+  if (scene.titlePanel) { scene.titlePanel.destroy(true); scene.titlePanel = null; }
+  if ((scene as any).titleWheelHandler) { scene.input.off('wheel', (scene as any).titleWheelHandler); (scene as any).titleWheelHandler = null; }
+  if ((scene as any).titleMoveHandler) { scene.input.off('pointermove', (scene as any).titleMoveHandler); (scene as any).titleMoveHandler = null; }
+  if ((scene as any).titleUpHandler) { scene.input.off('pointerup', (scene as any).titleUpHandler); (scene as any).titleUpHandler = null; }
+}
 
 export function toggleTitlePanel(scene: GameScene): void { if (scene.titlePanel) { closeTitlePanel(scene); } else { renderTitlePanel(scene); } }
 
@@ -1379,26 +1384,69 @@ export function renderTitlePanel(scene: GameScene): void {
     closeT.on('pointerover',function(this:any){this.setColor('#ff8888');});closeT.on('pointerout',function(this:any){this.setColor('#cc6666');});
     closeT.on('pointerdown',()=>closeTitlePanel(scene));c.add(closeT);
     c.add(scene.add.text(mx+mw/2,my+50,'装备称号可获得对应加成（同时仅生效一个）',{fontSize:'11px',color:'#6677aa',padding:{y:2}}).setOrigin(0.5));
-    const listX=mx+24,listY=my+70,rowH=72;
+    // 滚动视口（内容超出时裁剪 + 滚动条）
+    const viewTop=my+72, viewBottom=my+mh-56, viewH=viewBottom-viewTop, rowH=72;
+    const listX=mx+24;
+    const contentH=BESTIARY_TITLES.length*rowH;
+    const scrollable=contentH>viewH;
+    const scrollContent=scene.add.container(0,0);c.add(scrollContent);
+    const rowBtns: Phaser.GameObjects.Text[] = [];
     BESTIARY_TITLES.forEach((def,i)=>{
-      const ry=listY+i*rowH;const st=(GameState as any).getTitleStatus(def);const isActive=(GameState as any).activeTitle===def.id;
-      const rowBg=scene.add.graphics();rowBg.fillStyle(st.unlocked?(isActive?0x2a2410:0x152028):0x12121e,0.85);rowBg.fillRoundedRect(listX,ry,mw-48,rowH-8,8);rowBg.lineStyle(1,st.unlocked?(isActive?0xc9a96e:0x3a5a6a):0x2a2a3a,0.7);rowBg.strokeRoundedRect(listX,ry,mw-48,rowH-8,8);c.add(rowBg);
+      const ry=i*rowH;const st=(GameState as any).getTitleStatus(def);const isActive=(GameState as any).activeTitle===def.id;
+      const rowBg=scene.add.graphics();rowBg.fillStyle(st.unlocked?(isActive?0x2a2410:0x152028):0x12121e,0.85);rowBg.fillRoundedRect(listX,ry,mw-48,rowH-8,8);rowBg.lineStyle(1,st.unlocked?(isActive?0xc9a96e:0x3a5a6a):0x2a2a3a,0.7);rowBg.strokeRoundedRect(listX,ry,mw-48,rowH-8,8);scrollContent.add(rowBg);
       const nc=st.unlocked?(isActive?'#ffcc44':'#cfe8ff'):'#556688';
-      c.add(scene.add.text(listX+14,ry+10,def.name,{fontSize:'15px',color:nc,fontStyle:'bold',padding:{y:1}}));
-      c.add(scene.add.text(listX+14,ry+32,`条件：${def.conditionDesc}`,{fontSize:'11px',color:'#8899bb',padding:{y:1}}));
-      c.add(scene.add.text(listX+14,ry+50,`效果：${def.effectDesc}`,{fontSize:'11px',color:def.effectDesc==='无特殊效果'?'#667788':'#aadd88',padding:{y:1}}));
+      scrollContent.add(scene.add.text(listX+14,ry+10,def.name,{fontSize:'15px',color:nc,fontStyle:'bold',padding:{y:1}}));
+      scrollContent.add(scene.add.text(listX+14,ry+32,`条件：${def.conditionDesc}`,{fontSize:'11px',color:'#8899bb',padding:{y:1}}));
+      scrollContent.add(scene.add.text(listX+14,ry+50,`效果：${def.effectDesc}`,{fontSize:'11px',color:def.effectDesc==='无特殊效果'?'#667788':'#aadd88',padding:{y:1}}));
       if(st.unlocked){
         const btnLabel=isActive?'卸下':'装备';
         const ab=scene.add.text(listX+mw-48-72,ry+rowH/2-12,`[ ${btnLabel} ]`,{fontSize:'12px',color:isActive?'#ffcc66':'#88ccff',fontStyle:'bold',backgroundColor:isActive?'#3a2e00aa':'#002233aa',padding:{x:10,y:5}}).setOrigin(0,0.5).setInteractive({useHandCursor:true});
         ab.on('pointerover',()=>ab.setColor('#ffffff'));ab.on('pointerout',()=>ab.setColor(isActive?'#ffcc66':'#88ccff'));
         ab.on('pointerdown',()=>{ if(isOnline()) requestSetTitle(def.id); else (GameState as any).setActiveTitle(def.id); scene.broadcastTitle(); closeTitlePanel(scene); renderBestiaryPanel(scene); });
-        c.add(ab);
+        (ab as any)._localY=ry;
+        (ab as any)._enabled=!scrollable;
+        if(scrollable) ab.disableInteractive();
+        rowBtns.push(ab);
+        scrollContent.add(ab);
       }else{
-        c.add(scene.add.text(listX+mw-48-130,ry+rowH/2,st.progress,{fontSize:'11px',color:'#7788aa',padding:{y:1}}).setOrigin(0,0.5));
+        scrollContent.add(scene.add.text(listX+mw-48-130,ry+rowH/2,st.progress,{fontSize:'11px',color:'#7788aa',padding:{y:1}}).setOrigin(0,0.5));
       }
     });
-    const ny=listY+BESTIARY_TITLES.length*rowH;
-    const noneBtn=scene.add.text(mx+mw/2,ny+6,(GameState as any).activeTitle?'[ 卸下当前称号 ]':'（当前未装备称号）',{fontSize:'12px',color:(GameState as any).activeTitle?'#cc8888':'#556688',padding:{y:2}}).setOrigin(0.5).setInteractive({useHandCursor:(GameState as any).activeTitle?true:false});
+    if(scrollable){
+      const maskG=scene.make.graphics({});maskG.fillStyle(0xffffff);maskG.fillRect(cam.scrollX+mx,cam.scrollY+viewTop,mw-22,viewH);
+      scrollContent.setMask(maskG.createGeometryMask());
+    }
+    // 滚动条（轨道 + 手柄）
+    const sbX=mx+mw-13; let scrollY=0; const scrollBar=scene.add.graphics();c.add(scrollBar);
+    function updateScroll():void{
+      scrollY=Phaser.Math.Clamp(scrollY, viewH-contentH, 0);
+      scrollContent.y=viewTop+scrollY;
+      scrollBar.clear();
+      if(scrollable){
+        const thumbH=Math.max(24, viewH*viewH/contentH);
+        const progress=(contentH>viewH)?scrollY/(viewH-contentH):0;
+        const ty=viewTop+progress*(viewH-thumbH);
+        scrollBar.fillStyle(0x000000,0.35);scrollBar.fillRoundedRect(sbX-3,viewTop,6,viewH,3);
+        scrollBar.fillStyle(0x99aacc,0.6);scrollBar.fillRoundedRect(sbX-3,ty,6,thumbH,3);
+        // 越界（被遮罩裁掉）的装备/卸下按钮自动禁用，避免误触
+        for(const b of rowBtns){const rel=((b as any)._localY)+scrollY;const vis=rel>=-rowH&&rel<=viewH;const en=(b as any)._enabled===true;if(vis&&!en){b.setInteractive({useHandCursor:true});(b as any)._enabled=true;}else if(!vis&&en){b.disableInteractive();(b as any)._enabled=false;}}
+      }
+    }
+    updateScroll();
+    // 交互：滚轮 + 拖动手柄
+    const onWheel=(_p:any,_o:any,_dx:number,dy:number)=>{ if(!scrollable)return; scrollY-=dy*0.5; updateScroll(); };
+    scene.input.on('wheel',onWheel);
+    let dragging=false;
+    const onMove=(p:any)=>{ if(!dragging||!scrollable)return; const rel=p.worldY-cam.scrollY-viewTop; const thumbH=Math.max(24,viewH*viewH/contentH); const newTop=Phaser.Math.Clamp(rel-thumbH/2,0,viewH-thumbH); const progress=newTop/(viewH-thumbH); scrollY=progress*(viewH-contentH); updateScroll(); };
+    const onUp=()=>{dragging=false;};
+    scrollBar.setInteractive(new Phaser.Geom.Rectangle(sbX-8,viewTop,16,viewH),Phaser.Geom.Rectangle.Contains);
+    scrollBar.on('pointerdown',()=>{dragging=true;});
+    scene.input.on('pointermove',onMove);
+    scene.input.on('pointerup',onUp);
+    (scene as any).titleWheelHandler=onWheel;(scene as any).titleMoveHandler=onMove;(scene as any).titleUpHandler=onUp;
+    // 底部：卸下当前称号（固定在面板底部，不随滚动）
+    const footY=my+mh-36;
+    const noneBtn=scene.add.text(mx+mw/2,footY,(GameState as any).activeTitle?'[ 卸下当前称号 ]':'（当前未装备称号）',{fontSize:'12px',color:(GameState as any).activeTitle?'#cc8888':'#556688',padding:{y:2}}).setOrigin(0.5).setInteractive({useHandCursor:(GameState as any).activeTitle?true:false});
     if((GameState as any).activeTitle){
       noneBtn.on('pointerover',()=>noneBtn.setColor('#ffaaaa'));noneBtn.on('pointerout',()=>noneBtn.setColor('#cc8888'));
       noneBtn.on('pointerdown',()=>{ if(isOnline()) requestSetTitle(null); else (GameState as any).setActiveTitle(null); scene.broadcastTitle(); closeTitlePanel(scene); renderBestiaryPanel(scene); });
