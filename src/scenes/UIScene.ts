@@ -14,6 +14,8 @@ export class UIScene extends Phaser.Scene {
   private lvText!: Phaser.GameObjects.Text;
   private questPanel: Phaser.GameObjects.Container | null = null;
   private questPanelOpen = false;
+  private questText!: Phaser.GameObjects.Text;
+  private questTrackerHidden = false;
 
   constructor() {
     super({ key: 'UIScene' });
@@ -46,12 +48,13 @@ export class UIScene extends Phaser.Scene {
       fontSize: '12px', color: '#ffdd88', padding: { y: 2 },
     }).setDepth(102);
 
-    // 任务追踪
-    const questText = this.add.text(16, GAME_HEIGHT - 20, '', {
+    // 任务追踪（移至界面左侧中间位置）
+    const questText = this.add.text(16, GAME_HEIGHT / 2 - 120, '', {
       fontSize: '12px', color: '#ffcc44',
       backgroundColor: '#1a1a2ecc',
       padding: { x: 8, y: 6 },
     }).setDepth(102);
+    this.questText = questText;
 
     // L键：由GameScene处理任务面板，UIScene不重复
     // this.input.keyboard!.addKey('L').on('down', () => {
@@ -61,27 +64,13 @@ export class UIScene extends Phaser.Scene {
     this.events.on('updateStats', () => {
       const trackText = GameState.getQuestTrackText();
       if (trackText) {
-        questText.setText(trackText);
-        questText.setVisible(true);
+        this.questText.setText(trackText);
+        this.questText.setVisible(!this.questTrackerHidden && true);
       } else {
-        questText.setVisible(false);
+        this.questText.setVisible(false);
       }
       this.refresh();
     });
-
-    // 快捷栏背景
-    const quickBg = this.add.graphics();
-    quickBg.fillStyle(0x222222, 0.8);
-    quickBg.fillRoundedRect(10, GAME_HEIGHT - 70, 250, 54, 6);
-
-    const items = ['1', '2', '3', '4', '5'];
-    for (let i = 0; i < 5; i++) {
-      this.add.text(36 + i * 48, GAME_HEIGHT - 45, items[i], {
-        fontSize: '10px', color: '#666', fontFamily: 'monospace', padding: { y: 2 },
-      }).setOrigin(0.5).setDepth(102);
-      quickBg.lineStyle(1, 0x444444, 0.5);
-      quickBg.strokeRect(14 + i * 48, GAME_HEIGHT - 64, 44, 38);
-    }
 
     this.input.keyboard!.addKey('ESC').on('down', () => {
       if (this.questPanelOpen) {
@@ -288,6 +277,12 @@ export class UIScene extends Phaser.Scene {
 
   private refresh(): void {
     this.drawBars();
+  }
+
+  /** 开/关全屏面板时隐藏任务追踪，避免遮挡面板内容（由 GameScene 调用）。 */
+  public setQuestTrackerVisible(v: boolean): void {
+    this.questTrackerHidden = !v;
+    this.questText.setVisible(v && !!GameState.getQuestTrackText());
   }
 
   update(): void {

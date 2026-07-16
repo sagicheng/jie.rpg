@@ -19,7 +19,7 @@ import { getClient } from '../net/Net';
 
 /** 统一聊天频道配色与前缀 */
 const CHAT_COLORS: Record<string, string> = {
-  world: '#cdd6e8', guild: '#9fe6a0', team: '#9fc6ff', whisper: '#e6b3ff', system: '#ffd27f', event: '#ff8f8f',
+  all: '#cdd6e8', world: '#cdd6e8', guild: '#9fe6a0', team: '#9fc6ff', whisper: '#e6b3ff', system: '#ffd27f', event: '#ff8f8f',
 };
 const CHAT_PREFIX: Record<string, string> = {
   world: '[世界] ', guild: '[公会] ', team: '[队伍] ', system: '[系统] ', event: '[活动] ',
@@ -77,7 +77,6 @@ export class GameScene extends Phaser.Scene {
   private dungeonConfirmPanel: Phaser.GameObjects.Container | null = null;
   // 公会面板（J 键开关）
   public guildPanel: Phaser.GameObjects.Container | null = null;
-  public guildChatLines: Phaser.GameObjects.Container | null = null; // 公会面板内聊天行容器（实时追加）
   // 全局聊天 HUD（底部常驻，统一多频道）
   public chatHud: Phaser.GameObjects.Container | null = null;
   public chatHudLines: Phaser.GameObjects.Container | null = null;
@@ -276,7 +275,7 @@ export class GameScene extends Phaser.Scene {
 
     // 鼠标点击移动（组队非队长禁止）
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel || this.mallPanel) return;
+      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel || this.mallPanel || this.guildPanel) return;
       if (this.teamPanelFull || this.dungeonConfirmOpen) return; // 模态界面打开时不移动
       if (this.teamId && this.teamLeaderSid !== this.mySessionId) return; // 非队长不移
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
@@ -538,8 +537,23 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  public pauseForMenu(): void { this.menuPauseDepth++; if (this.menuPauseDepth === 1) this.physics.pause(); }
-  public resumeFromMenu(): void { this.menuPauseDepth = Math.max(0, this.menuPauseDepth - 1); if (this.menuPauseDepth === 0) this.physics.resume(); }
+  public pauseForMenu(): void {
+    this.menuPauseDepth++;
+    if (this.menuPauseDepth === 1) { this.physics.pause(); this.setGameUIVisible(false); }
+  }
+  public resumeFromMenu(): void {
+    this.menuPauseDepth = Math.max(0, this.menuPauseDepth - 1);
+    if (this.menuPauseDepth === 0) { this.physics.resume(); this.setGameUIVisible(true); }
+  }
+
+  /** 开/关全屏面板时隐藏聊天 HUD 与任务追踪，避免遮挡面板内容（如 C 界面）。 */
+  private setGameUIVisible(v: boolean): void {
+    if (this.chatHud) this.chatHud.setVisible(v);
+    if (this.chatInputEl) this.chatInputEl.style.display = v ? '' : 'none';
+    if (this.chatTabBar) this.chatTabBar.style.display = v ? '' : 'none';
+    const ui = this.scene.get('UIScene') as any;
+    if (ui && typeof ui.setQuestTrackerVisible === 'function') ui.setQuestTrackerVisible(v);
+  }
 
   // ═══ NPC ═══
   private checkNPCProximity(): void {
@@ -687,7 +701,7 @@ export class GameScene extends Phaser.Scene {
     return !m || m.state === 'available';
   }
   onBattleEnd(result: string, er: any): void {
-    this.input.keyboard!.resetKeys(); this.physics.resume(); this.menuPauseDepth = 0;
+    this.input.keyboard!.resetKeys(); this.physics.resume(); this.menuPauseDepth = 0; this.setGameUIVisible(true);
     if (result === 'defeat') {
       this.player.x = 400; this.player.y = 500;
       GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
@@ -1594,7 +1608,6 @@ export class GameScene extends Phaser.Scene {
   }
   public closeGuildPanel(): void {
     if (this.guildPanel) { this.guildPanel.destroy(true); this.guildPanel = null; }
-    this.guildChatLines = null;
     this.resumeFromMenu();
   }
   public openGuildPanel(): void {
@@ -1610,27 +1623,26 @@ export class GameScene extends Phaser.Scene {
   private appendChatLine(channel: string, fromName: string, fromCharId: number, text: string): void {
     GameState.chatLog.push({ channel, fromName, fromCharId, text, ts: Date.now() });
     if (GameState.chatLog.length > 200) GameState.chatLog.shift();
-    // 公会面板内聊天区（仅 guild 频道）
-    if (channel === 'guild' && this.guildChatLines) {
-      const line = this.add.text(8, this.guildChatLines.length * 15, `${fromName}：${text}`, {
-        fontSize: '12px',
-        color: fromCharId === this.characterId ? '#9fe6ff' : '#cdd6e8',
-        wordWrap: { width: 296 }, padding: { y: 1 },
-      });
-      this.guildChatLines.add(line);
-    }
-    // 全局聊天 HUD
-    if (this.chatHudLines) {
-      const color = CHAT_COLORS[channel] || '#cdd6e8';
-      const prefix = channel === 'whisper'
-        ? (fromCharId === this.characterId ? '→[私聊] ' : '[私聊] ')
-        : (CHAT_PREFIX[channel] || '');
-      const line = this.add.text(0, this.chatHudLines.length * 16, `${prefix}${fromName}：${text}`, {
+    // 全局聊天 HUD：按当前频道（或"全部"）重建可见行
+    this.renderChatLines();
+  }
+
+  /** 按当前频道（或"全部"）重建聊天 HUD 可见行。 */
+  private renderChatLines(): void {
+    if (!this.chatHudLines) return;
+    this.chatHudLines.removeAll(true);
+    const ch = this.chatChannel;
+    const filtered = GameState.chatLog.filter(m => ch === 'all' || m.channel === ch);
+    filtered.slice(-12).forEach((m, i) => {
+      const color = CHAT_COLORS[m.channel] || '#cdd6e8';
+      const prefix = m.channel === 'whisper'
+        ? (m.fromCharId === this.characterId ? '→[私聊] ' : '[私聊] ')
+        : (CHAT_PREFIX[m.channel] || '');
+      const line = this.add.text(0, i * 16, `${prefix}${m.fromName}：${m.text}`, {
         fontSize: '12px', color, wordWrap: { width: 360 }, padding: { y: 1 },
       });
-      this.chatHudLines.add(line);
-      while (this.chatHudLines.length > 12) this.chatHudLines.removeAt(0, true);
-    }
+      this.chatHudLines!.add(line);
+    });
   }
 
   /** 发送统一聊天（任一频道）。 */
@@ -1644,22 +1656,79 @@ export class GameScene extends Phaser.Scene {
     this.sendChat('guild', text);
   }
 
-  // ——— 全局聊天 HUD（底部常驻，统一多频道）———
+  // ——— 全局聊天 HUD（底部常驻，统一多频道 + 频道标签栏）———
   private createChatHud(): void {
     if (this.chatHud) return;
     const W = this.scale.width, H = this.scale.height;
     const c = this.add.container(0, 0).setDepth(5000).setScrollFactor(0);
     this.chatHud = c;
-    const boxX = 12, boxY = H - 250, boxW = 380, boxH = 176;
+    const boxX = 12, boxY = H - 260, boxW = 400, boxH = 200;
+
+    // 背景框
     const bg = this.add.graphics();
     bg.fillStyle(0x0c0c18, 0.55); bg.fillRoundedRect(boxX, boxY, boxW, boxH, 8);
     bg.lineStyle(1, 0x334466, 0.5); bg.strokeRoundedRect(boxX, boxY, boxW, boxH, 8);
     c.add(bg);
-    c.add(this.add.text(boxX + 10, boxY + 6, '聊天 (Enter 发言)', { fontSize: '12px', color: '#88aacc', fontStyle: 'bold' }).setOrigin(0, 0.5));
-    this.chatChannelText = this.add.text(boxX + boxW - 10, boxY + 6, '[世界]', { fontSize: '12px', color: '#aaccff' }).setOrigin(1, 0.5);
+
+    // 标题行
+    c.add(this.add.text(boxX + 10, boxY + 8, '💬 聊天', { fontSize: '12px', color: '#88aacc', fontStyle: 'bold' }).setOrigin(0, 0.5));
+    this.chatChannelText = this.add.text(boxX + boxW - 10, boxY + 8, '[世界]', { fontSize: '12px', color: '#aaccff' }).setOrigin(1, 0.5);
     c.add(this.chatChannelText);
-    this.chatHudLines = this.add.container(boxX + 8, boxY + 26);
+
+    // ══ 频道标签栏（DOM 实现，免疫相机跟随导致的命中偏移）══
+    const TABS: Array<{ id: string; label: string; color: string }> = [
+      { id: 'all', label: '全部', color: '#cdd6e8' },
+      { id: 'world', label: '世界', color: '#cdd6e8' },
+      { id: 'guild', label: '公会', color: '#9fe6a0' },
+      { id: 'team', label: '队伍', color: '#9fc6ff' },
+      { id: 'whisper', label: '私聊', color: '#e6b3ff' },
+      { id: 'system', label: '系统', color: '#ffd27f' },
+    ];
+    const tabStartX = boxX + 10, tabY = boxY + 28;
+    const tabW = 50, tabH = 22, tabGap = 3;
+
+    // 注入标签样式（仅一次）
+    if (!document.getElementById('chat-tab-style')) {
+      const st = document.createElement('style');
+      st.id = 'chat-tab-style';
+      st.textContent = `
+        .chat-tabbar { position:absolute; display:flex; gap:3px; z-index:9998; }
+        .chat-tab { font-family:sans-serif; color:#9aa; background:rgba(34,34,68,0.30); border:1px solid #334466; border-radius:4px; padding:0 5px; cursor:pointer; user-select:none; white-space:nowrap; box-sizing:border-box; }
+        .chat-tab:hover { color:#fff; }
+        .chat-tab.selected { color:#fff; background:#33507a; border-color:#5599cc; }
+      `;
+      document.head.appendChild(st);
+    }
+    // 标签栏 DOM 定位（随画布缩放/居中自动对齐，与输入框同源）
+    const cRect = this.game.canvas.getBoundingClientRect();
+    const cSx = cRect.width / W, cSy = cRect.height / H;
+    const bar = document.createElement('div');
+    bar.className = 'chat-tabbar';
+    bar.style.left = (cRect.left + tabStartX * cSx) + 'px';
+    bar.style.top = (cRect.top + tabY * cSy) + 'px';
+    this.chatTabEls = [];
+    TABS.forEach((tab) => {
+      const el = document.createElement('div');
+      el.className = 'chat-tab';
+      el.textContent = tab.label;
+      el.style.minWidth = (tabW * cSx) + 'px';
+      el.style.height = (tabH * cSy) + 'px';
+      el.style.fontSize = (11 * cSx) + 'px';
+      el.style.lineHeight = (tabH * cSy) + 'px';
+      el.addEventListener('pointerdown', (e: PointerEvent) => { e.stopPropagation(); this.switchChatChannel(tab.id); });
+      bar.appendChild(el);
+      this.chatTabEls.push(el);
+    });
+    document.body.appendChild(bar);
+    this.chatTabBar = bar;
+
+    // 初始渲染选中态
+    this.renderChatTabs();
+
+    // 消息区域（标签栏下方）
+    this.chatHudLines = this.add.container(boxX + 8, boxY + 58);
     c.add(this.chatHudLines);
+
     // 输入框（常驻，不自动聚焦）
     this.chatInputEl = this.spawnChatInput();
     this.chatInputEl.addEventListener('focus', () => { this.chatInputFocused = true; if (this.input.keyboard) this.input.keyboard.enabled = false; });
@@ -1675,13 +1744,38 @@ export class GameScene extends Phaser.Scene {
     });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.chatInputEl && this.chatInputEl.parentNode) this.chatInputEl.parentNode.removeChild(this.chatInputEl);
+      if (this.chatTabBar && this.chatTabBar.parentNode) this.chatTabBar.parentNode.removeChild(this.chatTabBar);
     });
+  }
+
+  /** 频道标签 DOM 引用（用于高亮刷新，DOM 实现免疫相机滚动命中偏移）。 */
+  private chatTabEls: HTMLElement[] = [];
+  private chatTabBar: HTMLElement | null = null;
+
+  /** 切换聊天频道并刷新标签 UI。 */
+  private switchChatChannel(channelId: string): void {
+    // 权限检查：不在公会不能切 guild，不在队伍不能切 team
+    if (channelId === 'guild' && !GameState.guildId) return;
+    if (channelId === 'team' && !this.teamId) return;
+    this.chatChannel = channelId;
+    this.renderChatTabs();
+    this.renderChatLines();
+  }
+
+  /** 渲染频道标签栏的选中/未选中状态（DOM 高亮 + 标题栏频道名）。 */
+  private renderChatTabs(): void {
+    const IDS = ['all', 'world', 'guild', 'team', 'whisper', 'system'];
+    if (this.chatTabEls) {
+      this.chatTabEls.forEach((el, i) => el.classList.toggle('selected', IDS[i] === this.chatChannel));
+    }
+    const LABELS: Record<string, string> = { all: '[全部]', world: '[世界]', guild: '[公会]', team: '[队伍]', whisper: '[私聊]', system: '[系统]' };
+    this.chatChannelText?.setText(LABELS[this.chatChannel] || this.chatChannel);
+    this.chatChannelText?.setColor(CHAT_COLORS[this.chatChannel] || '#aaccff');
   }
 
   private spawnChatInput(): HTMLInputElement {
     const el = document.createElement('input');
     el.type = 'text'; el.maxLength = 200; el.value = '';
-    el.placeholder = 'Enter 发言 · /g 公会 /t 队伍 /w<ID> 私聊';
     el.style.cssText = 'position:absolute;font-size:15px;color:#fff;background:#0a0a1e;border:1px solid #446688;border-radius:4px;outline:none;z-index:9999;';
     const canvas = this.game.canvas;
     const rect = canvas.getBoundingClientRect();
@@ -1704,7 +1798,7 @@ export class GameScene extends Phaser.Scene {
   private submitChat(raw: string): void {
     const v = (raw || '').trim();
     if (!v) return;
-    let channel = this.chatChannel;
+    let channel = this.chatChannel === 'all' ? 'world' : this.chatChannel;
     let targetCharId = 0;
     let text = v;
     if (v.startsWith('/g ')) { channel = 'guild'; text = v.slice(3).trim(); }
@@ -1718,6 +1812,8 @@ export class GameScene extends Phaser.Scene {
     if (channel === 'guild' && !GameState.guildId) { this.appendChatLine('system', '系统', 0, '你不在公会'); return; }
     if (channel === 'team' && !this.teamId) { this.appendChatLine('system', '系统', 0, '你不在队伍'); return; }
     if (channel === 'whisper' && !targetCharId) { this.appendChatLine('system', '系统', 0, '请指定私聊对象 ID'); return; }
+    // 斜杠前缀切换了频道时，同步刷新标签 UI
+    if (channel !== this.chatChannel) this.switchChatChannel(channel);
     this.sendChat(channel, text, targetCharId);
   }
 

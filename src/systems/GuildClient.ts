@@ -28,8 +28,8 @@ export const GuildClient = {
     return authPost('/info', token, { charId, ...(guildId !== undefined ? { guildId } : {}) });
   },
   /** 公会浏览列表 */
-  list(token: string) {
-    return authPost('/list', token, {});
+  list(token: string, charId: number) {
+    return authPost('/list', token, { charId });
   },
   /** 申请加入 */
   apply(token: string, charId: number, guildId: number, message = '') {
