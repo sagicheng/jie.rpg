@@ -2499,19 +2499,19 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       c.add(cardBg);
 
       const addBtnY = cardY + 56;
+      const inputY = cardY + 96; // 输入框在按钮下方独立一行，避免与按钮挤在同一行
       c.add(scene.add.text(rx, cardY + 18, '添加好友', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
-      // 卡片内提示文字（短一些，适配卡片宽度）
-      c.add(scene.add.text(rx, cardY + 96, '输入对方角色名后点击发送，对方同意后成为好友。', { fontSize: '11px', color: '#556677', wordWrap: { width: cardW - 24 } }).setOrigin(0, 0));
+      // 卡片底部提示文字
+      c.add(scene.add.text(rx, cardY + 150, '输入对方角色名后点击发送，对方同意后成为好友。', { fontSize: '11px', color: '#556677', wordWrap: { width: cardW - 24 } }).setOrigin(0, 0));
 
       let nameInput: HTMLInputElement | null = null;
       let addUiPlaced = false;
       btn(rx + 60, addBtnY, '➕ 添加好友', 0x33507a, '#bcd4ff', () => {
         if (nameInput) { nameInput.focus(); return; }
-        // 展开：创建输入框 + 发送 + 取消
-        // 关键：输入框宽度 160（结束于 rx+310），发送按钮中心 rx+340（左缘 rx+312），间隙 2px 无碰撞
-        nameInput = placeInput(rx + 150, addBtnY, 160, 32, 12);
+        // 展开：输入框 + 发送 + 取消 在按钮下方独立一行（inputY）
+        nameInput = placeInput(rx + 80, inputY, 160, 32, 12);
         if (!addUiPlaced) {
-          btn(rx + 340, addBtnY, '发送', 0x2a6e4a, '#cfeedd', () => {
+          btn(rx + 270, inputY, '发送', 0x2a6e4a, '#cfeedd', () => {
             if (!nameInput) return;
             const nm = nameInput.value.trim();
             if (!nm) { toast('请输入角色名'); return; }
@@ -2520,7 +2520,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
               else toast(res.msg || '发送失败');
             });
           });
-          btn(rx + 410, addBtnY, '取消', 0x444466, '#aaaacc', () => {
+          btn(rx + 340, inputY, '取消', 0x444466, '#aaaacc', () => {
             if (nameInput && nameInput.parentNode) { nameInput.parentNode.removeChild(nameInput); nameInput = null; }
           });
           addUiPlaced = true;
