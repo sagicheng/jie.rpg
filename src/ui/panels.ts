@@ -2163,7 +2163,14 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     let scrollY = 0;
     const scrollBar = scene.add.graphics(); c.add(scrollBar);
     const updateScroll = (): void => {
-      scrollY = Phaser.Math.Clamp(scrollY, viewH - contentH, 0);
+      // 关键修复：当 contentH < viewH（非滚动）时，viewH-contentH > 0，Clamp(0, 正数, 0) 的 min>max
+      // 会让 Phaser.Math.Clamp 返回 min（= viewH-contentH），导致 scrollContent 被向下推到面板底部。
+      // 非滚动场景强制 scrollY=0 即可（本来就不该滚动）。
+      if (scrollable) {
+        scrollY = Phaser.Math.Clamp(scrollY, viewH - contentH, 0);
+      } else {
+        scrollY = 0;
+      }
       scrollContent.y = vpTop + scrollY;
       scrollBar.clear();
       if (scrollable) {
@@ -2327,7 +2334,12 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       let scrollY = 0;
       const scrollBar = scene.add.graphics(); c.add(scrollBar);
       const updateScroll = (): void => {
-        scrollY = Phaser.Math.Clamp(scrollY, viewH - contentH, 0);
+        // 与模块级 setupScroll 同样的修复：非滚动场景下 Clamp 的 min>max 边界 bug
+        if (scrollable) {
+          scrollY = Phaser.Math.Clamp(scrollY, viewH - contentH, 0);
+        } else {
+          scrollY = 0;
+        }
         scrollContent.y = vpTop + scrollY;
         scrollBar.clear();
         if (scrollable) {
@@ -2458,7 +2470,8 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
         c.add(scene.add.text(rx + 220, rhdrY, '操作', { fontSize: '11px', color: '#556677' }).setOrigin(0.5));
 
         const rW = PW - (rx - px) - 28;
-        const rvpTop = py + 112, rvpBottom = py + PH - 180, rROW = 34;
+        // 申请列表滚到 py+PH-240 给下方"添加好友"卡片留出独立区域
+        const rvpTop = py + 112, rvpBottom = py + PH - 240, rROW = 34;
         setupScroll(reqs, rROW, rvpTop, rvpBottom, rx - 6, rW,
           (q: any, i: number, ry: number, sc: Phaser.GameObjects.Container, btnS: any) => {
             // 交替行背景
@@ -2475,23 +2488,26 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
           });
       }
 
-      // ══ 添加好友区域（点击式：仿公会编辑公告，点按钮才展开输入） ══
-      const addBtnY = py + PH - 140;
-      // 分隔线
-      const addSep = scene.add.graphics();
-      addSep.lineStyle(1, 0x334466, 0.3); addSep.lineBetween(rx, addBtnY - 40, rx + (PW - (rx - px) - 28), addBtnY - 40); c.add(addSep);
-      c.add(scene.add.text(rx, addBtnY - 24, '添加好友', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
-      // 提示文字（常驻）
-      c.add(scene.add.text(rx, addBtnY + 42, '输入对方角色名后点击发送，对方同意后成为好友。', { fontSize: '11px', color: '#556677', wordWrap: { width: 400 } }).setOrigin(0, 0));
+      // ══ 添加好友卡片（独立背景框，与上方"好友申请"彻底分隔） ══
+      const cardX = rx - 8, cardY = py + PH - 220, cardW = (PW - (rx - px) - 28) + 16, cardH = 200;
+      const cardBg = scene.add.graphics();
+      cardBg.fillStyle(0x1a1a2e, 0.55); cardBg.fillRoundedRect(cardX, cardY, cardW, cardH, 8);
+      cardBg.lineStyle(1, 0x3a4a6a, 0.5); cardBg.strokeRoundedRect(cardX, cardY, cardW, cardH, 8);
+      c.add(cardBg);
+
+      const addBtnY = cardY + 56;
+      c.add(scene.add.text(rx, cardY + 18, '添加好友', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      // 卡片内提示文字（短一些，适配卡片宽度）
+      c.add(scene.add.text(rx, cardY + 96, '输入对方角色名后点击发送，对方同意后成为好友。', { fontSize: '11px', color: '#556677', wordWrap: { width: cardW - 24 } }).setOrigin(0, 0));
 
       let nameInput: HTMLInputElement | null = null;
       let addUiPlaced = false;
-      btn(rx, addBtnY + 6, '➕ 添加好友', 0x33507a, '#bcd4ff', () => {
+      btn(rx + 60, addBtnY, '➕ 添加好友', 0x33507a, '#bcd4ff', () => {
         if (nameInput) { nameInput.focus(); return; }
         // 展开：创建输入框 + 发送 + 取消（与公会编辑公告同模式）
-        nameInput = placeInput(rx + 90, addBtnY + 6, 220, 32, 12);
+        nameInput = placeInput(rx + 150, addBtnY, 200, 32, 12);
         if (!addUiPlaced) {
-          btn(rx + 340, addBtnY + 6, '发送', 0x2a6e4a, '#cfeedd', () => {
+          btn(rx + 360, addBtnY, '发送', 0x2a6e4a, '#cfeedd', () => {
             if (!nameInput) return;
             const nm = nameInput.value.trim();
             if (!nm) { toast('请输入角色名'); return; }
@@ -2500,7 +2516,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
               else toast(res.msg || '发送失败');
             });
           });
-          btn(rx + 420, addBtnY + 6, '取消', 0x444466, '#aaaacc', () => {
+          btn(rx + 436, addBtnY, '取消', 0x444466, '#aaaacc', () => {
             if (nameInput && nameInput.parentNode) { nameInput.parentNode.removeChild(nameInput); nameInput = null; }
           });
           addUiPlaced = true;
