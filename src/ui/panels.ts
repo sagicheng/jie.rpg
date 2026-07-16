@@ -1893,117 +1893,33 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       c.add(scene.add.text(leftX + 280, py + 168, '贡献', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
       c.add(scene.add.text(colDivider - 75, py + 168, '操作', { fontSize: '11px', color: '#556677' }).setOrigin(0.5));
 
-      // 滚动视口（容器为居中定位，故遮罩/拖拽用 cx/cy 换算世界坐标）
-      const viewTopLocal = py + 186;
-      const viewBottomLocal = py + PH - 86;
-      const viewH = viewBottomLocal - viewTopLocal;
-      const ROW_H = 28;
-      const contentH = members.length * ROW_H + 8;
-      const scrollable = contentH > viewH;
-      const scrollContent = scene.add.container(0, 0); c.add(scrollContent);
-      const rowBtns: any[] = [];
-
-      // 滚动区内的按钮（加入 scrollContent，越界自动禁用避免误触）
-      const btnIn = (lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void): void => {
-        const bw = Math.max(48, label.length * 13 + 16), bh = 24;
-        const g = scene.add.graphics();
-        g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
-        g.lineStyle(1, 0xc9a96e, 0.5); g.strokeRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
-        const t = scene.add.text(lx, ly, label, { fontSize: '12px', color: textColor, fontStyle: 'bold' }).setOrigin(0.5);
-        const z = scene.add.zone(lx, ly, bw, bh).setInteractive({ useHandCursor: true });
-        z.on('pointerover', () => { g.clear(); g.fillStyle(color, 1); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
-        z.on('pointerout', () => { g.clear(); g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
-        z.on('pointerdown', cb);
-        (z as any)._localY = ly; (z as any)._enabled = !scrollable;
-        if (scrollable) z.disableInteractive();
-        scrollContent.add([g, t, z]);
-        rowBtns.push(z);
-      };
-
-      members.forEach((m: any, i: number) => {
-        const ry = 12 + i * ROW_H;
-        const isLeader = m.rank === 'leader';
-        if (i % 2 === 0) {
-          const rb = scene.add.graphics();
-          rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(leftX - 4, ry - 12, colDivider - leftX - 8, 26, 4);
-          scrollContent.add(rb);
-        }
-        const dot = scene.add.graphics(); dot.fillStyle(0x556677, 1); dot.fillCircle(leftX + 12, ry, 4); scrollContent.add(dot);
-        scrollContent.add(scene.add.text(leftX + 36, ry, m.name, { fontSize: '14px', color: isLeader ? '#ffd27a' : '#cdd6e8' }).setOrigin(0, 0.5));
-        scrollContent.add(scene.add.text(leftX + 200, ry, RANK_NAME[m.rank], { fontSize: '12px', color: '#8899bb' }).setOrigin(0, 0.5));
-        scrollContent.add(scene.add.text(leftX + 280, ry, `${m.contribution || 0}`, { fontSize: '12px', color: '#9fe6a0' }).setOrigin(0, 0.5));
-
-        const opBaseX = colDivider - 70;
-        if (meIsLeader && !isLeader) {
-          btnIn(opBaseX - 50, ry, '升职', 0x33507a, '#bcd4ff', () => {
-            GuildClient.setRank(scene.authToken, scene.characterId, m.charId, m.rank === 'elder' ? 'member' : 'elder').then((res: any) => res.ok ? refresh() : toast(res.msg));
-          });
-          btnIn(opBaseX, ry, '转让', 0x6a4a2a, '#ffd9a0', () => {
-            GuildClient.transfer(scene.authToken, scene.characterId, m.charId).then((res: any) => res.ok ? (toast('已转让会长'), refresh()) : toast(res.msg));
-          });
-        }
-        if ((meIsLeader || meIsElder) && !isLeader && m.rank !== 'elder') {
-          btnIn(meIsLeader ? opBaseX - 100 : opBaseX, ry, '踢出', 0x6a2a2a, '#ffb0b0', () => {
-            GuildClient.kick(scene.authToken, scene.characterId, m.charId).then((res: any) => res.ok ? refresh() : toast(res.msg));
-          });
-        }
-      });
-
-      // 几何遮罩裁剪滚动内容（相机冻结，世界坐标一次性计算即可）
-      if (scrollable) {
-        const maskG = scene.make.graphics({});
-        maskG.fillStyle(0xffffff);
-        maskG.fillRect(cx + (leftX - 4), cy + viewTopLocal, colDivider - leftX - 8, viewH);
-        scrollContent.setMask(maskG.createGeometryMask());
-      }
-      // 滚动条（轨道 + 手柄）+ 滚轮/拖拽
-      const sbX = colDivider - 10;
-      let scrollY = 0;
-      const scrollBar = scene.add.graphics(); c.add(scrollBar);
-      const updateScroll = (): void => {
-        scrollY = Phaser.Math.Clamp(scrollY, viewH - contentH, 0);
-        scrollContent.y = viewTopLocal + scrollY;
-        scrollBar.clear();
-        if (scrollable) {
-          const thumbH = Math.max(24, viewH * viewH / contentH);
-          const progress = contentH > viewH ? scrollY / (viewH - contentH) : 0;
-          const ty = viewTopLocal + progress * (viewH - thumbH);
-          scrollBar.fillStyle(0x000000, 0.35); scrollBar.fillRoundedRect(sbX - 3, viewTopLocal, 6, viewH, 3);
-          scrollBar.fillStyle(0x99aacc, 0.6); scrollBar.fillRoundedRect(sbX - 3, ty, 6, thumbH, 3);
-          // 越界（被遮罩裁掉）的操作按钮自动禁用，避免点到看不见的按钮
-          for (const b of rowBtns) {
-            const rel = (b as any)._localY + scrollY;
-            const vis = rel >= -ROW_H && rel <= viewH;
-            const en = (b as any)._enabled === true;
-            if (vis && !en) { (b as any).setInteractive({ useHandCursor: true }); (b as any)._enabled = true; }
-            else if (!vis && en) { (b as any).disableInteractive(); (b as any)._enabled = false; }
+      // 成员列表滚动（复用模块级 setupScroll：几何遮罩 + 同款滚动条，严格从上到下排列，与称号面板一致）
+      setupScroll(scene, c, cx, cy, members, 28, py + 186, py + PH - 86, leftX - 4, colDivider - leftX - 8,
+        (m: any, i: number, ry: number, sc: Phaser.GameObjects.Container, btnS: any) => {
+          const isLeader = m.rank === 'leader';
+          if (i % 2 === 0) {
+            const rb = scene.add.graphics();
+            rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(leftX - 4, ry - 12, colDivider - leftX - 8, 26, 4); sc.add(rb);
           }
-        }
-      };
-      updateScroll();
-      if (scrollable) {
-        const onWheel = (_p: any, _o: any, _dx: number, dy: number) => { scrollY -= dy * 0.5; updateScroll(); };
-        scene.input.on('wheel', onWheel);
-        let dragging = false;
-        const onMove = (p: any) => {
-          if (!dragging) return;
-          const rel = p.worldY - cy - viewTopLocal;
-          const thumbH = Math.max(24, viewH * viewH / contentH);
-          const newTop = Phaser.Math.Clamp(rel - thumbH / 2, 0, viewH - thumbH);
-          scrollY = (viewH - contentH) * (newTop / (viewH - thumbH));
-          updateScroll();
-        };
-        const onUp = () => { dragging = false; };
-        scrollBar.setInteractive(new Phaser.Geom.Rectangle(sbX - 8, viewTopLocal, 16, viewH), Phaser.Geom.Rectangle.Contains);
-        scrollBar.on('pointerdown', () => { dragging = true; });
-        scene.input.on('pointermove', onMove);
-        scene.input.on('pointerup', onUp);
-        c.once(Phaser.GameObjects.Events.DESTROY, () => {
-          scene.input.off('wheel', onWheel);
-          scene.input.off('pointermove', onMove);
-          scene.input.off('pointerup', onUp);
+          const dot = scene.add.graphics(); dot.fillStyle(0x556677, 1); dot.fillCircle(leftX + 12, ry, 4); sc.add(dot);
+          sc.add(scene.add.text(leftX + 36, ry, m.name, { fontSize: '14px', color: isLeader ? '#ffd27a' : '#cdd6e8' }).setOrigin(0, 0.5));
+          sc.add(scene.add.text(leftX + 200, ry, RANK_NAME[m.rank], { fontSize: '12px', color: '#8899bb' }).setOrigin(0, 0.5));
+          sc.add(scene.add.text(leftX + 280, ry, `${m.contribution || 0}`, { fontSize: '12px', color: '#9fe6a0' }).setOrigin(0, 0.5));
+          const opBaseX = colDivider - 70;
+          if (meIsLeader && !isLeader) {
+            btnS(opBaseX - 50, ry, '升职', 0x33507a, '#bcd4ff', () => {
+              GuildClient.setRank(scene.authToken, scene.characterId, m.charId, m.rank === 'elder' ? 'member' : 'elder').then((res: any) => res.ok ? refresh() : toast(res.msg));
+            });
+            btnS(opBaseX, ry, '转让', 0x6a4a2a, '#ffd9a0', () => {
+              GuildClient.transfer(scene.authToken, scene.characterId, m.charId).then((res: any) => res.ok ? (toast('已转让会长'), refresh()) : toast(res.msg));
+            });
+          }
+          if ((meIsLeader || meIsElder) && !isLeader && m.rank !== 'elder') {
+            btnS(meIsLeader ? opBaseX - 100 : opBaseX, ry, '踢出', 0x6a2a2a, '#ffb0b0', () => {
+              GuildClient.kick(scene.authToken, scene.characterId, m.charId).then((res: any) => res.ok ? refresh() : toast(res.msg));
+            });
+          }
         });
-      }
 
       // 底部按钮：退出 / 解散
       btn(leftX + 70, py + PH - 44, '退出公会', 0x6a4a2a, '#ffd9a0', () => {
@@ -2202,6 +2118,98 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
   // ═════════════════════════════════════════
   // 好友面板（O 键）— 非实时管理走 REST，实时通知走 game 房 friendNotify
   // ═════════════════════════════════════════
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 通用滚动列表助手（模块级，好友面板 / 行会成员列表 / 称号面板共用）
+  // 几何遮罩裁剪 + 滚动条（轨道+手柄）+ 滚轮/拖拽 + 越界按钮自动禁用
+  // 排列严格「从上到下」（首行在视口顶部，scrollY=0 即置顶），与称号面板滚动条完全一致
+  // ═══════════════════════════════════════════════════════════════════════════
+  function setupScroll(
+    scene: GameScene, c: Phaser.GameObjects.Container, cx: number, cy: number,
+    items: any[], rowH: number,
+    vpTop: number, vpBottom: number,
+    colLeft: number, colWidth: number,
+    renderRow: (item: any, i: number, ry: number, sc: Phaser.GameObjects.Container, btnS: (lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void) => void) => void
+  ): void {
+    const viewH = vpBottom - vpTop;
+    const contentH = items.length * rowH + 8;
+    const scrollable = contentH > viewH;
+    const scrollContent = scene.add.container(0, 0); c.add(scrollContent);
+    const rowBtns: any[] = [];
+    const btnS = (lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void): void => {
+      const bw = Math.max(48, label.length * 13 + 16), bh = 24;
+      const g = scene.add.graphics();
+      g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+      g.lineStyle(1, 0xc9a96e, 0.5); g.strokeRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+      const t = scene.add.text(lx, ly, label, { fontSize: '12px', color: textColor, fontStyle: 'bold' }).setOrigin(0.5);
+      const z = scene.add.zone(lx, ly, bw, bh).setInteractive({ useHandCursor: true });
+      z.on('pointerover', () => { g.clear(); g.fillStyle(color, 1); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+      z.on('pointerout', () => { g.clear(); g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+      z.on('pointerdown', cb);
+      (z as any)._localY = ly; (z as any)._enabled = !scrollable;
+      if (scrollable) z.disableInteractive();
+      scrollContent.add([g, t, z]);
+      rowBtns.push(z);
+    };
+    items.forEach((it, i) => { const ry = 12 + i * rowH; renderRow(it, i, ry, scrollContent, btnS); });
+    if (scrollable) {
+      const maskG = scene.make.graphics({});
+      maskG.fillStyle(0xffffff);
+      maskG.fillRect(cx + colLeft, cy + vpTop, colWidth, viewH);
+      scrollContent.setMask(maskG.createGeometryMask());
+    }
+    const sbX = colLeft + colWidth + 4;
+    let scrollY = 0;
+    const scrollBar = scene.add.graphics(); c.add(scrollBar);
+    const updateScroll = (): void => {
+      scrollY = Phaser.Math.Clamp(scrollY, viewH - contentH, 0);
+      scrollContent.y = vpTop + scrollY;
+      scrollBar.clear();
+      if (scrollable) {
+        const thumbH = Math.max(24, viewH * viewH / contentH);
+        const progress = contentH > viewH ? scrollY / (viewH - contentH) : 0;
+        const ty = vpTop + progress * (viewH - thumbH);
+        scrollBar.fillStyle(0x000000, 0.35); scrollBar.fillRoundedRect(sbX - 3, vpTop, 6, viewH, 3);
+        scrollBar.fillStyle(0x99aacc, 0.6); scrollBar.fillRoundedRect(sbX - 3, ty, 6, thumbH, 3);
+        for (const b of rowBtns) {
+          const rel = (b as any)._localY + scrollY;
+          const vis = rel >= -rowH && rel <= viewH;
+          const en = (b as any)._enabled === true;
+          if (vis && !en) { (b as any).setInteractive({ useHandCursor: true }); (b as any)._enabled = true; }
+          else if (!vis && en) { (b as any).disableInteractive(); (b as any)._enabled = false; }
+        }
+      }
+    };
+    updateScroll();
+    if (scrollable) {
+      const onWheel = (pointer: any, _o: any, _dx: number, dy: number) => {
+        const wx = pointer.worldX, wy = pointer.worldY;
+        const vx0 = cx + colLeft, vy0 = cy + vpTop;
+        if (wx < vx0 || wx > vx0 + colWidth || wy < vy0 || wy > vy0 + viewH) return;
+        scrollY -= dy * 0.5; updateScroll();
+      };
+      scene.input.on('wheel', onWheel);
+      let dragging = false;
+      const onMove = (p: any) => {
+        if (!dragging) return;
+        const rel = p.worldY - cy - vpTop;
+        const thumbH = Math.max(24, viewH * viewH / contentH);
+        const newTop = Phaser.Math.Clamp(rel - thumbH / 2, 0, viewH - thumbH);
+        scrollY = (viewH - contentH) * (newTop / (viewH - thumbH));
+        updateScroll();
+      };
+      const onUp = () => { dragging = false; };
+      scrollBar.setInteractive(new Phaser.Geom.Rectangle(sbX - 8, vpTop, 16, viewH), Phaser.Geom.Rectangle.Contains);
+      scrollBar.on('pointerdown', () => { dragging = true; });
+      scene.input.on('pointermove', onMove);
+      scene.input.on('pointerup', onUp);
+      c.once(Phaser.GameObjects.Events.DESTROY, () => {
+        scene.input.off('wheel', onWheel);
+        scene.input.off('pointermove', onMove);
+        scene.input.off('pointerup', onUp);
+      });
+    }
+  }
 
   export function renderFriendPanel(scene: GameScene): Phaser.GameObjects.Container {
     const cam = scene.cameras.main;

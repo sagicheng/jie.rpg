@@ -1457,7 +1457,8 @@ export class GameScene extends Phaser.Scene {
     if (this.enhancePanel) { closeEnhancePanel(this); toggleEnhancePanel(this); }
     if (this.shopPanel && this.lastShopItems) { openShop(this, this.lastShopItems); }
     if (this.mallPanel) { openMall(this); }
-    if (this.friendPanel) { renderFriendPanel(this); }
+    // 好友面板不在此刷新：worldSync 联机下极频繁，每次重拉会反复闪「加载中」+ 打 REST。
+    // 好友数据靠 friendNotify（上线/下线/申请/接受/拒绝/移除）实时自刷新，无需 worldSync 驱动。
   }
 
   /** 打开商店并记录数据，便于 worldSync 后自动重渲染。 */
