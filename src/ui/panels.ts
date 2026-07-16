@@ -2144,7 +2144,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
   }
 
   // ═════════════════════════════════════════
-  // 好友面板（K 键）— 非实时管理走 REST，实时通知走 game 房 friendNotify
+  // 好友面板（O 键）— 非实时管理走 REST，实时通知走 game 房 friendNotify
   // ═════════════════════════════════════════
 
   export function renderFriendPanel(scene: GameScene): Phaser.GameObjects.Container {

@@ -78,7 +78,7 @@ export class GameScene extends Phaser.Scene {
   private dungeonConfirmPanel: Phaser.GameObjects.Container | null = null;
   // 公会面板（J 键开关）
   public guildPanel: Phaser.GameObjects.Container | null = null;
-  // 好友面板（K 键开关）
+  // 好友面板（O 键开关）
   public friendPanel: Phaser.GameObjects.Container | null = null;
   // 全局聊天 HUD（底部常驻，统一多频道）
   public chatHud: Phaser.GameObjects.Container | null = null;
@@ -411,8 +411,8 @@ export class GameScene extends Phaser.Scene {
       this.toggleGuildPanel();
     });
 
-    // K 键：开关好友面板
-    this.input.keyboard!.addKey('K').on('down', () => {
+    // O 键：开关好友面板（K 已让给鬼道技能界面，避免冲突）
+    this.input.keyboard!.addKey('O').on('down', () => {
       if (this.ctrlKey.isDown) return;
       if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
       if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
@@ -1673,7 +1673,7 @@ export class GameScene extends Phaser.Scene {
     this.guildPanel = renderGuildPanel(this, resetTab);
   }
 
-  // ——— 好友面板（K 键）———
+  // ——— 好友面板（O 键）———
   private toggleFriendPanel(): void {
     if (this.friendPanel) this.closeFriendPanel();
     else this.openFriendPanel();
