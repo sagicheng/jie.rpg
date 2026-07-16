@@ -1881,72 +1881,128 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       sep1.lineStyle(1, 0x334466, 0.3); sep1.lineBetween(leftX, py + 126, colDivider - 12, py + 126);
       c.add(sep1);
 
-      // 成员列表标题
+      // ── 成员列表（可滚动，避免人多溢出）──
+      const members = g.members || [];
+      // 成员数 / 上限（30 与 server/guild.ts GUILD_MAX_MEMBERS 保持一致）
       c.add(scene.add.text(leftX, py + 142, '成员列表', { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
-      // 表头
+      c.add(scene.add.text(leftX + 110, py + 142, `${members.length}/30`, { fontSize: '12px', color: '#8aa0c0' }).setOrigin(0, 0.5));
+      // 表头（固定，不随滚动）
       c.add(scene.add.text(leftX + 4, py + 168, '状态', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
       c.add(scene.add.text(leftX + 36, py + 168, '角色名', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
       c.add(scene.add.text(leftX + 200, py + 168, '职位', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
       c.add(scene.add.text(leftX + 280, py + 168, '贡献', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
       c.add(scene.add.text(colDivider - 75, py + 168, '操作', { fontSize: '11px', color: '#556677' }).setOrigin(0.5));
 
-      // 成员行
-      const members = g.members || [];
+      // 滚动视口（容器为居中定位，故遮罩/拖拽用 cx/cy 换算世界坐标）
+      const viewTopLocal = py + 186;
+      const viewBottomLocal = py + PH - 86;
+      const viewH = viewBottomLocal - viewTopLocal;
       const ROW_H = 28;
-      const MAX_ROWS = 16; // 约 448px 高度
-      members.slice(0, MAX_ROWS).forEach((m: any, i: number) => {
-        const ry = py + 192 + i * ROW_H;
-        const isLeader = m.rank === 'leader';
+      const contentH = members.length * ROW_H + 8;
+      const scrollable = contentH > viewH;
+      const scrollContent = scene.add.container(0, 0); c.add(scrollContent);
+      const rowBtns: any[] = [];
 
-        // 行背景交替色
+      // 滚动区内的按钮（加入 scrollContent，越界自动禁用避免误触）
+      const btnIn = (lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void): void => {
+        const bw = Math.max(48, label.length * 13 + 16), bh = 24;
+        const g = scene.add.graphics();
+        g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+        g.lineStyle(1, 0xc9a96e, 0.5); g.strokeRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+        const t = scene.add.text(lx, ly, label, { fontSize: '12px', color: textColor, fontStyle: 'bold' }).setOrigin(0.5);
+        const z = scene.add.zone(lx, ly, bw, bh).setInteractive({ useHandCursor: true });
+        z.on('pointerover', () => { g.clear(); g.fillStyle(color, 1); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+        z.on('pointerout', () => { g.clear(); g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+        z.on('pointerdown', cb);
+        (z as any)._localY = ly; (z as any)._enabled = !scrollable;
+        if (scrollable) z.disableInteractive();
+        scrollContent.add([g, t, z]);
+        rowBtns.push(z);
+      };
+
+      members.forEach((m: any, i: number) => {
+        const ry = 12 + i * ROW_H;
+        const isLeader = m.rank === 'leader';
         if (i % 2 === 0) {
           const rb = scene.add.graphics();
           rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(leftX - 4, ry - 12, colDivider - leftX - 8, 26, 4);
-          c.add(rb);
+          scrollContent.add(rb);
         }
+        const dot = scene.add.graphics(); dot.fillStyle(0x556677, 1); dot.fillCircle(leftX + 12, ry, 4); scrollContent.add(dot);
+        scrollContent.add(scene.add.text(leftX + 36, ry, m.name, { fontSize: '14px', color: isLeader ? '#ffd27a' : '#cdd6e8' }).setOrigin(0, 0.5));
+        scrollContent.add(scene.add.text(leftX + 200, ry, RANK_NAME[m.rank], { fontSize: '12px', color: '#8899bb' }).setOrigin(0, 0.5));
+        scrollContent.add(scene.add.text(leftX + 280, ry, `${m.contribution || 0}`, { fontSize: '12px', color: '#9fe6a0' }).setOrigin(0, 0.5));
 
-        // 在线状态圆点
-        const dot = scene.add.graphics();
-        dot.fillStyle(0x556677, 1); dot.fillCircle(leftX + 12, ry, 4);
-        c.add(dot);
-
-        // 角色名（会长高亮金）
-        c.add(scene.add.text(leftX + 36, ry, m.name, {
-          fontSize: '14px', color: isLeader ? '#ffd27a' : '#cdd6e8',
-        }).setOrigin(0, 0.5));
-
-        // 职位标签
-        c.add(scene.add.text(leftX + 200, ry, RANK_NAME[m.rank], {
-          fontSize: '12px', color: '#8899bb',
-        }).setOrigin(0, 0.5));
-        // 个人贡献
-        c.add(scene.add.text(leftX + 280, ry, `${m.contribution || 0}`, {
-          fontSize: '12px', color: '#9fe6a0',
-        }).setOrigin(0, 0.5));
-
-        // ══ 操作按钮（紧凑短标签 + 右对齐在操作列，不遮挡名字/职位） ══
-        const opBaseX = colDivider - 78; // 操作区右基准（靠近分界线但不越过）
+        const opBaseX = colDivider - 70;
         if (meIsLeader && !isLeader) {
-          btn(opBaseX - 52, ry, '升职', 0x33507a, '#bcd4ff', () => {
-            GuildClient.setRank(scene.authToken, scene.characterId, m.charId, m.rank === 'elder' ? 'member' : 'elder')
-              .then((res: any) => res.ok ? refresh() : toast(res.msg));
+          btnIn(opBaseX - 50, ry, '升职', 0x33507a, '#bcd4ff', () => {
+            GuildClient.setRank(scene.authToken, scene.characterId, m.charId, m.rank === 'elder' ? 'member' : 'elder').then((res: any) => res.ok ? refresh() : toast(res.msg));
           });
-          btn(opBaseX, ry, '转让', 0x6a4a2a, '#ffd9a0', () => {
-            GuildClient.transfer(scene.authToken, scene.characterId, m.charId)
-              .then((res: any) => res.ok ? (toast('已转让会长'), refresh()) : toast(res.msg));
+          btnIn(opBaseX, ry, '转让', 0x6a4a2a, '#ffd9a0', () => {
+            GuildClient.transfer(scene.authToken, scene.characterId, m.charId).then((res: any) => res.ok ? (toast('已转让会长'), refresh()) : toast(res.msg));
           });
         }
         if ((meIsLeader || meIsElder) && !isLeader && m.rank !== 'elder') {
-          btn(meIsLeader ? opBaseX - 104 : opBaseX, ry, '踢出', 0x6a2a2a, '#ffb0b0', () => {
-            GuildClient.kick(scene.authToken, scene.characterId, m.charId)
-              .then((res: any) => res.ok ? refresh() : toast(res.msg));
+          btnIn(meIsLeader ? opBaseX - 100 : opBaseX, ry, '踢出', 0x6a2a2a, '#ffb0b0', () => {
+            GuildClient.kick(scene.authToken, scene.characterId, m.charId).then((res: any) => res.ok ? refresh() : toast(res.msg));
           });
         }
       });
 
-      if (members.length > MAX_ROWS) {
-        c.add(scene.add.text(leftX, py + 192 + MAX_ROWS * ROW_H + 4,
-          `… 还有 ${members.length - MAX_ROWS} 名成员`, { fontSize: '11px', color: '#556677' }).setOrigin(0, 0));
+      // 几何遮罩裁剪滚动内容（相机冻结，世界坐标一次性计算即可）
+      if (scrollable) {
+        const maskG = scene.make.graphics({});
+        maskG.fillStyle(0xffffff);
+        maskG.fillRect(cx + (leftX - 4), cy + viewTopLocal, colDivider - leftX - 8, viewH);
+        scrollContent.setMask(maskG.createGeometryMask());
+      }
+      // 滚动条（轨道 + 手柄）+ 滚轮/拖拽
+      const sbX = colDivider - 10;
+      let scrollY = 0;
+      const scrollBar = scene.add.graphics(); c.add(scrollBar);
+      const updateScroll = (): void => {
+        scrollY = Phaser.Math.Clamp(scrollY, viewH - contentH, 0);
+        scrollContent.y = viewTopLocal + scrollY;
+        scrollBar.clear();
+        if (scrollable) {
+          const thumbH = Math.max(24, viewH * viewH / contentH);
+          const progress = contentH > viewH ? scrollY / (viewH - contentH) : 0;
+          const ty = viewTopLocal + progress * (viewH - thumbH);
+          scrollBar.fillStyle(0x000000, 0.35); scrollBar.fillRoundedRect(sbX - 3, viewTopLocal, 6, viewH, 3);
+          scrollBar.fillStyle(0x99aacc, 0.6); scrollBar.fillRoundedRect(sbX - 3, ty, 6, thumbH, 3);
+          // 越界（被遮罩裁掉）的操作按钮自动禁用，避免点到看不见的按钮
+          for (const b of rowBtns) {
+            const rel = (b as any)._localY + scrollY;
+            const vis = rel >= -ROW_H && rel <= viewH;
+            const en = (b as any)._enabled === true;
+            if (vis && !en) { (b as any).setInteractive({ useHandCursor: true }); (b as any)._enabled = true; }
+            else if (!vis && en) { (b as any).disableInteractive(); (b as any)._enabled = false; }
+          }
+        }
+      };
+      updateScroll();
+      if (scrollable) {
+        const onWheel = (_p: any, _o: any, _dx: number, dy: number) => { scrollY -= dy * 0.5; updateScroll(); };
+        scene.input.on('wheel', onWheel);
+        let dragging = false;
+        const onMove = (p: any) => {
+          if (!dragging) return;
+          const rel = p.worldY - cy - viewTopLocal;
+          const thumbH = Math.max(24, viewH * viewH / contentH);
+          const newTop = Phaser.Math.Clamp(rel - thumbH / 2, 0, viewH - thumbH);
+          scrollY = (viewH - contentH) * (newTop / (viewH - thumbH));
+          updateScroll();
+        };
+        const onUp = () => { dragging = false; };
+        scrollBar.setInteractive(new Phaser.Geom.Rectangle(sbX - 8, viewTopLocal, 16, viewH), Phaser.Geom.Rectangle.Contains);
+        scrollBar.on('pointerdown', () => { dragging = true; });
+        scene.input.on('pointermove', onMove);
+        scene.input.on('pointerup', onUp);
+        c.once(Phaser.GameObjects.Events.DESTROY, () => {
+          scene.input.off('wheel', onWheel);
+          scene.input.off('pointermove', onMove);
+          scene.input.off('pointerup', onUp);
+        });
       }
 
       // 底部按钮：退出 / 解散
@@ -2224,6 +2280,93 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       c.add([g, t, z]);
     };
 
+    // 通用滚动列表（几何遮罩 + 滚动条；居中容器坐标用 cx/cy 换算世界坐标；多视口时滚轮按区域生效，互不干扰）
+    const setupScroll = (
+      items: any[], rowH: number,
+      vpTop: number, vpBottom: number,
+      colLeft: number, colWidth: number,
+      renderRow: (item: any, i: number, ry: number, sc: Phaser.GameObjects.Container, btnS: (lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void) => void) => void
+    ): void => {
+      const viewH = vpBottom - vpTop;
+      const contentH = items.length * rowH + 8;
+      const scrollable = contentH > viewH;
+      const scrollContent = scene.add.container(0, 0); c.add(scrollContent);
+      const rowBtns: any[] = [];
+      const btnS = (lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void): void => {
+        const bw = Math.max(48, label.length * 13 + 16), bh = 24;
+        const g = scene.add.graphics();
+        g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+        g.lineStyle(1, 0xc9a96e, 0.5); g.strokeRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
+        const t = scene.add.text(lx, ly, label, { fontSize: '12px', color: textColor, fontStyle: 'bold' }).setOrigin(0.5);
+        const z = scene.add.zone(lx, ly, bw, bh).setInteractive({ useHandCursor: true });
+        z.on('pointerover', () => { g.clear(); g.fillStyle(color, 1); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+        z.on('pointerout', () => { g.clear(); g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
+        z.on('pointerdown', cb);
+        (z as any)._localY = ly; (z as any)._enabled = !scrollable;
+        if (scrollable) z.disableInteractive();
+        scrollContent.add([g, t, z]);
+        rowBtns.push(z);
+      };
+      items.forEach((it, i) => { const ry = 12 + i * rowH; renderRow(it, i, ry, scrollContent, btnS); });
+      if (scrollable) {
+        const maskG = scene.make.graphics({});
+        maskG.fillStyle(0xffffff);
+        maskG.fillRect(cx + colLeft, cy + vpTop, colWidth, viewH);
+        scrollContent.setMask(maskG.createGeometryMask());
+      }
+      const sbX = colLeft + colWidth + 4;
+      let scrollY = 0;
+      const scrollBar = scene.add.graphics(); c.add(scrollBar);
+      const updateScroll = (): void => {
+        scrollY = Phaser.Math.Clamp(scrollY, viewH - contentH, 0);
+        scrollContent.y = vpTop + scrollY;
+        scrollBar.clear();
+        if (scrollable) {
+          const thumbH = Math.max(24, viewH * viewH / contentH);
+          const progress = contentH > viewH ? scrollY / (viewH - contentH) : 0;
+          const ty = vpTop + progress * (viewH - thumbH);
+          scrollBar.fillStyle(0x000000, 0.35); scrollBar.fillRoundedRect(sbX - 3, vpTop, 6, viewH, 3);
+          scrollBar.fillStyle(0x99aacc, 0.6); scrollBar.fillRoundedRect(sbX - 3, ty, 6, thumbH, 3);
+          for (const b of rowBtns) {
+            const rel = (b as any)._localY + scrollY;
+            const vis = rel >= -rowH && rel <= viewH;
+            const en = (b as any)._enabled === true;
+            if (vis && !en) { (b as any).setInteractive({ useHandCursor: true }); (b as any)._enabled = true; }
+            else if (!vis && en) { (b as any).disableInteractive(); (b as any)._enabled = false; }
+          }
+        }
+      };
+      updateScroll();
+      if (scrollable) {
+        const onWheel = (pointer: any, _o: any, _dx: number, dy: number) => {
+          const wx = pointer.worldX, wy = pointer.worldY;
+          const vx0 = cx + colLeft, vy0 = cy + vpTop;
+          if (wx < vx0 || wx > vx0 + colWidth || wy < vy0 || wy > vy0 + viewH) return;
+          scrollY -= dy * 0.5; updateScroll();
+        };
+        scene.input.on('wheel', onWheel);
+        let dragging = false;
+        const onMove = (p: any) => {
+          if (!dragging) return;
+          const rel = p.worldY - cy - vpTop;
+          const thumbH = Math.max(24, viewH * viewH / contentH);
+          const newTop = Phaser.Math.Clamp(rel - thumbH / 2, 0, viewH - thumbH);
+          scrollY = (viewH - contentH) * (newTop / (viewH - thumbH));
+          updateScroll();
+        };
+        const onUp = () => { dragging = false; };
+        scrollBar.setInteractive(new Phaser.Geom.Rectangle(sbX - 8, vpTop, 16, viewH), Phaser.Geom.Rectangle.Contains);
+        scrollBar.on('pointerdown', () => { dragging = true; });
+        scene.input.on('pointermove', onMove);
+        scene.input.on('pointerup', onUp);
+        c.once(Phaser.GameObjects.Events.DESTROY, () => {
+          scene.input.off('wheel', onWheel);
+          scene.input.off('pointermove', onMove);
+          scene.input.off('pointerup', onUp);
+        });
+      }
+    };
+
     const refresh = () => { scene.closeFriendPanel(); scene.openFriendPanel(); };
     const toast = (msg: string) => {
       const t = scene.add.text(0, py + 64, msg, { fontSize: '14px', color: '#ffcc88', fontStyle: 'bold' }).setOrigin(0.5);
@@ -2248,59 +2391,62 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     }).catch(() => { loading.setText('网络错误'); });
 
     function renderBody(): void {
-      // ── 左列：好友列表 ──
-      const lx = px + 30;
-      c.add(scene.add.text(lx, py + 70, '好友列表', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      // ── 左列：好友列表（可滚动，排版参照公会成员列表）──
+      const lx = px + 28;
+      const colDivider = px + PW / 2;
       const friends = GameState.friendList;
+      c.add(scene.add.text(lx, py + 68, '好友列表', { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      c.add(scene.add.text(lx + 110, py + 68, `${friends.length} 位`, { fontSize: '12px', color: '#8aa0c0' }).setOrigin(0, 0.5));
       if (friends.length === 0) {
         c.add(scene.add.text(lx, py + 110, '（暂无好友，在右侧用角色名添加）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0));
       } else {
-        friends.forEach((f: any, i: number) => {
-          const ry = py + 100 + i * 64;
-          if (i % 2 === 0) {
-            const rowBg = scene.add.graphics(); rowBg.fillStyle(0x1a1a2e, 0.4); rowBg.fillRoundedRect(lx - 6, ry - 22, 470, 56, 6); c.add(rowBg);
-          }
-          const dot = scene.add.graphics(); dot.fillStyle(f.online ? 0x44dd66 : 0x555566, 1); dot.fillCircle(lx + 4, ry - 4, 6); c.add(dot);
-          c.add(scene.add.text(lx + 18, ry - 10, f.name, { fontSize: '15px', color: '#cdd6e8', fontStyle: 'bold' }).setOrigin(0, 0.5));
-          const locText = f.online ? (f.location || '在线') : '离线';
-          c.add(scene.add.text(lx + 18, ry + 12, locText, { fontSize: '12px', color: f.online ? '#88cc99' : '#667788' }).setOrigin(0, 0.5));
-          btn(lx + 372, ry - 2, '私聊', 0x33507a, '#bcd4ff', () => { scene.whisperTo(f.charId, f.name); });
-          btn(lx + 430, ry - 2, '移除', 0x6a2a2a, '#ffb0b0', () => {
-            FriendClient.remove(scene.authToken, scene.characterId, f.charId).then((res: any) => {
-              if (res.ok) { toast('已移除好友'); refresh(); } else toast(res.msg || '移除失败');
+        const fvpTop = py + 92, fvpBottom = py + PH - 24, fROW = 30;
+        setupScroll(friends, fROW, fvpTop, fvpBottom, lx - 4, colDivider - lx - 8,
+          (f: any, i: number, ry: number, sc: Phaser.GameObjects.Container, btnS: any) => {
+            if (i % 2 === 0) {
+              const rb = scene.add.graphics(); rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(lx - 4, ry - 13, colDivider - lx - 8, 28, 4); sc.add(rb);
+            }
+            const dot = scene.add.graphics(); dot.fillStyle(f.online ? 0x44dd66 : 0x555566, 1); dot.fillCircle(lx + 12, ry, 4); sc.add(dot);
+            sc.add(scene.add.text(lx + 28, ry, f.name, { fontSize: '14px', color: '#cdd6e8', fontStyle: 'bold' }).setOrigin(0, 0.5));
+            const locText = f.online ? (f.location || '在线') : '离线';
+            sc.add(scene.add.text(lx + 28, ry + 13, locText, { fontSize: '11px', color: f.online ? '#88cc99' : '#667788' }).setOrigin(0, 0.5));
+            btnS(colDivider - 150, ry, '私聊', 0x33507a, '#bcd4ff', () => { scene.whisperTo(f.charId, f.name); });
+            btnS(colDivider - 84, ry, '移除', 0x6a2a2a, '#ffb0b0', () => {
+              FriendClient.remove(scene.authToken, scene.characterId, f.charId).then((res: any) => res.ok ? (toast('已移除好友'), refresh()) : toast(res.msg || '移除失败'));
             });
           });
-        });
       }
 
-      // ── 右列：申请 + 添加 ──
-      const rx = px + 520;
-      c.add(scene.add.text(rx, py + 70, '好友申请', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      // ── 右列：申请（可滚动）+ 添加 ──
+      const rx = px + 512;
+      c.add(scene.add.text(rx, py + 68, '好友申请', { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
       const reqs = GameState.friendRequests;
       if (reqs.length === 0) {
         c.add(scene.add.text(rx, py + 110, '（暂无申请）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0));
       } else {
-        reqs.forEach((q: any, i: number) => {
-          const ry = py + 100 + i * 50;
-          if (i % 2 === 0) {
-            const rowBg = scene.add.graphics(); rowBg.fillStyle(0x1a1a2e, 0.4); rowBg.fillRoundedRect(rx - 6, ry - 18, 450, 40, 6); c.add(rowBg);
-          }
-          c.add(scene.add.text(rx, ry, q.name, { fontSize: '15px', color: '#cdd6e8', fontStyle: 'bold' }).setOrigin(0, 0.5));
-          btn(rx + 360, ry, '接受', 0x2a6e4a, '#cfeedd', () => {
-            FriendClient.accept(scene.authToken, scene.characterId, q.charId).then((res: any) => res.ok ? (toast('已添加为好友'), refresh()) : toast(res.msg));
+        const rW = PW - (rx - px) - 28;
+        const rvpTop = py + 92, rvpBottom = py + PH - 200, rROW = 32;
+        setupScroll(reqs, rROW, rvpTop, rvpBottom, rx - 6, rW,
+          (q: any, i: number, ry: number, sc: Phaser.GameObjects.Container, btnS: any) => {
+            if (i % 2 === 0) {
+              const rb = scene.add.graphics(); rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(rx - 6, ry - 13, rW + 2, 30, 4); sc.add(rb);
+            }
+            sc.add(scene.add.text(rx, ry, q.name, { fontSize: '14px', color: '#cdd6e8', fontStyle: 'bold' }).setOrigin(0, 0.5));
+            btnS(rx + rW - 150, ry, '接受', 0x2a6e4a, '#cfeedd', () => {
+              FriendClient.accept(scene.authToken, scene.characterId, q.charId).then((res: any) => res.ok ? (toast('已添加为好友'), refresh()) : toast(res.msg));
+            });
+            btnS(rx + rW - 84, ry, '拒绝', 0x6a2a2a, '#ffb0b0', () => {
+              FriendClient.decline(scene.authToken, scene.characterId, q.charId).then((res: any) => res.ok ? (toast('已拒绝'), refresh()) : toast(res.msg));
+            });
           });
-          btn(rx + 418, ry, '拒绝', 0x6a2a2a, '#ffb0b0', () => {
-            FriendClient.decline(scene.authToken, scene.characterId, q.charId).then((res: any) => res.ok ? (toast('已拒绝'), refresh()) : toast(res.msg));
-          });
-        });
       }
 
       // 添加好友（按角色名）
-      const ay = py + 360;
-      c.add(scene.add.text(rx, ay - 30, '添加好友（输入角色名）', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      const ay = py + PH - 120;
+      c.add(scene.add.text(rx, ay - 28, '添加好友（输入角色名）', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
       c.add(scene.add.text(rx, ay, '角色名', { fontSize: '13px', color: '#8899bb' }).setOrigin(0, 0.5));
-      const nameInput = placeInput(rx + 90, ay, 260, 34, 12);
-      btn(rx + 420, ay, '发送申请', 0x33507a, '#bcd4ff', () => {
+      const nameInput = placeInput(rx + 90, ay, 240, 32, 12);
+      btn(rx + 380, ay, '发送申请', 0x33507a, '#bcd4ff', () => {
         const nm = nameInput.value.trim();
         if (!nm) { toast('请输入角色名'); return; }
         FriendClient.add(scene.authToken, scene.characterId, nm).then((res: any) => {

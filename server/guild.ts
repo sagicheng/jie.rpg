@@ -28,6 +28,9 @@ import {
 } from './db';
 import { getGuildSkillDef, guildSkillCost } from './guildSkills';
 
+/** 公会成员上限（含会长）。超过后审批通过/直接加入都会被拒绝。 */
+export const GUILD_MAX_MEMBERS = 30;
+
 const router = Router();
 
 /** JSON 响应辅助 */
@@ -174,6 +177,10 @@ router.post('/handle-apply', (req: Request, res: Response) => {
   if (getMemberGuild(app.char_id) !== null) {
     removeApplication(appId);
     return fail('该玩家已加入其他公会', res);
+  }
+  // 人数上限校验（含会长在内不超过 GUILD_MAX_MEMBERS）
+  if (getGuildMemberCount(guildId) >= GUILD_MAX_MEMBERS) {
+    return fail(`公会人数已达上限（${GUILD_MAX_MEMBERS}人）`, res);
   }
   try {
     addMember(guildId, app.char_id, 'member');
