@@ -2399,62 +2399,91 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     }).catch(() => { loading.setText('网络错误'); });
 
     function renderBody(): void {
-      // ── 左列：好友列表（可滚动，排版参照公会成员列表）──
+      // ── 左列：好友列表（可滚动，排版完全对齐公会成员列表）──
       const lx = px + 28;
       const colDivider = px + PW / 2;
       const friends = GameState.friendList;
       c.add(scene.add.text(lx, py + 68, '好友列表', { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
       c.add(scene.add.text(lx + 110, py + 68, `${friends.length} 位`, { fontSize: '12px', color: '#8aa0c0' }).setOrigin(0, 0.5));
+
       if (friends.length === 0) {
-        c.add(scene.add.text(lx, py + 110, '（暂无好友，在右侧用角色名添加）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0));
+        // 空状态：居中提示（与公会"暂无公会"风格一致）
+        const emptyIcon = scene.add.text(lx + (colDivider - lx) / 2, py + 200, '👤', { fontSize: '36px' }).setOrigin(0.5);
+        c.add(emptyIcon);
+        c.add(scene.add.text(lx + (colDivider - lx) / 2, py + 240, '暂无好友', { fontSize: '16px', color: '#667788', fontStyle: 'bold' }).setOrigin(0.5));
+        c.add(scene.add.text(lx + (colDivider - lx) / 2, py + 268, '在右侧输入角色名发送申请', { fontSize: '13px', color: '#556677' }).setOrigin(0.5));
       } else {
-        const fvpTop = py + 92, fvpBottom = py + PH - 24, fROW = 30;
+        // 表头（固定不随滚动，对齐公会成员列表表头风格）
+        const hdrY = py + 94;
+        c.add(scene.add.text(lx + 4, hdrY, '状态', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
+        c.add(scene.add.text(lx + 32, hdrY, '角色名', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
+        c.add(scene.add.text(lx + 180, hdrY, '所在地图', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
+        c.add(scene.add.text(colDivider - 72, hdrY, '操作', { fontSize: '11px', color: '#556677' }).setOrigin(0.5));
+
+        const fvpTop = py + 112, fvpBottom = py + PH - 24, fROW = 30;
         setupScroll(friends, fROW, fvpTop, fvpBottom, lx - 4, colDivider - lx - 8,
           (f: any, i: number, ry: number, sc: Phaser.GameObjects.Container, btnS: any) => {
+            // 交替行背景（与公会成员列表一致）
             if (i % 2 === 0) {
-              const rb = scene.add.graphics(); rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(lx - 4, ry - 13, colDivider - lx - 8, 28, 4); sc.add(rb);
+              const rb = scene.add.graphics(); rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(lx - 4, ry - 12, colDivider - lx - 8, 26, 4); sc.add(rb);
             }
-            const dot = scene.add.graphics(); dot.fillStyle(f.online ? 0x44dd66 : 0x555566, 1); dot.fillCircle(lx + 12, ry, 4); sc.add(dot);
-            sc.add(scene.add.text(lx + 28, ry, f.name, { fontSize: '14px', color: '#cdd6e8', fontStyle: 'bold' }).setOrigin(0, 0.5));
+            // 在线状态圆点（绿=在线 灰=离线）
+            const dot = scene.add.graphics(); dot.fillStyle(f.online ? 0x44dd66 : 0x555566, 1); dot.fillCircle(lx + 10, ry, 4); sc.add(dot);
+            // 角色名（14px 加粗）
+            sc.add(scene.add.text(lx + 32, ry, f.name, { fontSize: '14px', color: '#cdd6e8', fontStyle: 'bold' }).setOrigin(0, 0.5));
+            // 地图位置（在线显示地名，离线显示"离线"）
             const locText = f.online ? (f.location || '在线') : '离线';
-            sc.add(scene.add.text(lx + 28, ry + 13, locText, { fontSize: '11px', color: f.online ? '#88cc99' : '#667788' }).setOrigin(0, 0.5));
-            btnS(colDivider - 150, ry, '私聊', 0x33507a, '#bcd4ff', () => { scene.whisperTo(f.charId, f.name); });
-            btnS(colDivider - 84, ry, '移除', 0x6a2a2a, '#ffb0b0', () => {
+            sc.add(scene.add.text(lx + 180, ry, locText, { fontSize: '12px', color: f.online ? '#88cc99' : '#667788' }).setOrigin(0, 0.5));
+            // 操作按钮（私聊 + 移除）
+            btnS(colDivider - 120, ry, '私聊', 0x33507a, '#bcd4ff', () => { scene.whisperTo(f.charId, f.name); });
+            btnS(colDivider - 54, ry, '移除', 0x6a2a2a, '#ffb0b0', () => {
               FriendClient.remove(scene.authToken, scene.characterId, f.charId).then((res: any) => res.ok ? (toast('已移除好友'), refresh()) : toast(res.msg || '移除失败'));
             });
           });
       }
 
-      // ── 右列：申请（可滚动）+ 添加 ──
+      // ── 右列：申请（可滚动）+ 添加表单 ──
       const rx = px + 512;
       c.add(scene.add.text(rx, py + 68, '好友申请', { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
       const reqs = GameState.friendRequests;
+      c.add(scene.add.text(rx + 110, py + 68, `${reqs.length} 条`, { fontSize: '12px', color: '#8aa0c0' }).setOrigin(0, 0.5));
+
       if (reqs.length === 0) {
-        c.add(scene.add.text(rx, py + 110, '（暂无申请）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0));
+        c.add(scene.add.text(rx, py + 110, '（暂无待处理申请）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0));
       } else {
+        // 申请表头
+        const rhdrY = py + 94;
+        c.add(scene.add.text(rx, rhdrY, '申请人', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
+        c.add(scene.add.text(rx + 220, rhdrY, '操作', { fontSize: '11px', color: '#556677' }).setOrigin(0.5));
+
         const rW = PW - (rx - px) - 28;
-        const rvpTop = py + 92, rvpBottom = py + PH - 200, rROW = 32;
+        const rvpTop = py + 112, rvpBottom = py + PH - 180, rROW = 34;
         setupScroll(reqs, rROW, rvpTop, rvpBottom, rx - 6, rW,
           (q: any, i: number, ry: number, sc: Phaser.GameObjects.Container, btnS: any) => {
+            // 交替行背景
             if (i % 2 === 0) {
-              const rb = scene.add.graphics(); rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(rx - 6, ry - 13, rW + 2, 30, 4); sc.add(rb);
+              const rb = scene.add.graphics(); rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(rx - 6, ry - 14, rW + 2, 30, 4); sc.add(rb);
             }
             sc.add(scene.add.text(rx, ry, q.name, { fontSize: '14px', color: '#cdd6e8', fontStyle: 'bold' }).setOrigin(0, 0.5));
-            btnS(rx + rW - 150, ry, '接受', 0x2a6e4a, '#cfeedd', () => {
+            btnS(rx + rW - 120, ry, '接受', 0x2a6e4a, '#cfeedd', () => {
               FriendClient.accept(scene.authToken, scene.characterId, q.charId).then((res: any) => res.ok ? (toast('已添加为好友'), refresh()) : toast(res.msg));
             });
-            btnS(rx + rW - 84, ry, '拒绝', 0x6a2a2a, '#ffb0b0', () => {
+            btnS(rx + rW - 54, ry, '拒绝', 0x6a2a2a, '#ffb0b0', () => {
               FriendClient.decline(scene.authToken, scene.characterId, q.charId).then((res: any) => res.ok ? (toast('已拒绝'), refresh()) : toast(res.msg));
             });
           });
       }
 
-      // 添加好友（按角色名）
-      const ay = py + PH - 120;
-      c.add(scene.add.text(rx, ay - 28, '添加好友（输入角色名）', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
-      c.add(scene.add.text(rx, ay, '角色名', { fontSize: '13px', color: '#8899bb' }).setOrigin(0, 0.5));
-      const nameInput = placeInput(rx + 90, ay, 240, 32, 12);
-      btn(rx + 380, ay, '发送申请', 0x33507a, '#bcd4ff', () => {
+      // ══ 添加好友区域（固定在右下角，不随申请列表滚动）══
+      const ay = py + PH - 140;
+      // 分隔线
+      const addSep = scene.add.graphics();
+      addSep.lineStyle(1, 0x334466, 0.3); addSep.lineBetween(rx, ay - 40, rx + (PW - (rx - px) - 28), ay - 40); c.add(addSep);
+      c.add(scene.add.text(rx, ay - 24, '添加好友', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      // 表单行：标签 + 输入框 + 按钮（对齐公会创建表单风格）
+      c.add(scene.add.text(rx, ay + 6, '角色名', { fontSize: '13px', color: '#8899bb' }).setOrigin(0, 0.5));
+      const nameInput = placeInput(rx + 90, ay + 6, 220, 32, 12);
+      btn(rx + 360, ay + 6, '发送申请', 0x33507a, '#bcd4ff', () => {
         const nm = nameInput.value.trim();
         if (!nm) { toast('请输入角色名'); return; }
         FriendClient.add(scene.authToken, scene.characterId, nm).then((res: any) => {
@@ -2462,6 +2491,8 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
           else toast(res.msg || '发送失败');
         });
       });
+      // 提示文字
+      c.add(scene.add.text(rx, ay + 42, '输入对方角色名后点击发送，对方同意后成为好友。', { fontSize: '11px', color: '#556677', wordWrap: { width: 400 } }).setOrigin(0, 0));
     }
 
     return c;
