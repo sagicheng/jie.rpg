@@ -8,7 +8,8 @@
 import { Room, Client } from '@colyseus/core';
 import { GameRoomState, GamePlayer, MonsterState } from '../schema';
 import { world, type OpResult } from '../world';
-import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld } from '../db';
+import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld, addGuildExp, addMemberContribution } from '../db';
+import { guildShopBuy } from '../guildShop';
 import { enqueueArena, dequeueArena, queueSize } from '../arenaService';
 import { isArenaOpen, ARENA_WEEKLY_CAP } from '../arena';
 
@@ -300,7 +301,22 @@ export class GameRoom extends Room<GameRoomState> {
         case 'equip': res = world.equip(pw, String(data.itemId || '')); break;
         case 'unequip': res = world.unequip(pw, String(data.slot || '') as any); break;
         case 'questProgress': world.updateQuest(pw, String(data.type || ''), String(data.target || ''), Number(data.amount) || 1); res = { ok: true, msg: 'progress' }; break;
-        case 'claimQuest': res = world.claimQuest(pw, String(data.questId || '')); break;
+        case 'claimQuest': {
+          res = world.claimQuest(pw, String(data.questId || ''));
+          // 公会 v2 经验/贡献来源：日常/周常领奖给公会加经验 + 个人贡献（主线/支线仅一次，不计）
+          if (res.ok && (res.type === 'daily' || res.type === 'weekly')) {
+            const cid = sessionCharMap.get(client.sessionId);
+            if (cid !== undefined) {
+              const gid = getMemberGuild(cid);
+              if (gid !== null) {
+                const gain = Math.round((res.data?.exp || 0) * 0.5) || 50;
+                addGuildExp(gid, gain);
+                addMemberContribution(cid, gain);
+              }
+            }
+          }
+          break;
+        }
         case 'craft': res = world.craft(pw, String(data.recipeName || ''), data.zone !== undefined ? Number(data.zone) : undefined); break;
         case 'enhance': res = world.enhance(pw, String(data.itemId || '')); break;
         case 'refine': res = world.refine(pw, String(data.itemId || '')); break;
@@ -383,6 +399,14 @@ export class GameRoom extends Room<GameRoomState> {
           res = world.grantSetTestGear(pw, Number(data.zone) || 1, String(data.quality || 'blue'));
           if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
           break;
+        // ——— 行会商店购买（个人贡献消费闭环） ———
+        case 'guildBuy': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = guildShopBuy(pw, cid, String(data.itemId || ''));
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
       }
       client.send('intentResult', res);
       client.send('worldSync', pw);

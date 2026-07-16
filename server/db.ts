@@ -47,6 +47,7 @@ db.exec(`
     notice          TEXT NOT NULL DEFAULT '',
     level           INTEGER NOT NULL DEFAULT 1,
     exp             INTEGER NOT NULL DEFAULT 0,
+    contribution    INTEGER NOT NULL DEFAULT 0,   -- 公会贡献池（成员活动累积，用于学公会技能）
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -54,6 +55,7 @@ db.exec(`
     guild_id  INTEGER NOT NULL REFERENCES guilds(id),
     char_id   INTEGER NOT NULL,
     rank      TEXT NOT NULL DEFAULT 'member',   -- 'leader' | 'elder' | 'member'
+    contribution INTEGER NOT NULL DEFAULT 0,    -- 个人累计贡献（做任务/副本累积）
     joined_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (guild_id, char_id),
     UNIQUE (char_id)                              -- 一个角色仅属一个公会
@@ -67,8 +69,23 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (guild_id, char_id)                    -- 同一公会不可重复申请
   );
+
+  CREATE TABLE IF NOT EXISTS guild_skills (
+    guild_id INTEGER NOT NULL REFERENCES guilds(id),
+    skill_id TEXT    NOT NULL,
+    level    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, skill_id)
+  );
 `);
 
+// 存量库迁移：为已存在的 guilds / guild_members 补贡献列（新库由上方 CREATE 直接带列，此处仅兜底）
+for (const [t, c, d] of [
+  ['guilds', 'contribution', 'INTEGER NOT NULL DEFAULT 0'],
+  ['guild_members', 'contribution', 'INTEGER NOT NULL DEFAULT 0'],
+] as const) {
+  const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((r: any) => (r as any).name);
+  if (!cols.includes(c)) db.prepare(`ALTER TABLE ${t} ADD COLUMN ${c} ${d}`).run();
+}
 // ============= 账号操作 =============
 
 export interface AccountRow {
@@ -154,6 +171,7 @@ export interface GuildRow {
   notice: string;
   level: number;
   exp: number;
+  contribution: number;
   created_at: string;
 }
 
@@ -161,6 +179,7 @@ export interface GuildMemberRow {
   guild_id: number;
   char_id: number;
   rank: string;
+  contribution: number;
   joined_at: string;
 }
 
@@ -192,14 +211,14 @@ export function getGuildMemberCount(guildId: number): number {
   return row.n;
 }
 
-/** 公会成员列表（含角色名/元素，按 会长>长老>入会时间 排序）。 */
-export function getGuildMembers(guildId: number): Array<{ charId: number; name: string; element: string; rank: string }> {
+/** 公会成员列表（含角色名/元素/贡献，按 会长>长老>入会时间 排序）。 */
+export function getGuildMembers(guildId: number): Array<{ charId: number; name: string; element: string; rank: string; contribution: number }> {
   return db.prepare(`
-    SELECT m.char_id AS charId, c.name AS name, c.element AS element, m.rank AS rank
+    SELECT m.char_id AS charId, c.name AS name, c.element AS element, m.rank AS rank, m.contribution AS contribution
     FROM guild_members m JOIN characters c ON c.id = m.char_id
     WHERE m.guild_id = ?
     ORDER BY (m.rank = 'leader') DESC, (m.rank = 'elder') DESC, m.joined_at ASC
-  `).all(guildId) as Array<{ charId: number; name: string; element: string; rank: string }>;
+  `).all(guildId) as Array<{ charId: number; name: string; element: string; rank: string; contribution: number }>;
 }
 
 /** 公会申请列表（含申请人角色名）。 */
@@ -277,6 +296,70 @@ export function disbandGuild(guildId: number): void {
     db.prepare('DELETE FROM guilds WHERE id = ?').run(gid);
   });
   tx(guildId);
+}
+
+// ============= 公会成长（v2：等级/经验/贡献/技能） =============
+
+/** 公会升到下一级所需经验（level→level+1）。简单递增：1000*当前级。 */
+export function guildExpCap(level: number): number {
+  return 1000 * level;
+}
+const GUILD_MAX_LEVEL = 20;
+
+/** 给公会加经验并自动升级（封顶 GUILD_MAX_LEVEL）。返回是否升级及新等级。 */
+export function addGuildExp(guildId: number, amount: number): { leveledUp: boolean; newLevel: number } {
+  const g = getGuild(guildId);
+  if (!g) return { leveledUp: false, newLevel: 1 };
+  let level = g.level;
+  let exp = g.exp + Math.max(0, Math.floor(amount));
+  let leveledUp = false;
+  while (level < GUILD_MAX_LEVEL && exp >= guildExpCap(level)) {
+    exp -= guildExpCap(level);
+    level++;
+    leveledUp = true;
+  }
+  if (level >= GUILD_MAX_LEVEL) exp = 0;
+  db.prepare('UPDATE guilds SET level = ?, exp = ? WHERE id = ?').run(level, exp, guildId);
+  return { leveledUp, newLevel: level };
+}
+
+/** 公会贡献池增减（学技能消耗传负，活动累积传正）。下限 0。 */
+export function addGuildContribution(guildId: number, amount: number): void {
+  db.prepare('UPDATE guilds SET contribution = MAX(0, contribution + ?) WHERE id = ?').run(amount, guildId);
+}
+
+/** 给某成员个人贡献 +amount（仅当该角色在公会内）。 */
+export function addMemberContribution(charId: number, amount: number): void {
+  const gid = getMemberGuild(charId);
+  if (gid === null) return;
+  db.prepare('UPDATE guild_members SET contribution = MAX(0, contribution + ?) WHERE guild_id = ? AND char_id = ?')
+    .run(amount, gid, charId);
+}
+
+/** 取某成员个人累计贡献（不在公会返回 0）。 */
+export function getMemberContribution(charId: number): number {
+  const gid = getMemberGuild(charId);
+  if (gid === null) return 0;
+  const row = db.prepare('SELECT contribution FROM guild_members WHERE guild_id = ? AND char_id = ?').get(gid, charId) as { contribution: number } | undefined;
+  return row ? row.contribution : 0;
+}
+
+/** 公会全部技能等级 → { skillId: level }。 */
+export function getGuildSkills(guildId: number): Record<string, number> {
+  const rows = db.prepare('SELECT skill_id, level FROM guild_skills WHERE guild_id = ?').all(guildId) as Array<{ skill_id: string; level: number }>;
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.skill_id] = r.level;
+  return out;
+}
+
+export function getGuildSkillLevel(guildId: number, skillId: string): number {
+  const row = db.prepare('SELECT level FROM guild_skills WHERE guild_id = ? AND skill_id = ?').get(guildId, skillId) as { level: number } | undefined;
+  return row ? row.level : 0;
+}
+
+export function setGuildSkillLevel(guildId: number, skillId: string, level: number): void {
+  db.prepare(`INSERT INTO guild_skills (guild_id, skill_id, level) VALUES (?, ?, ?)
+    ON CONFLICT(guild_id, skill_id) DO UPDATE SET level = excluded.level`).run(guildId, skillId, level);
 }
 
 export default db;

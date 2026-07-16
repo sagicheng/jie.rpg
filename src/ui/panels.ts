@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, ZANPAKUTO_GROWTH } from '../config';
 import { GameState } from '../systems/GameState';
 import { GuildClient } from '../systems/GuildClient';
+import { GUILD_SKILLS, guildSkillCost } from '../systems/GuildSkills';
 import { SaveManager } from '../systems/SaveManager';
 import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../systems/BestiaryData';
 import { expForLevel } from '../systems/BattleData';
@@ -23,7 +24,9 @@ import {
   requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestAllocateStat, requestMallBuy, requestRespec,
   requestUnlock, requestSetZanpakuto, requestKidoSetSchool, requestKidoAllocate, requestClaimBestiaryTier, requestSetTitle, isOnline,
   requestArenaQueue, requestArenaCancel, requestArenaStatus, arena, tierNameById, ARENA_WEEKLY_CAP_CLIENT,
+  requestGuildShopBuy,
 } from '../systems/WorldClient';
+import { GUILD_SHOP_ITEMS } from '../systems/GuildShop';
 
 // ═══════════════════════════════════════════
 // UI 面板（从 GameScene 抽取，scene 为 GameScene 实例）
@@ -1605,7 +1608,10 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
 
   const RANK_NAME: Record<string, string> = { leader: '会长', elder: '长老', member: '成员' };
 
-  export function renderGuildPanel(scene: GameScene): Phaser.GameObjects.Container {
+  // 公会面板 Tab 状态（模块级：避免 refresh() 重建面板时把 Tab 重置回 info，导致"行会商店打不开"）
+  let guildPanelTab: 'info' | 'shop' = 'info';
+
+  export function renderGuildPanel(scene: GameScene, resetTab = true): Phaser.GameObjects.Container {
     // 对齐 B/C 面板的坐标策略：容器按开面板瞬间的相机滚动量偏移定位，
     // 不使用 setScrollFactor(0)（否则子对象 Zone 的点击命中会差一个相机滚动量，导致点击偏上）。
     const cam = scene.cameras.main;
@@ -1707,7 +1713,8 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       c.add([g, t, z]);
     };
 
-    const refresh = () => { scene.closeGuildPanel(); scene.openGuildPanel(); };
+    if (resetTab) guildPanelTab = 'info';
+    const refresh = () => { scene.closeGuildPanel(); scene.openGuildPanel(false); };
     const toast = (msg: string) => {
       const t = scene.add.text(0, py + 64, msg, { fontSize: '14px', color: '#ffcc88', fontStyle: 'bold' }).setOrigin(0.5);
       c.add(t);
@@ -1801,6 +1808,14 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       const meIsLeader = r.myRank === 'leader';
       const meIsElder = r.myRank === 'elder';
 
+      // ══ 顶部 Tab 切换（公会信息 / 行会商店）══
+      const switchTab = (t: 'info' | 'shop') => { if (guildPanelTab === t) return; guildPanelTab = t; refresh(); };
+      btn(px + PW - 300, py + 24, '公会信息', guildPanelTab === 'info' ? 0x33507a : 0x222244, guildPanelTab === 'info' ? '#bcd4ff' : '#7788aa', () => switchTab('info'));
+      btn(px + PW - 210, py + 24, '行会商店', guildPanelTab === 'shop' ? 0x33507a : 0x222244, guildPanelTab === 'shop' ? '#bcd4ff' : '#7788aa', () => switchTab('shop'));
+
+      // 行会商店 Tab：独立渲染，不再显示信息列
+      if (guildPanelTab === 'shop') { renderShopTab(r); return; }
+
       // ── 左列：基本信息 + 成员列表 ──
       const leftX = px + 28;
       const colDivider = px + PW / 2; // 左右分界线 x 坐标
@@ -1809,7 +1824,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       c.add(scene.add.text(leftX, py + 68, `〈${g.name}〉`, { fontSize: '22px', color: '#ffe8b0', fontStyle: 'bold' }).setOrigin(0, 0.5));
       // 信息行
       c.add(scene.add.text(leftX, py + 102,
-        `职位：${RANK_NAME[r.myRank]}   成员：${g.memberCount}人   等级：Lv.${g.level}`,
+        `职位：${RANK_NAME[r.myRank]}   成员：${g.memberCount}人   等级：Lv.${g.level} (${g.exp}/${g.expCap})`,
         { fontSize: '14px', color: '#aabbcc' }).setOrigin(0, 0.5));
 
       // 分隔线
@@ -1823,6 +1838,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       c.add(scene.add.text(leftX + 4, py + 168, '状态', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
       c.add(scene.add.text(leftX + 36, py + 168, '角色名', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
       c.add(scene.add.text(leftX + 200, py + 168, '职位', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
+      c.add(scene.add.text(leftX + 280, py + 168, '贡献', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
       c.add(scene.add.text(colDivider - 75, py + 168, '操作', { fontSize: '11px', color: '#556677' }).setOrigin(0.5));
 
       // 成员行
@@ -1853,6 +1869,10 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
         // 职位标签
         c.add(scene.add.text(leftX + 200, ry, RANK_NAME[m.rank], {
           fontSize: '12px', color: '#8899bb',
+        }).setOrigin(0, 0.5));
+        // 个人贡献
+        c.add(scene.add.text(leftX + 280, ry, `${m.contribution || 0}`, {
+          fontSize: '12px', color: '#9fe6a0',
         }).setOrigin(0, 0.5));
 
         // ══ 操作按钮（紧凑短标签 + 右对齐在操作列，不遮挡名字/职位） ══
@@ -1894,11 +1914,15 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
 
       // ── 右列：公告展示区 + 编辑（替换式） ──
       const rightX = px + 512;
+      const noticeBoxW = 456, noticeBoxH = 340;
 
       // 公告标题
       c.add(scene.add.text(rightX + 8, py + 68, '📜 公告', { fontSize: '15px', color: '#aaccdd', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      // 公会贡献池 / 个人贡献（右对齐到公告框右上角）
+      c.add(scene.add.text(rightX + 8 + noticeBoxW, py + 68, `贡献 ${g.contribution} · 我的 ${r.myContribution}`, {
+        fontSize: '12px', color: '#9fe6a0',
+      }).setOrigin(1, 0.5));
 
-      const noticeBoxW = 456, noticeBoxH = 340;
       const nbX = rightX + 8, nbY = py + 90;
 
       // 公告框背景（常驻）
@@ -1946,10 +1970,38 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
         });
       }
 
-      // ══ 待审申请（公告编辑区下方） ══
+      // ══ 公会技能树（v2：全体被动加成，消耗公会贡献池） ══
+      {
+        const skillY = nbY + noticeBoxH + 56;
+        const sep = scene.add.graphics();
+        sep.lineStyle(1, 0x334466, 0.25); sep.lineBetween(rightX + 8, skillY - 14, rightX + 8 + noticeBoxW, skillY - 14);
+        c.add(sep);
+        c.add(scene.add.text(rightX + 8, skillY, '⚔ 公会技能', { fontSize: '14px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+        const canLearn = meIsLeader || meIsElder;
+        GUILD_SKILLS.forEach((sk, i) => {
+          const sy = skillY + 28 + i * 30;
+          const lv = (g.skills && g.skills[sk.id]) || 0;
+          const maxed = lv >= sk.maxLevel;
+          c.add(scene.add.text(rightX + 16, sy, `${sk.name}  Lv.${lv}/${sk.maxLevel}  (+${sk.perLevel}%/级)`, {
+            fontSize: '13px', color: maxed ? '#ffd27a' : '#cdd6e8',
+          }).setOrigin(0, 0.5));
+          if (canLearn && !maxed) {
+            const cost = guildSkillCost(sk, lv);
+            const enough = g.contribution >= cost;
+            btn(rightX + 370, sy, `升级(${cost})`, enough ? 0x2a6e4a : 0x444466, enough ? '#cfeedd' : '#8899aa', () => {
+              GuildClient.learnSkill(scene.authToken, scene.characterId, sk.id)
+                .then((res: any) => res.ok ? refresh() : toast(res.msg));
+            });
+          } else if (maxed) {
+            c.add(scene.add.text(rightX + 370, sy, '已满级', { fontSize: '12px', color: '#ffd27a' }).setOrigin(0.5));
+          }
+        });
+      }
+
+      // ══ 待审申请（公会技能树下方） ══
       const apps = r.applications || [];
       if ((meIsLeader || meIsElder) && apps.length > 0) {
-        const ay = nbY + noticeBoxH + ((meIsLeader || meIsElder) ? 56 : 20);
+        const ay = nbY + noticeBoxH + 56 + 160; // 技能树块之后
         // 分隔线
         const appSep = scene.add.graphics();
         appSep.lineStyle(1, 0x334466, 0.25); appSep.lineBetween(rightX + 8, ay - 14, rightX + 8 + noticeBoxW, ay - 14);
@@ -1968,6 +2020,75 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
           });
         });
       }
+    }
+
+    // ════════════════════════════════════════
+    //  行会商店 Tab（个人贡献消费闭环）
+    // ════════════════════════════════════════
+    function renderShopTab(r: any): void {
+      const contentX = px + 40;
+      const contentW = PW - 80;
+
+      // 标题 + 个人贡献余额
+      c.add(scene.add.text(contentX, py + 70, '行会商店', { fontSize: '22px', color: '#ffe8b0', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      c.add(scene.add.text(contentX, py + 104, `我的个人贡献：${r.myContribution}`, { fontSize: '15px', color: '#9fe6a0' }).setOrigin(0, 0.5));
+      c.add(scene.add.text(contentX, py + 128,
+        '用个人贡献兑换公会专属物资 · 个人贡献通过做日常/周常任务、通关副本累积',
+        { fontSize: '12px', color: '#7788aa' }).setOrigin(0, 0.5));
+
+      // 商品分类标签（按 id 前缀归类，避免改动数据层）
+      const CAT: Record<string, string> = {
+        potion_s_5: 'HP药', potion_l_3: 'HP药', recovery_5: 'HP药', full_heal_1: 'HP药',
+        spirit_l_3: 'MP药',
+        crystal_3: '材料', silver_3: '材料', core_1: '材料', legend_1: '材料',
+        purify_3: '状态', revive_full_1: '状态',
+        atk_elixir_2: '增益', matk_elixir_2: '增益',
+        title_tongxin: '称号', title_tongpao: '称号',
+      };
+
+      // 3 列网格（15 项 → 5 行，紧凑卡片无需滚动，正好落入面板高度）
+      const cols = 3, gap = 16, rowGap = 4;
+      const cardW = (contentW - gap * (cols - 1)) / cols; // 296
+      const cardH = 106;
+      const startY = py + 150;
+      GUILD_SHOP_ITEMS.forEach((it, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const cx0 = contentX + col * (cardW + gap);
+        const cy0 = startY + row * (cardH + rowGap);
+
+        // 卡片背景
+        const card = scene.add.graphics();
+        card.fillStyle(0x1a1a2e, 0.6); card.fillRoundedRect(cx0, cy0, cardW, cardH, 10);
+        card.lineStyle(1, 0x334466, 0.6); card.strokeRoundedRect(cx0, cy0, cardW, cardH, 10);
+        c.add(card);
+
+        // 分类标签
+        c.add(scene.add.text(cx0 + 12, cy0 + 10, CAT[it.id] || (it.kind === 'title' ? '称号' : '物资'), {
+          fontSize: '11px', color: '#8899bb', backgroundColor: '#22304a', padding: { x: 6, y: 2 },
+        }).setOrigin(0, 0));
+
+        // 名称
+        c.add(scene.add.text(cx0 + cardW / 2, cy0 + 30, it.name, {
+          fontSize: '15px', color: '#ffe8b0', fontStyle: 'bold', align: 'center', wordWrap: { width: cardW - 16 },
+        }).setOrigin(0.5, 0));
+
+        // 描述
+        c.add(scene.add.text(cx0 + cardW / 2, cy0 + 52, it.desc, {
+          fontSize: '12px', color: '#aabbcc', align: 'center', wordWrap: { width: cardW - 20 }, lineSpacing: 2,
+        }).setOrigin(0.5, 0));
+
+        // 购买按钮（价格内嵌标签）
+        const afford = r.myContribution >= it.price;
+        const label = afford ? `购买 · 💎${it.price}` : '贡献不足';
+        btn(cx0 + cardW / 2, cy0 + cardH - 20, label,
+          afford ? 0x2a6e4a : 0x444466, afford ? '#cfeedd' : '#8899aa', () => {
+            if (!afford) { toast('个人贡献不足'); return; }
+            requestGuildShopBuy(it.id);
+            // 服务端处理有延迟：400ms 后重拉 /info 刷新余额（intentResult 即时提示，worldSync 下发物品/称号）
+            scene.time.delayedCall(400, () => refresh());
+          });
+      });
     }
 
     return c;

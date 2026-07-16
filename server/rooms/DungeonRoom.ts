@@ -11,6 +11,7 @@ import { Room, Client } from '@colyseus/core';
 import { DungeonRoomState, DungeonPlayer } from '../schema';
 import { world } from '../world';
 import { dungeonStageReward } from '../../src/systems/BattleData';
+import { getMemberGuild, addGuildExp, addMemberContribution } from '../db';
 
 export class DungeonRoom extends Room<DungeonRoomState> {
   onCreate(options: { dungeonId?: number }) {
@@ -44,10 +45,23 @@ export class DungeonRoom extends Room<DungeonRoomState> {
 
     if (s >= 3) {
       this.state.phase = 'clear';
+      // 公会 v2 经验/贡献来源：副本通关（含 Boss 阶）给在场全员加公会成长。
+      // gain 基于三阶总奖励经验，地板 100（副本是周限 3 次的高投入内容，比日常任务更慷慨）。
+      const totalExp = dungeonStageReward(this.state.dungeonId, 1).exp
+                     + dungeonStageReward(this.state.dungeonId, 2).exp
+                     + dungeonStageReward(this.state.dungeonId, 3).exp;
+      const guildGain = Math.max(Math.round(totalExp * 0.25), 100);
       // 全队标记副本完成（清除各自的活动副本，下次进入重新计次）
       this.state.players.forEach((dp: any) => {
         const pw = world.get(dp.gameSid);
         if (pw) world.completeDungeon(pw, this.state.dungeonId);
+        // 公会成长：仅限公会成员；非成员跳过（不报错）
+        const cid = world.getCharId(dp.gameSid);
+        if (cid === undefined) return;
+        const gid = getMemberGuild(cid);
+        if (gid === null) return;
+        addGuildExp(gid, guildGain);
+        addMemberContribution(cid, guildGain);
       });
       // 完成即毁图落库：清进度（pw.dungeon=null）后立即持久化，确保重连无僵尸续打。
       this.state.players.forEach((dp: any) => world.persistBySid(dp.gameSid));

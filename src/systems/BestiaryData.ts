@@ -302,6 +302,8 @@ export interface TitleDef {
   enemyTypeDamage?: { type: EnemyType; mult: number };
   /** 全属性加成（百分比，0.05 = +5%） */
   allStatsPct?: number;
+  /** 仅能由特定途径（如行会商店）手动解锁，不随图鉴收集自动解锁 */
+  manualOnly?: boolean;
 }
 
 /** 称号表（按解锁难度从低到高） */
@@ -311,4 +313,7 @@ export const BESTIARY_TITLES: TitleDef[] = [
   { id: 'general_slayer', name: '妖将杀手',     conditionDesc: '收集 25 种 + 击败全部妖将', effectDesc: '对妖将伤害 +10%',          requiredCollected: 25, requireAllGenerals: true, enemyTypeDamage: { type: '妖将', mult: 1.10 } },
   { id: 'abyss_walker',   name: '深渊行者',     conditionDesc: '收集 35 种妖魔',           effectDesc: '对妖王伤害 +10%',          requiredCollected: 35, enemyTypeDamage: { type: '妖王', mult: 1.10 } },
   { id: 'awakened',       name: '斩魄刀觉醒者', conditionDesc: '全收集（击败全部妖魔）',    effectDesc: '全属性 +5%',              requiredCollected: 0, requireFull: true, allStatsPct: 0.05 },
+  // 行会商店专属称号（manualOnly：仅公会商店兑换解锁，不随图鉴自动解锁）
+  { id: 'guild_tongxin',  name: '同心',         conditionDesc: '公会商店兑换',              effectDesc: '全属性 +3%',              requiredCollected: 0, manualOnly: true, allStatsPct: 0.03 },
+  { id: 'guild_tongpao',  name: '同袍',         conditionDesc: '公会商店兑换（进阶）',      effectDesc: '全属性 +5%',              requiredCollected: 0, manualOnly: true, allStatsPct: 0.05 },
 ];

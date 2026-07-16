@@ -23,7 +23,10 @@ import {
   getGuildApplications, getApplication, listGuilds, addMember, removeMember,
   setMemberRank, setGuildLeader, updateGuildNotice, addApplication, removeApplication,
   removeApplicationsForChar, disbandGuild, getCharacter, findAccountByToken,
+  guildExpCap, getGuildSkills, getGuildSkillLevel, setGuildSkillLevel, addGuildContribution,
+  getMemberContribution,
 } from './db';
+import { getGuildSkillDef, guildSkillCost } from './guildSkills';
 
 const router = Router();
 
@@ -87,7 +90,7 @@ router.post('/info', (req: Request, res: Response) => {
   const auth = authChar(req, res); if (!auth) return;
   const charGuild = getMemberGuild(auth.charId);
 
-  // 指定 guildId（浏览详情）：返回公开信息
+  // 指定 guildId（浏览详情）：返回公开信息（含成长数据，体现公会实力）
   if (req.body.guildId) {
     const g = getGuild(Number(req.body.guildId));
     if (!g) return fail('公会不存在', res);
@@ -95,6 +98,8 @@ router.post('/info', (req: Request, res: Response) => {
       inGuild: false,
       guild: {
         id: g.id, name: g.name, notice: g.notice, level: g.level,
+        exp: g.exp, expCap: guildExpCap(g.level),
+        contribution: g.contribution, skills: getGuildSkills(g.id),
         memberCount: getGuildMemberCount(g.id),
         members: getGuildMembers(g.id),
       },
@@ -108,10 +113,13 @@ router.post('/info', (req: Request, res: Response) => {
     inGuild: true,
     guild: {
       id: g.id, name: g.name, notice: g.notice, level: g.level, exp: g.exp,
+      expCap: guildExpCap(g.level), contribution: g.contribution,
+      skills: getGuildSkills(g.id),
       leaderCharId: g.leader_char_id, memberCount: getGuildMemberCount(g.id),
       members: getGuildMembers(g.id),
     },
     myRank,
+    myContribution: getMemberContribution(auth.charId),
     // 仅会长/长老可见待审申请
     applications: (myRank === 'leader' || myRank === 'elder') ? getGuildApplications(charGuild) : [],
   }, res);
@@ -260,6 +268,26 @@ router.post('/set-notice', (req: Request, res: Response) => {
   if (myRank !== 'leader' && myRank !== 'elder') return fail('仅会长/长老可修改公告', res);
   updateGuildNotice(guildId, notice);
   ok({}, res);
+});
+
+// ───────────── 学习公会技能（会长/长老，消耗公会贡献池） ─────────────
+router.post('/learn-skill', (req: Request, res: Response) => {
+  const auth = authChar(req, res); if (!auth) return;
+  const skillId = typeof req.body.skillId === 'string' ? req.body.skillId : '';
+  const guildId = getMemberGuild(auth.charId);
+  if (guildId === null) return fail('你不在公会中', res);
+  const myRank = rankOf(guildId, auth.charId);
+  if (myRank !== 'leader' && myRank !== 'elder') return fail('仅会长/长老可学习公会技能', res);
+  const def = getGuildSkillDef(skillId);
+  if (!def) return fail('未知公会技能', res);
+  const cur = getGuildSkillLevel(guildId, skillId);
+  if (cur >= def.maxLevel) return fail('该技能已达最高等级', res);
+  const cost = guildSkillCost(def, cur);
+  const g = getGuild(guildId)!;
+  if (g.contribution < cost) return fail(`公会贡献池不足（需 ${cost}，现有 ${g.contribution}）`, res);
+  addGuildContribution(guildId, -cost);
+  setGuildSkillLevel(guildId, skillId, cur + 1);
+  ok({ skillId, level: cur + 1, contribution: g.contribution - cost }, res);
 });
 
 export default router;

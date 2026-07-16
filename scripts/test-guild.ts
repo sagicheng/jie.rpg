@@ -16,6 +16,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Client, type Room } from 'colyseus.js';
+import Database from 'better-sqlite3';
 
 const GAME_DIR = path.resolve(__dirname, '..');
 const SERVER_ENTRY = path.resolve(GAME_DIR, 'dist-server/server/index.js');
@@ -210,6 +211,162 @@ async function main(): Promise<void> {
     assert('发送者自身回显收到', !!alfaEcho && alfaEcho.text === '我是成员' && alfaEcho.fromCharId === alfa.charId);
 
     ga.leave(); gb.leave(); gc.leave();
+
+    // ── C. 公会 v2 成长系统（等级/经验/贡献/技能）──
+    // 在 G2 公会（bravo 会长 / alfa 成员）上验证
+    const cInfo0 = await api('/api/guild/info', { token: bravo.token, charId: bravo.charId });
+    assert('v2 info 含等级字段', cInfo0.guild.level === 1);
+    assert('v2 info 经验初始0', cInfo0.guild.exp === 0);
+    assert('v2 info 贡献池初始0', cInfo0.guild.contribution === 0);
+    assert('v2 info 技能初始空', Object.keys(cInfo0.guild.skills || {}).length === 0);
+    assert('v2 info 含我的贡献字段', 'myContribution' in cInfo0);
+
+    // 成员(alfa) 学技能应被拒（权限不足）
+    const learnByMember = await apiRaw('/api/guild/learn-skill', { token: alfa.token, charId: alfa.charId, skillId: 'atk' });
+    assert('v2 成员学技能被拒', learnByMember.ok === false);
+
+    // 会长学技能但贡献不足应被拒
+    const learnNoContrib = await apiRaw('/api/guild/learn-skill', { token: bravo.token, charId: bravo.charId, skillId: 'atk' });
+    assert('v2 贡献不足学技能被拒', learnNoContrib.ok === false && /贡献/.test(learnNoContrib.msg || ''));
+
+    // 直连临时库给公会注入贡献池，再学技能应成功
+    const sdb = new Database(path.join(tmp, 'data.db'));
+    sdb.prepare('UPDATE guilds SET contribution = contribution + ? WHERE id = ?').run(500, G2);
+    sdb.close();
+
+    const learnOk = await api('/api/guild/learn-skill', { token: bravo.token, charId: bravo.charId, skillId: 'atk' });
+    assert('v2 学技能成功 atk=1', learnOk.ok === true && learnOk.level === 1 && learnOk.contribution === 450);
+    const cInfo1 = await api('/api/guild/info', { token: bravo.token, charId: bravo.charId });
+    assert('v2 技能 atk 等级=1', (cInfo1.guild.skills?.atk || 0) === 1);
+    assert('v2 贡献池扣减=450', cInfo1.guild.contribution === 450);
+
+    // 再学一次 atk（cost=50+50*1=100）→ contribution=350, atk=2
+    const learnOk2 = await api('/api/guild/learn-skill', { token: bravo.token, charId: bravo.charId, skillId: 'atk' });
+    assert('v2 学技能 atk=2', learnOk2.ok === true && learnOk2.level === 2 && learnOk2.contribution === 350);
+
+    // 未知技能应被拒
+    const learnBad = await apiRaw('/api/guild/learn-skill', { token: bravo.token, charId: bravo.charId, skillId: 'nope' });
+    assert('v2 未知技能被拒', learnBad.ok === false);
+
+    // ── D. 行会商店（个人贡献消费闭环，扩充目录）──
+    // 直连临时库给 alfa 注入个人贡献 1000（与公会贡献池无关，独立字段）
+    const sdb2 = new Database(path.join(tmp, 'data.db'));
+    sdb2.prepare('UPDATE guild_members SET contribution = contribution + ? WHERE char_id = ?').run(1000, alfa.charId);
+    sdb2.close();
+
+    // 重新进 game 房（alfa 成员 / bravo 会长）走生产意图路径
+    const ca2 = new Client(WS), cb2 = new Client(WS);
+    const ga2 = await ca2.joinOrCreate('game', { token: alfa.token, characterId: alfa.charId });
+    const gb2 = await cb2.joinOrCreate('game', { token: bravo.token, characterId: bravo.charId });
+    ga2.onMessage('worldSync', () => {}); gb2.onMessage('worldSync', () => {});
+    await new Promise((r) => setTimeout(r, 400));
+    log('商店段：alfa/bravo 重新进 game 房');
+
+    // 发送一次购买意图并等待 intentResult 回执
+    // 注：colyseus.js 的 Room 类型无 off() 声明，故不手动解绑；每个 sendBuy 顺序 await，
+    // 同一时刻仅一个 promise 在等待，历史 handler 的 resolve 已执行（重复 resolve 被忽略），无副作用。
+    const sendBuy = (room: Room, itemId: string): Promise<any> =>
+      new Promise((resolve) => {
+        const t = setTimeout(() => resolve(null), 8000);
+        const handler = (r: any) => { clearTimeout(t); resolve(r); };
+        room.onMessage('intentResult', handler);
+        room.send('intent', { op: 'guildBuy', itemId });
+      });
+
+    // 未知商品被拒
+    const d0 = await sendBuy(ga2, 'nope');
+    assert('商店 未知商品被拒', !!d0 && d0.ok === false);
+
+    // 购买伤药丸(小) ×5（price 20，真实 id medicine_pill_s）→ 1000-20=980，背包得 medicine_pill_s×5
+    const d1 = await sendBuy(ga2, 'potion_s_5');
+    assert('商店 购买药水成功', !!d1 && d1.ok === true && d1.data.contribution === 980);
+    {
+      const sdb3 = new Database(path.join(tmp, 'data.db'));
+      const mc = sdb3.prepare('SELECT contribution FROM guild_members WHERE char_id = ?').get(alfa.charId) as any;
+      assert('商店 个人贡献扣至980', mc.contribution === 980);
+      const wj = sdb3.prepare('SELECT world_data FROM characters WHERE id = ?').get(alfa.charId) as any;
+      const wd = JSON.parse(wj.world_data);
+      const potion = (wd.inventory || []).find((i: any) => i.id === 'medicine_pill_s');
+      assert('商店 背包获得真实伤药丸(小)×5', !!potion && potion.quantity >= 5);
+      sdb3.close();
+    }
+
+    // 购买称号同心（price 200）→ 980-200=780，unlockedTitles 含 guild_tongxin
+    const d2 = await sendBuy(ga2, 'title_tongxin');
+    assert('商店 购买称号同心成功', !!d2 && d2.ok === true && d2.data.contribution === 780);
+    {
+      const sdb4 = new Database(path.join(tmp, 'data.db'));
+      const wj = sdb4.prepare('SELECT world_data FROM characters WHERE id = ?').get(alfa.charId) as any;
+      const wd = JSON.parse(wj.world_data);
+      assert('商店 称号解锁 guild_tongxin', (wd.unlockedTitles || []).includes('guild_tongxin'));
+      sdb4.close();
+    }
+
+    // 重复购买已拥有称号应被拒（防重复扣贡献）
+    const d3 = await sendBuy(ga2, 'title_tongxin');
+    assert('商店 重复购买称号被拒', !!d3 && d3.ok === false);
+
+    // 购买妖将核心 ×1（price 120）→ 780-120=660
+    const d4 = await sendBuy(ga2, 'core_1');
+    assert('商店 购买妖将核心成功', !!d4 && d4.ok === true && d4.data.contribution === 660);
+
+    // 购买进阶称号同袍（price 500）→ 660-500=160，unlockedTitles 含 guild_tongpao
+    const d5 = await sendBuy(ga2, 'title_tongpao');
+    assert('商店 购买称号同袍成功', !!d5 && d5.ok === true && d5.data.contribution === 160);
+    {
+      const sdb5 = new Database(path.join(tmp, 'data.db'));
+      const wj = sdb5.prepare('SELECT world_data FROM characters WHERE id = ?').get(alfa.charId) as any;
+      const wd = JSON.parse(wj.world_data);
+      assert('商店 称号解锁 guild_tongpao', (wd.unlockedTitles || []).includes('guild_tongpao'));
+      sdb5.close();
+    }
+
+    // 购买灵晶碎片 ×3（price 80）→ 160-80=80，再购灵晶碎片（80）→ 0
+    const d6 = await sendBuy(ga2, 'crystal_3');
+    assert('商店 购买灵晶碎片成功', !!d6 && d6.ok === true && d6.data.contribution === 80);
+    const d7 = await sendBuy(ga2, 'crystal_3');
+    assert('商店 再购灵晶碎片成功', !!d7 && d7.ok === true && d7.data.contribution === 0);
+
+    // 余额不足以再买力量药剂（price 90）→ 被拒
+    const d8 = await sendBuy(ga2, 'atk_elixir_2');
+    assert('商店 余额不足被拒', !!d8 && d8.ok === false && /个人贡献不足/.test(d8.msg || ''));
+
+    ga2.leave(); gb2.leave();
+
+    // ── E. 副本通关 → 公会经验/贡献来源 ──
+    // bravo 仍会长于 G2（公会存在），重新进 game 房以加载世界 + 注册 charId（供副本 getCharId 命中）
+    const cb3 = new Client(WS);
+    const gb3 = await cb3.joinOrCreate('game', { token: bravo.token, characterId: bravo.charId });
+    gb3.onMessage('worldSync', () => {});
+    await new Promise((r) => setTimeout(r, 400));
+
+    // 副本前：捕获公会经验 + bravo 个人贡献
+    const sdbE0 = new Database(path.join(tmp, 'data.db'));
+    const gBefore = (sdbE0.prepare('SELECT exp FROM guilds WHERE id = ?').get(G2) as any).exp as number;
+    const mcBefore = (sdbE0.prepare('SELECT contribution FROM guild_members WHERE char_id = ?').get(bravo.charId) as any).contribution as number;
+    sdbE0.close();
+
+    // bravo 进副本（带 gameSid = 游戏房 sessionId，使 world.get / getCharId 命中其已加载世界）
+    const dRoom = await cb3.joinOrCreate('dungeon', { dungeonId: 1, gameSid: gb3.sessionId, name: 'g_e2e_bravo', color: '#ffffff' });
+    await new Promise((r) => setTimeout(r, 300));
+
+    // 依次通关 1→2→3（claimStage 须与房间当前 stage 对齐；stage=3 触发 clear 分支发公会增益）
+    for (const st of [1, 2, 3]) {
+      dRoom.send('claimStage', { stage: st });
+      await new Promise((r) => setTimeout(r, 180));
+    }
+    await new Promise((r) => setTimeout(r, 300));
+
+    // 副本后：公会经验 + 个人贡献均应增加
+    const sdbE1 = new Database(path.join(tmp, 'data.db'));
+    const gAfter = (sdbE1.prepare('SELECT exp FROM guilds WHERE id = ?').get(G2) as any).exp as number;
+    const mcAfter = (sdbE1.prepare('SELECT contribution FROM guild_members WHERE char_id = ?').get(bravo.charId) as any).contribution as number;
+    sdbE1.close();
+
+    assert('副本通关 公会经验增加', gAfter > gBefore);
+    assert('副本通关 个人贡献增加', mcAfter > mcBefore);
+    assert('副本通关 公会增益=个人增益(同 gain)', (gAfter - gBefore) === (mcAfter - mcBefore));
+    gb3.leave();
 
     // 汇总
     console.log('\n— 校验 —');

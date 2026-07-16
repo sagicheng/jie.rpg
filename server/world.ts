@@ -106,7 +106,7 @@ export interface PlayerWorld {
   arena: ArenaState;
 }
 
-export interface OpResult { ok: boolean; msg: string; data?: any; }
+export interface OpResult { ok: boolean; msg: string; data?: any; type?: string; }
 
 const ALL_QUESTS = { ...MAIN_QUESTS, ...SIDE_QUESTS, ...DAILY_QUESTS, ...WEEKLY_QUESTS };
 
@@ -336,6 +336,11 @@ export class WorldService {
     this.charIds.set(sid, charId);
   }
 
+  /** 反查 gameSid→charId（副本房间等无 sessionCharMap 的场景取角色 ID 用）。 */
+  getCharId(sid: string): number | undefined {
+    return this.charIds.get(sid);
+  }
+
   /** 主动持久化某玩家的权威世界到 DB（副本推进/完成等关键节点调用，
    *  避免依赖断连时 onLeave 的保存时机——真机重连走"新会话从 DB 重载"，
    *  若仅内存推进不落库，重连会读到旧 dungeon.stage 而回落第 1 阶）。 */
@@ -421,7 +426,7 @@ export class WorldService {
       if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
       if (r.unlock) this.addUnlock(pw, r.unlock);
       pw.dailyClaimed.ids.push(questId);
-      return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, data: r };
+      return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, type: q.type, data: r };
     }
     // 周常：按本周字符串判定
     if (q.type === 'weekly') {
@@ -435,7 +440,7 @@ export class WorldService {
       if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
       if (r.unlock) this.addUnlock(pw, r.unlock);
       pw.weeklyClaimed.ids.push(questId);
-      return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, data: r };
+      return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, type: q.type, data: r };
     }
     // 主线 / 支线
     if (pw.completedQuests.includes(questId)) return { ok: false, msg: '已完成' };
@@ -445,7 +450,7 @@ export class WorldService {
     if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
     if (r.unlock) this.addUnlock(pw, r.unlock);
     pw.completedQuests.push(questId);
-    return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, data: r };
+    return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, type: q.type, data: r };
   }
 
   // ───────────────── 副本（独立实例·周共享3次） ─────────────────

@@ -63,4 +63,8 @@ export const GuildClient = {
   setNotice(token: string, charId: number, notice: string) {
     return authPost('/set-notice', token, { charId, notice });
   },
+  /** 学习/升级公会技能（消耗公会贡献池，权限 leader/elder） */
+  learnSkill(token: string, charId: number, skillId: string) {
+    return authPost('/learn-skill', token, { charId, skillId });
+  },
 };

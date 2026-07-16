@@ -122,6 +122,10 @@ export function requestRespec(): boolean {
 export function requestDevGrantSet(zone: number, quality: string): boolean {
   return sendIntent('devGrantSet', { zone, quality });
 }
+/** 行会商店购买（联机权威）：用个人贡献兑换公会专属物资，服务端扣贡献并发放物品/称号。断连被拒。 */
+export function requestGuildShopBuy(itemId: string): boolean {
+  return sendIntent('guildBuy', { itemId });
+}
 export function requestClaimQuest(questId: string): boolean {
   return sendIntent('claimQuest', { questId });
 }

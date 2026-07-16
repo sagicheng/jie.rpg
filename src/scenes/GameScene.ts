@@ -15,6 +15,7 @@ import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
 import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel } from '../ui/panels';
 import { GuildClient } from '../systems/GuildClient';
+import { applyGuildStatBonus } from '../systems/GuildSkills';
 import { getClient } from '../net/Net';
 
 /** 统一聊天频道配色与前缀 */
@@ -1270,12 +1271,21 @@ export class GameScene extends Phaser.Scene {
         // 统一聊天（多频道：world/guild/team/whisper/system/event）
         room.onMessage('chat', (m: { channel: string; fromName: string; fromCharId: number; text: string; ts: number }) => this.onChat(m));
 
-        // 进房后拉取公会归属（供聊天发送/面板首屏）
+        // 进房后拉取公会归属（供聊天发送/面板首屏/战斗加成）
         GuildClient.info(this.authToken, this.characterId).then((r: any) => {
           if (r && r.ok && r.inGuild) {
             GameState.guildId = r.guild.id; GameState.guildName = r.guild.name; GameState.guildRank = r.myRank;
+            // 公会成长数据（v2）
+            GameState.guildLevel = r.guild.level || 1;
+            GameState.guildExp = r.guild.exp || 0;
+            GameState.guildExpCap = r.guild.expCap || 0;
+            GameState.guildContribution = r.guild.contribution || 0;
+            GameState.guildMyContribution = r.myContribution || 0;
+            GameState.guildSkills = r.guild.skills || {};
           } else {
             GameState.guildId = null; GameState.guildName = ''; GameState.guildRank = '';
+            GameState.guildLevel = 1; GameState.guildExp = 0; GameState.guildExpCap = 0;
+            GameState.guildContribution = 0; GameState.guildMyContribution = 0; GameState.guildSkills = {};
           }
         }).catch(() => { GameState.guildId = null; });
 
@@ -1533,13 +1543,14 @@ export class GameScene extends Phaser.Scene {
       kidos: Kido.getActiveLearned(),
       items: Inventory.items.filter((i) => i.type === 'consumable'),
       // 玩家真实战斗属性（recalcStats 结果），用于服务端权威结算，根除硬编码 BASE_PLAYER 导致的数值崩坏
-      playerStats: {
+      // 叠加公会技能被动加成（v2：全体成员受益）
+      playerStats: applyGuildStatBonus({
         hp: GameState.hp, maxHp: GameState.maxHp,
         mp: GameState.mp, maxMp: GameState.maxMp,
         atk: GameState.atk, def: GameState.def,
         matk: GameState.matk, mdef: GameState.mdef,
         spd: GameState.spd,
-      },
+      }, GameState.guildSkills),
     };
   }
 
@@ -1610,10 +1621,10 @@ export class GameScene extends Phaser.Scene {
     if (this.guildPanel) { this.guildPanel.destroy(true); this.guildPanel = null; }
     this.resumeFromMenu();
   }
-  public openGuildPanel(): void {
+  public openGuildPanel(resetTab = true): void {
     this.closeGuildPanel();
     this.pauseForMenu();
-    this.guildPanel = renderGuildPanel(this);
+    this.guildPanel = renderGuildPanel(this, resetTab);
   }
   /** 统一聊天接收：追加到本地日志 + 按频道路由渲染（公会面板聊天区 + 全局 HUD）。 */
   public onChat(msg: { channel: string; fromName: string; fromCharId: number; text: string; ts: number }): void {

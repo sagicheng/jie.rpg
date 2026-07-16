@@ -75,6 +75,7 @@ export function GameStateBestiaryMixin<TBase extends Constructor>(Base: TBase) {
 
     /** 判断单个称号是否已达成解锁条件 */
     private isTitleUnlocked(def: TitleDef): boolean {
+      if (def.manualOnly) return false; // 仅能由特定途径手动解锁（如行会商店）
       if (def.requireFull) return this.isFullCollection();
       if (def.requireAllGenerals) {
         return this.getTitleCollectedCount() >= def.requiredCollected && this.getAllGeneralsKilled();
@@ -122,6 +123,11 @@ export function GameStateBestiaryMixin<TBase extends Constructor>(Base: TBase) {
 
     /** 取称号在UI上的状态（解锁与否 + 进度文本） */
     getTitleStatus(def: TitleDef): { unlocked: boolean; progress: string } {
+      if (def.manualOnly) {
+        // 手动解锁型：不显示图鉴收集进度，避免误导
+        const owned = this.unlockedTitles.includes(def.id);
+        return { unlocked: owned, progress: owned ? (this.activeTitle === def.id ? '已装备' : '已解锁') : '公会商店兑换' };
+      }
       if (this.unlockedTitles.includes(def.id)) {
         return { unlocked: true, progress: this.activeTitle === def.id ? '已装备' : '已解锁' };
       }
