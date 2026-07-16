@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck:server": "tsc -p tsconfig.server.json",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "test:arena:e2e": "tsx scripts/test-arena-e2e.ts"
   },
   "dependencies": {
     "@colyseus/core": "^0.15.57",

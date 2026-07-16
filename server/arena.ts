@@ -62,6 +62,9 @@ export function currentSeason(now: Date = new Date()): number {
 
 /** 竞技场是否开放（服务端权威）。 */
 export function isArenaOpen(now: Date = new Date()): boolean {
+  // 开发期开关：ARENA_DEV_OPEN=1 时无视开放时段，便于任意时间做端到端烟测。
+  // 生产环境不设置该变量，行为完全不变。
+  if (process.env.ARENA_DEV_OPEN === '1') return true;
   const day = now.getDay();
   const hour = now.getHours();
   return day === ARENA_OPEN_DAY && hour >= ARENA_OPEN_START_HOUR && hour < ARENA_OPEN_END_HOUR;
