@@ -1888,10 +1888,10 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       c.add(scene.add.text(leftX + 110, py + 142, `${members.length}/30`, { fontSize: '12px', color: '#8aa0c0' }).setOrigin(0, 0.5));
       // 表头（固定，不随滚动）
       c.add(scene.add.text(leftX + 4, py + 168, '状态', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
-      c.add(scene.add.text(leftX + 36, py + 168, '角色名', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
-      c.add(scene.add.text(leftX + 200, py + 168, '职位', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
-      c.add(scene.add.text(leftX + 280, py + 168, '贡献', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
-      c.add(scene.add.text(colDivider - 75, py + 168, '操作', { fontSize: '11px', color: '#556677' }).setOrigin(0.5));
+      c.add(scene.add.text(leftX + 34, py + 168, '角色名', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
+      c.add(scene.add.text(leftX + 175, py + 168, '职位', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
+      c.add(scene.add.text(leftX + 240, py + 168, '贡献', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0.5));
+      c.add(scene.add.text(colDivider - 52, py + 168, '操作', { fontSize: '11px', color: '#556677' }).setOrigin(0.5));
 
       // 成员列表滚动（复用模块级 setupScroll：几何遮罩 + 同款滚动条，严格从上到下排列，与称号面板一致）
       setupScroll(scene, c, cx, cy, members, 28, py + 186, py + PH - 86, leftX - 4, colDivider - leftX - 8,
@@ -1902,20 +1902,21 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
             rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(leftX - 4, ry - 12, colDivider - leftX - 8, 26, 4); sc.add(rb);
           }
           const dot = scene.add.graphics(); dot.fillStyle(0x556677, 1); dot.fillCircle(leftX + 12, ry, 4); sc.add(dot);
-          sc.add(scene.add.text(leftX + 36, ry, m.name, { fontSize: '14px', color: isLeader ? '#ffd27a' : '#cdd6e8' }).setOrigin(0, 0.5));
-          sc.add(scene.add.text(leftX + 200, ry, RANK_NAME[m.rank], { fontSize: '12px', color: '#8899bb' }).setOrigin(0, 0.5));
-          sc.add(scene.add.text(leftX + 280, ry, `${m.contribution || 0}`, { fontSize: '12px', color: '#9fe6a0' }).setOrigin(0, 0.5));
-          const opBaseX = colDivider - 70;
+          sc.add(scene.add.text(leftX + 34, ry, m.name, { fontSize: '14px', color: isLeader ? '#ffd27a' : '#cdd6e8' }).setOrigin(0, 0.5));
+          sc.add(scene.add.text(leftX + 175, ry, RANK_NAME[m.rank], { fontSize: '12px', color: '#8899bb' }).setOrigin(0, 0.5));
+          sc.add(scene.add.text(leftX + 240, ry, `${m.contribution || 0}`, { fontSize: '12px', color: '#9fe6a0' }).setOrigin(0, 0.5));
+          // 操作按钮：紧凑靠右，避免与贡献列碰撞
+          const opRight = colDivider - 52; // 操作列右锚点（对齐表头"操作"）
           if (meIsLeader && !isLeader) {
-            btnS(opBaseX - 50, ry, '升职', 0x33507a, '#bcd4ff', () => {
+            btnS(opRight - 104, ry, '升职', 0x33507a, '#bcd4ff', () => {
               GuildClient.setRank(scene.authToken, scene.characterId, m.charId, m.rank === 'elder' ? 'member' : 'elder').then((res: any) => res.ok ? refresh() : toast(res.msg));
             });
-            btnS(opBaseX, ry, '转让', 0x6a4a2a, '#ffd9a0', () => {
+            btnS(opRight - 52, ry, '转让', 0x6a4a2a, '#ffd9a0', () => {
               GuildClient.transfer(scene.authToken, scene.characterId, m.charId).then((res: any) => res.ok ? (toast('已转让会长'), refresh()) : toast(res.msg));
             });
           }
           if ((meIsLeader || meIsElder) && !isLeader && m.rank !== 'elder') {
-            btnS(meIsLeader ? opBaseX - 100 : opBaseX, ry, '踢出', 0x6a2a2a, '#ffb0b0', () => {
+            btnS(meIsLeader ? opRight - 156 : opRight - 52, ry, '踢出', 0x6a2a2a, '#ffb0b0', () => {
               GuildClient.kick(scene.authToken, scene.characterId, m.charId).then((res: any) => res.ok ? refresh() : toast(res.msg));
             });
           }
@@ -2474,25 +2475,37 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
           });
       }
 
-      // ══ 添加好友区域（固定在右下角，不随申请列表滚动）══
-      const ay = py + PH - 140;
+      // ══ 添加好友区域（点击式：仿公会编辑公告，点按钮才展开输入） ══
+      const addBtnY = py + PH - 140;
       // 分隔线
       const addSep = scene.add.graphics();
-      addSep.lineStyle(1, 0x334466, 0.3); addSep.lineBetween(rx, ay - 40, rx + (PW - (rx - px) - 28), ay - 40); c.add(addSep);
-      c.add(scene.add.text(rx, ay - 24, '添加好友', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
-      // 表单行：标签 + 输入框 + 按钮（对齐公会创建表单风格）
-      c.add(scene.add.text(rx, ay + 6, '角色名', { fontSize: '13px', color: '#8899bb' }).setOrigin(0, 0.5));
-      const nameInput = placeInput(rx + 90, ay + 6, 220, 32, 12);
-      btn(rx + 360, ay + 6, '发送申请', 0x33507a, '#bcd4ff', () => {
-        const nm = nameInput.value.trim();
-        if (!nm) { toast('请输入角色名'); return; }
-        FriendClient.add(scene.authToken, scene.characterId, nm).then((res: any) => {
-          if (res.ok) { toast('已向「' + res.targetName + '」发送申请'); refresh(); }
-          else toast(res.msg || '发送失败');
-        });
+      addSep.lineStyle(1, 0x334466, 0.3); addSep.lineBetween(rx, addBtnY - 40, rx + (PW - (rx - px) - 28), addBtnY - 40); c.add(addSep);
+      c.add(scene.add.text(rx, addBtnY - 24, '添加好友', { fontSize: '15px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      // 提示文字（常驻）
+      c.add(scene.add.text(rx, addBtnY + 42, '输入对方角色名后点击发送，对方同意后成为好友。', { fontSize: '11px', color: '#556677', wordWrap: { width: 400 } }).setOrigin(0, 0));
+
+      let nameInput: HTMLInputElement | null = null;
+      let addUiPlaced = false;
+      btn(rx, addBtnY + 6, '➕ 添加好友', 0x33507a, '#bcd4ff', () => {
+        if (nameInput) { nameInput.focus(); return; }
+        // 展开：创建输入框 + 发送 + 取消（与公会编辑公告同模式）
+        nameInput = placeInput(rx + 90, addBtnY + 6, 220, 32, 12);
+        if (!addUiPlaced) {
+          btn(rx + 340, addBtnY + 6, '发送', 0x2a6e4a, '#cfeedd', () => {
+            if (!nameInput) return;
+            const nm = nameInput.value.trim();
+            if (!nm) { toast('请输入角色名'); return; }
+            FriendClient.add(scene.authToken, scene.characterId, nm).then((res: any) => {
+              if (res.ok) { toast('已向「' + res.targetName + '」发送申请'); refresh(); }
+              else toast(res.msg || '发送失败');
+            });
+          });
+          btn(rx + 420, addBtnY + 6, '取消', 0x444466, '#aaaacc', () => {
+            if (nameInput && nameInput.parentNode) { nameInput.parentNode.removeChild(nameInput); nameInput = null; }
+          });
+          addUiPlaced = true;
+        }
       });
-      // 提示文字
-      c.add(scene.add.text(rx, ay + 42, '输入对方角色名后点击发送，对方同意后成为好友。', { fontSize: '11px', color: '#556677', wordWrap: { width: 400 } }).setOrigin(0, 0));
     }
 
     return c;
