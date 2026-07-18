@@ -1,7 +1,7 @@
 import { enhanceMult } from '../constants';
 
 /** 物品类型 */
-export type ItemType = 'equipment' | 'material' | 'consumable' | 'key';
+export type ItemType = 'equipment' | 'material' | 'consumable' | 'key' | 'pet_egg';
 
 /** 装备槽位 */
 export type EquipSlot = 'head' | 'body' | 'bracer' | 'boots' | 'belt' | 'ring' | 'necklace' | 'charm' | 'pendant';
@@ -26,6 +26,8 @@ export interface Item {
   // 强化系统
   enhanceLevel?: number;         // 0~15
   refineStats?: RefineStat[];    // 精炼词条列表
+  // 灵宠蛋：记录掉落区域，供开蛋时按区域定品质
+  zone?: number;
 }
 
 /** 装备栏 */

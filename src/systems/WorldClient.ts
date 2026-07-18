@@ -154,6 +154,8 @@ export function requestAuctionCancel(auctionId: number): boolean { return sendIn
 export function requestPetSetActive(petId: string): boolean { return sendIntent('petSetActive', { petId }); }
 export function requestPetRelease(petId: string): boolean { return sendIntent('petRelease', { petId }); }
 export function requestPetGrantDev(speciesId?: string): boolean { return sendIntent('petGrantDev', { speciesId: speciesId || null }); }
+/** 开启灵宠蛋（服务端权威：随机物种 + 按蛋 zone 定品质，消耗一枚蛋）。 */
+export function requestUsePetEgg(itemId: string): boolean { return sendIntent('usePetEgg', { itemId }); }
 export function requestPetRecall(petId: string): boolean { return sendIntent('petRecall', { petId }); }
 export function requestPetSetAttr(petId: string, attr: string, delta: number): boolean { return sendIntent('petSetAttr', { petId, attr, delta }); }
 export function requestClaimQuest(questId: string): boolean {

@@ -29,7 +29,7 @@ import {
   requestGuildShopBuy,
   requestAuctionList, requestAuctionMine, requestAuctionFavList, requestAuctionHistory,
   requestAuctionFav, requestAuctionCreate, requestAuctionBuy, requestAuctionCancel,
-  requestPetSetActive, requestPetRelease, requestPetRecall, requestPetSetAttr,
+  requestPetSetActive, requestPetRelease, requestPetRecall, requestPetSetAttr, requestUsePetEgg,
 } from '../systems/WorldClient';
 import { GUILD_SHOP_ITEMS } from '../systems/GuildShop';
 
@@ -508,10 +508,38 @@ export function renderInventoryPanel(scene: GameScene): void {
     p.add(scene.add.text(ox + 20, matY, '材料', { fontSize: '15px', color: '#88aacc', fontStyle: 'bold', padding: { y: 2 } }));
     const mats = Inventory.items.filter(it => it.type === 'material' && it.quantity > 0);
     mats.forEach((item, i) => { const col = i % 6, row = Math.floor(i / 6); const mx = ox + 20 + col * 280, my = matY + 30 + row * 24; p.add(scene.add.text(mx, my, `${item.name} ×${item.quantity}`, { fontSize: '11px', color: '#aaaacc', padding: { y: 2 } })); });
+    const matEndY = matY + 30 + Math.ceil(mats.length / 6) * 24;
+
+    // 灵宠蛋（双击开启 → 随机孵化一只灵宠；元素/技能/品质全部随机，品质按掉落区域）
+    const eggY = matEndY + 14;
+    p.add(scene.add.text(ox + 20, eggY, '灵宠蛋（双击开启）', { fontSize: '15px', color: '#ffaa66', fontStyle: 'bold', padding: { y: 2 } }));
+    const eggs = Inventory.items.filter(it => it.type === 'pet_egg' && it.quantity > 0);
+    const eggC = 8, eggW = (ow - 50) / eggC - 8;
+    eggs.forEach((item, i) => {
+      const col = i % eggC, row = Math.floor(i / eggC); const ex = ox + 20 + col * (eggW + 8), ey = eggY + 30 + row * 68;
+      const cd = scene.add.graphics(); cd.fillStyle(0x1a1208, 0.8); cd.fillRoundedRect(ex, ey, eggW, 58, 5); cd.lineStyle(1, 0xaa6622, 0.6); cd.strokeRoundedRect(ex, ey, eggW, 58, 5); p.add(cd);
+      p.add(scene.add.text(ex + 6, ey + 4, item.name, { fontSize: '11px', color: '#ffcc88', fontStyle: 'bold', padding: { y: 1 } }));
+      p.add(scene.add.text(ex + 6, ey + 22, item.desc || '双击开启', { fontSize: '9px', color: '#cc9966', padding: { y: 1 } }));
+      p.add(scene.add.text(ex + eggW - 25, ey + 4, `×${item.quantity}`, { fontSize: '11px', color: '#ffcc88', fontStyle: 'bold', padding: { y: 1 } }));
+      const ez = scene.add.zone(ex, ey, eggW, 58).setOrigin(0, 0).setInteractive({ useHandCursor: true });
+      ez.on('pointerover', () => { cd.clear(); cd.fillStyle(0x2a2010, 0.9); cd.fillRoundedRect(ex, ey, eggW, 58, 5); cd.lineStyle(1, 0xcc8833, 0.8); cd.strokeRoundedRect(ex, ey, eggW, 58, 5); });
+      ez.on('pointerout', () => { cd.clear(); cd.fillStyle(0x1a1208, 0.8); cd.fillRoundedRect(ex, ey, eggW, 58, 5); cd.lineStyle(1, 0xaa6622, 0.6); cd.strokeRoundedRect(ex, ey, eggW, 58, 5); });
+      ez.on('pointerdown', () => {
+        const now = Date.now();
+        if (now - ((item as any)._lastEggClick || 0) < 350) {
+          // 双击：开启灵宠蛋（服务端权威，worldSync 刷新背包 / intentResult 显示孵化结果）
+          if (!isOnline()) { scene.showWorldNotif('灵宠蛋需联网开启', false); return; }
+          requestUsePetEgg(item.id);
+        }
+        (item as any)._lastEggClick = now;
+      });
+      p.add(ez);
+    });
+    const eggEndY = eggY + 30 + Math.ceil(eggs.length / eggC) * 68;
 
     // 套装进度汇总（联机下 equipment 由 worldSync 重建并带 set 字段）
     const setProgress = listSetProgress(Inventory.equipment);
-    const setBlockY = matY + 30 + Math.ceil(mats.length / 6) * 24 + 14;
+    const setBlockY = eggEndY + 14;
     p.add(scene.add.text(ox + 20, setBlockY, '套装进度', { fontSize: '15px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 2 } }));
     if (setProgress.length === 0) {
       p.add(scene.add.text(ox + 20, setBlockY + 26, '（未穿戴任何套装装备；同区域同品质装备凑齐件数可激活加成）', { fontSize: '11px', color: '#556688', padding: { y: 1 } }));

@@ -193,6 +193,12 @@ export function generateLoot(type: EnemyType, zone: number): Item[] {
     }
   }
 
+  // 灵宠蛋掉落（战斗概率，按敌人类型加权；蛋携带 zone 供开蛋时按区域定品质）
+  const eggChance: Record<EnemyType, number> = { 杂妖: 0.06, 恶妖: 0.10, 妖将: 0.16, 妖王: 0.25 };
+  if (Math.random() < (eggChance[type] ?? 0.08)) {
+    loot.push({ id: 'pet_egg', name: '灵宠蛋', type: 'pet_egg', desc: '双击开启，随机孵化一只灵宠', quantity: 1, zone } as Item);
+  }
+
   return loot;
 }
 

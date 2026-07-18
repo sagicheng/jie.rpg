@@ -760,12 +760,12 @@ export class WorldService {
 
   // ───────────────── 灵宠系统（服务端权威） ─────────────────
   /** 获得一只灵宠（按物种生成 Lv1 属性快照，随机品质与先天技能）。首只自动出战。 */
-  createPet(pw: PlayerWorld, speciesId: string, name?: string): OpResult {
+  createPet(pw: PlayerWorld, speciesId: string, name?: string, zoneOverride?: number): OpResult {
     const sp = PET_SPECIES[speciesId];
     if (!sp) return { ok: false, msg: '未知灵宠物种' };
     if (!Array.isArray(pw.pets)) pw.pets = [];
     if (pw.pets.length >= PET_SLOT_CAP) return { ok: false, msg: `灵宠栏已满（上限 ${PET_SLOT_CAP}）` };
-    const quality = rollPetQuality(sp.obtainZone);
+    const quality = rollPetQuality(zoneOverride ?? sp.obtainZone);
     const attrs = { str: 0, vit: 0, agi: 0, int: 0 };
     const stats = computePetStats(sp, 1, quality, attrs);
     const pet: Pet = {
@@ -852,6 +852,30 @@ export class WorldService {
     if (!pet) return { ok: false, msg: '灵宠不存在' };
     pet.active = false;
     return { ok: true, msg: `${pet.name} 已收回` };
+  }
+
+  /** 开启灵宠蛋：随机物种 + 按蛋携带的 zone 定品质；消耗一枚蛋；灵宠栏满则拒绝。 */
+  openPetEgg(pw: PlayerWorld, itemId: string): OpResult {
+    if (!Array.isArray(pw.pets)) pw.pets = [];
+    const egg = pw.inventory.find(i => i.id === itemId && i.type === 'pet_egg');
+    if (!egg) return { ok: false, msg: '背包里没有这枚灵宠蛋' };
+    if (pw.pets.length >= PET_SLOT_CAP) return { ok: false, msg: `灵宠栏已满（上限 ${PET_SLOT_CAP}），无法开启灵宠蛋` };
+    const keys = Object.keys(PET_SPECIES);
+    const speciesId = keys[Math.floor(Math.random() * keys.length)];
+    const res = this.createPet(pw, speciesId, undefined, egg.zone);
+    if (!res.ok) return res;
+    egg.quantity -= 1;
+    if (egg.quantity <= 0) pw.inventory = pw.inventory.filter(i => i !== egg);
+    const pet = res.data?.pet as Pet;
+    const el = PET_ELEMENTS[pet.element as PetElement]?.label || pet.element;
+    const q = PET_QUALITIES[pet.quality as PetQuality]?.label || pet.quality;
+    return { ok: true, msg: `孵化成功！获得灵宠「${pet.name}」（${el}·${q}）`, data: { pet } };
+  }
+
+  /** Dev：直接发放一枚灵宠蛋到背包（供测试 / 调试；生产经战斗掉落）。 */
+  grantPetEgg(pw: PlayerWorld, zone: number = 1): OpResult {
+    this.grantItem(pw, { id: 'pet_egg', name: '灵宠蛋', type: 'pet_egg', desc: '双击开启，随机孵化一只灵宠', quantity: 1, zone });
+    return { ok: true, msg: '获得灵宠蛋' };
   }
 
   /** 取当前出战灵宠（无则 null）。 */

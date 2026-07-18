@@ -11,6 +11,7 @@
  *  G. 光环数值：出战灵宠按 10%/20% 比例提升玩家属性（computePetAura 对齐）
  *  I. 新字段：发放灵宠含 element(4元素)/quality(5档)/skills(非空) 且合法
  *  J. 属性点分配 petSetAttr：0 点时拒绝 / 升级后分配使 attrPoints 递减、属性与派生属性变化 / 非法属性名拒绝
+ *  K. 灵宠蛋来源：petGrantEgg 发蛋进背包 → usePetEgg 双击开启，随机元素/品质/技能，蛋被消耗，灵宠栏+1
  *
  * 与真实联机完全一致：起一个真正的 Colyseus 权威服（随机端口，独立临时库），
  * 用 colyseus.js 客户端走生产代码路径；服务端带装饰器故先 tsc 编译再 node 起服。
@@ -223,8 +224,27 @@ async function main(): Promise<void> {
       log(`J 5 级 fox_fire 分配验证通过（点 ${P0}→${P0-1}→${P0}，ATK ${A0}→${petJa.atk}→${A0}）`);
     }
 
+    // ── K. 灵宠蛋来源：发蛋 → 双击开启（随机元素/品质/技能）──
+    {
+      // 当前 pets=1（J 段放生了 5 级测试宠），栏位有余量
+      const k0 = await petIntent('petGrantEgg', { zone: 9 });
+      assert('K 发放灵宠蛋成功', !!k0.res && k0.res.ok === true);
+      const eggItem = (k0.pw.inventory || []).find((i: any) => i.id === 'pet_egg');
+      assert('K 背包出现灵宠蛋', !!eggItem);
+      const petsBefore = k0.pw.pets.length;
+      const k1 = await petIntent('usePetEgg', { itemId: eggItem.id });
+      assert('K 开启灵宠蛋成功', !!k1.res && k1.res.ok === true);
+      assert('K 灵宠数量+1', k1.pw && k1.pw.pets.length === petsBefore + 1);
+      const hatched = k1.pw.pets[k1.pw.pets.length - 1];
+      assert('K 孵化宠 元素∈4元素', ['fire', 'wind', 'water', 'earth'].includes(hatched.element));
+      assert('K 孵化宠 品质∈5档', ['normal', 'fine', 'choice', 'rare', 'legend'].includes(hatched.quality));
+      assert('K 孵化宠 技能非空', Array.isArray(hatched.skills) && hatched.skills.length > 0);
+      assert('K 灵宠蛋已消耗', !(k1.pw.inventory || []).find((i: any) => i.id === 'pet_egg'));
+      log(`K 灵宠蛋孵化：${hatched.name}（${hatched.element}·${hatched.quality}）技能=${hatched.skills.join(',')}`);
+    }
+
     // ── F. 栏位上限（满 6 后第 7 只被拒）──
-    // 当前 1 只，再发 5 只到 6
+    // 当前 2 只（K 段开蛋+1），再发 4 只到 6
     for (let i = 0; i < 5; i++) { await petIntent('petGrantDev', {}); }
     const capBefore = await petIntent('petGrantDev', {});
     assert('F 第 7 只被拒（栏位已满）', !!capBefore.res && capBefore.res.ok === false && /上限/.test(capBefore.res.msg || ''));

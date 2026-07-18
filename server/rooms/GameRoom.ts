@@ -534,6 +534,13 @@ export class GameRoom extends Room<GameRoomState> {
           if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
           break;
         }
+        case 'petGrantEgg': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = world.grantPetEgg(pw, typeof data.zone === 'number' ? data.zone : 1);
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
         case 'petRecall': {
           const cid = sessionCharMap.get(client.sessionId);
           if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
@@ -545,6 +552,13 @@ export class GameRoom extends Room<GameRoomState> {
           const cid = sessionCharMap.get(client.sessionId);
           if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
           res = world.setPetAttr(pw, String(data.petId || ''), String(data.attr || '') as any, Number(data.delta) || 0);
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
+        case 'usePetEgg': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = world.openPetEgg(pw, String(data.itemId || ''));
           if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
           break;
         }
