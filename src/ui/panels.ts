@@ -2558,6 +2558,8 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
   let auctionCx = 0, auctionCy = 0;
   let auctionBodyInputs: (HTMLInputElement | HTMLTextAreaElement)[] = [];
   let auctionShellInputs: { el: HTMLInputElement | HTMLTextAreaElement; lx: number; ly: number; w: number; h: number }[] = [];
+  let auctionSearchOpen = false;                       // 搜索框：默认收起，点「搜索」才弹出
+  let auctionToolbar: Phaser.GameObjects.Container | null = null;
 
   // 面板尺寸（DNF 式三栏：左筛选 / 中卡片网格 / 右详情）
   const AUCTION_PW = 1280, AUCTION_PH = 860;
@@ -2594,6 +2596,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
   }
 
   export function closeAuctionPanel(scene: GameScene): void {
+    if (auctionToolbar) { auctionToolbar.destroy(true); auctionToolbar = null; }
     auctionBodyInputs.forEach(el => { try { if (el.parentNode) el.parentNode.removeChild(el); } catch {} });
     auctionBodyInputs = [];
     auctionShellInputs.forEach(it => { try { if (it.el.parentNode) it.el.parentNode.removeChild(it.el); } catch {} });
@@ -2737,11 +2740,49 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     else renderAuctionBody(scene);
   }
 
+  // 工具条（独立容器，可随搜索展开/收起重建）
+  function renderAuctionToolbar(scene: GameScene): void {
+    const c = scene.auctionPanel; if (!c) return;
+    const PW = AUCTION_PW, PH = AUCTION_PH;
+    const px = -PW / 2, py = -PH / 2;
+    // 重建前移除旧搜索框 DOM（搜索框是唯一的 shell 输入）
+    auctionShellInputs.forEach(it => { try { if (it.el.parentNode) it.el.parentNode.removeChild(it.el); } catch {} });
+    auctionShellInputs = [];
+    if (auctionToolbar) { auctionToolbar.destroy(true); auctionToolbar = null; }
+    const bar = scene.add.container(0, 0); c.add(bar); auctionToolbar = bar;
+
+    // 历史/上架态不显示工具条
+    if (auctionPanelTab === 'history' || auctionCreating) return;
+
+    const gridX = px + 208, gy = py + 128;
+    // 「搜索」按钮：默认收起，点击展开/收起输入框（展开时高亮）
+    aBtn(scene, bar, gridX + 56, gy, '🔍 搜索', auctionSearchOpen ? 0x33507a : 0x2a3a5a, auctionSearchOpen ? '#bcd4ff' : '#8899bb', () => {
+      auctionSearchOpen = !auctionSearchOpen;
+      renderAuctionToolbar(scene);
+    });
+    // 展开时：搜索输入框 + 「应用」按钮
+    if (auctionSearchOpen) {
+      const searchInput = aPlaceShellInput(scene, gridX + 280, gy, 240, 30, 20, auctionFilter.name);
+      searchInput.placeholder = '物品名称';
+      searchInput.addEventListener('keydown', (e: KeyboardEvent) => { if (e.key === 'Enter') { auctionFilter.name = searchInput.value.trim(); applyAuctionFilter(scene); } });
+      aBtn(scene, bar, gridX + 450, gy, '应用', 0x33507a, '#bcd4ff', () => { auctionFilter.name = searchInput.value.trim(); applyAuctionFilter(scene); });
+    }
+    // 排序切换
+    aBtn(scene, bar, gridX + 580, gy, '排序:' + A_SORT_LABEL[auctionFilter.sort], 0x2a3a5a, '#bcd4ff', () => {
+      const order = ['price_asc', 'price_desc', 'recent'];
+      auctionFilter.sort = order[(order.indexOf(auctionFilter.sort) + 1) % order.length];
+      applyAuctionFilter(scene);
+    });
+    // 右侧：上架 / 刷新（置于面板右侧，远离居中 Tab，杜绝误触）
+    aBtn(scene, bar, px + PW - 180, gy, '上架', 0x2a6e4a, '#cfeedd', () => { auctionCreating = true; rebuildAuction(scene); });
+    aBtn(scene, bar, px + PW - 70, gy, '刷新', 0x444466, '#aaaacc', () => reqAuctionTab());
+  }
+
   export function renderAuctionPanel(scene: GameScene, reset = true): Phaser.GameObjects.Container {
     if (reset) {
       auctionPanelTab = 'market'; auctionCreating = false; auctionCreateItem = null;
       auctionFilter = { name: '', category: null, quality: null, sort: 'price_asc' };
-      auctionSelectedId = null; auctionPage = 0;
+      auctionSelectedId = null; auctionPage = 0; auctionSearchOpen = false;
     }
     const cam = scene.cameras.main;
     auctionCx = Math.round(cam.scrollX) + GAME_WIDTH / 2;
@@ -2792,20 +2833,8 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     // 分隔线（Tab ↔ 内容/工具条）
     const dl2 = scene.add.graphics(); dl2.lineStyle(1, 0x33405e, 0.7); dl2.lineBetween(px + 12, py + 106, px + PW - 12, py + 106); c.add(dl2);
 
-    // 工具条：左=搜索/排序（对齐中栏），右=上架/刷新（置于面板右侧，远离居中 Tab，杜绝误触）
-    if (auctionPanelTab !== 'history' && !auctionCreating) {
-      const gridX = px + 208, gy = py + 128;
-      const searchInput = aPlaceShellInput(scene, gridX + 140, gy, 280, 30, 20, auctionFilter.name);
-      searchInput.placeholder = '物品名称';
-      aBtn(scene, c, gridX + 300, gy, '搜索', 0x33507a, '#bcd4ff', () => { auctionFilter.name = searchInput.value.trim(); applyAuctionFilter(scene); });
-      aBtn(scene, c, gridX + 440, gy, '排序:' + A_SORT_LABEL[auctionFilter.sort], 0x2a3a5a, '#bcd4ff', () => {
-        const order = ['price_asc', 'price_desc', 'recent'];
-        auctionFilter.sort = order[(order.indexOf(auctionFilter.sort) + 1) % order.length];
-        applyAuctionFilter(scene);
-      });
-      aBtn(scene, c, px + PW - 180, gy, '上架', 0x2a6e4a, '#cfeedd', () => { auctionCreating = true; rebuildAuction(scene); });
-      aBtn(scene, c, px + PW - 70, gy, '刷新', 0x444466, '#aaaacc', () => reqAuctionTab());
-    }
+    // 工具条（独立容器，可随搜索展开/收起重建；搜索框默认收起，点「搜索」才弹出）
+    renderAuctionToolbar(scene);
 
     renderAuctionBody(scene);
     if (!auctionCreating) reqAuctionTab();
@@ -2836,8 +2865,8 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     if (auctionBody) { auctionBody.destroy(true); auctionBody = null; }
     auctionBodyInputs.forEach(el => { try { if (el.parentNode) el.parentNode.removeChild(el); } catch {} });
     auctionBodyInputs = [];
-    // 面板壳不再随切 tab 重建，故按当前 tab 显隐市场搜索框（非 market/上架时隐藏，避免残留）
-    const showShell = auctionPanelTab === 'market' && !auctionCreating;
+    // 搜索框仅在展开态显示（默认收起），上架态一并隐藏
+    const showShell = !auctionCreating && auctionSearchOpen;
     auctionShellInputs.forEach(it => { it.el.style.display = showShell ? '' : 'none'; });
     const c = scene.auctionPanel!;
     const body = scene.add.container(0, 0); c.add(body); auctionBody = body;
