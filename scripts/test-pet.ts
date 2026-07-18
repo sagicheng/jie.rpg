@@ -333,13 +333,13 @@ async function main(): Promise<void> {
       const charEntry = players.find((p: any) => !p.isPet && p.sessionId === battleSid);
       assert('L 战斗内出现出战灵宠卡片', !!petEntry);
       assert('L 宠物 isPet=true', !!petEntry && petEntry.isPet === true);
-      assert('L 宠物 ownerSid=主人(地图房SID)', !!petEntry && petEntry.ownerSid === ownerSessionId);
+      assert('L 宠物 ownerSid=主人(战斗房SID)', !!petEntry && petEntry.ownerSid === battleSid);
       assert('L 人物战斗员存在', !!charEntry);
       assert('L 宠物独立 SID', !!petEntry && petEntry.sessionId === battleSid + ':pet');
 
       // 提交人物攻击 + 宠物攻击（两个 actor 分别提交）
       const firstEnemy = [...battle.state.enemies.values()][0];
-      battle.send('action', { type: 'attack', targetId: firstEnemy.id, actorSid: ownerSessionId });
+      battle.send('action', { type: 'attack', targetId: firstEnemy.id, actorSid: battleSid });
       battle.send('action', { type: 'attack', targetId: firstEnemy.id, actorSid: petEntry.sessionId });
       // 等待执行阶段（双方指令齐备后服务端立即开战）
       await waitFor(() => battle.state.roundPhase === 'execute' || battle.state.phase !== 'combat', 9000);

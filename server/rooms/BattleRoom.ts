@@ -95,6 +95,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     // 出战灵宠：作为同一客户端的第二战斗员（独立 SID + 独立回合）。
     // 宠物 inherit 主人的 ownerSid，便于胜利回写与断连清理。
     const petOpt: any = options?.pet;
+    console.log('[BattleRoom.onJoin] pet option received:', JSON.stringify(petOpt));
     if (petOpt && petOpt.stats && typeof petOpt.stats.hp === 'number') {
       const pet = new CombatPlayer();
       const petSid = client.sessionId + ':pet';
@@ -102,7 +103,9 @@ export class BattleRoom extends Room<BattleRoomState> {
       pet.name = (petOpt.name ? `${petOpt.name}` : '灵宠');
       pet.color = COLORS[(Math.floor(Math.random() * COLORS.length) + 3) % COLORS.length];
       pet.isPet = true;
-      pet.ownerSid = (options as any).ownerSessionId || client.sessionId;
+      // ownerSid 指向同战斗房内主人战斗员（client.sessionId），用于 onLeave 击倒宠物 + 客户端布局配对
+      // （地图房 GameRoom 的 ownerSessionId 映射由独立的 this.ownerSids Map 处理，不依赖此字段）
+      pet.ownerSid = client.sessionId;
       const ps = petOpt.stats;
       pet.maxHp = ps.maxHp ?? ps.hp; pet.hp = ps.hp ?? pet.maxHp;
       pet.atk = ps.atk ?? 0; pet.def = ps.def ?? 0;
@@ -121,6 +124,9 @@ export class BattleRoom extends Room<BattleRoomState> {
       }
       this.loadouts.set(petSid, plo);
       this.logMsg('system', `${pet.name}（灵宠）随 ${p.name} 出战`);
+      console.log('[BattleRoom.onJoin] ✅ pet combatant created:', petSid, 'name=', pet.name, 'players.size=', this.state.players.size);
+    } else {
+      console.log('[BattleRoom.onJoin] ⚠️ pet option SKIPPED — reason:', !petOpt ? 'no petOpt' : !petOpt.stats ? 'no stats' : 'stats.hp not number, got', typeof petOpt.stats?.hp, petOpt.stats);
     }
 
     if (typeof options?.dungeonId === 'number' && options.dungeonId > 0) {

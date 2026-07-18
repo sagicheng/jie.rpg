@@ -1641,7 +1641,9 @@ export class GameScene extends Phaser.Scene {
   /** 组装联机权威战斗的可用技能/鬼道/道具清单，传给战斗房间做权威校验。 */
   private buildBattleLoadout() {
     // 出战灵宠：取出战中的宠，映射为战斗 DTO（属性快照 + 技能 + 宠MP），随负载下发到权威战斗房
-    const activePet = (GameState.pets || []).find((p: any) => p.active);
+    const allPets = (GameState.pets || []);
+    const activePet = allPets.find((p: any) => p.active);
+    console.log('[buildBattleLoadout] pets count=', allPets.length, 'activePet found=', !!activePet, activePet ? JSON.stringify({ name: activePet.name, hp: activePet.hp, skills: activePet.skills }) : '(none)');
     const petDto = activePet ? {
       name: activePet.name,
       speciesId: activePet.speciesId,

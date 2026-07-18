@@ -92,6 +92,8 @@ export class MultiBattleScene extends Phaser.Scene {
   /** 本轮已提交指令的战斗员 SID 集合（人物 / 宠物分别守卫，支持同回合分别指挥）。 */
   private submittedActors: Set<string> = new Set();
   private petBtn: Button | null = null;
+  /** 诊断标记：renderState 首帧是否已打印 players 快照 */
+  private _diagPlayersLogged = false;
 
   // 子菜单 / 目标选择弹层
   private menu: Phaser.GameObjects.Container | null = null;
@@ -122,6 +124,7 @@ export class MultiBattleScene extends Phaser.Scene {
     this.petSid = '';
     this.submittedActors.clear();
     this.petBtn = null;
+    this._diagPlayersLogged = false;
     this.dungeonId = data?.dungeonId || 0;
     this.dungeonStage = data?.dungeonStage || 0;
     this.dungeonRoomId = data?.dungeonRoomId || '';
@@ -238,6 +241,7 @@ export class MultiBattleScene extends Phaser.Scene {
       }
     }
 
+    console.log('[MultiBattleScene] 📦 sending pet DTO to battle room:', JSON.stringify(this.loadout.pet));
     getClient().joinOrCreate('battle', {
       name: this.playerName,
       // 传递游戏房(GameRoom) sessionId 作为稳定身份：BattleRoom 据此把奖励写入玩家本体世界，
@@ -594,6 +598,13 @@ export class MultiBattleScene extends Phaser.Scene {
     if (!this.room || !this.room.state) return;
     const s = this.room.state;
 
+    // 诊断：每帧首次渲染时打印 players 快照（仅首帧，防刷屏）
+    if (!this['_diagPlayersLogged']) {
+      const playerList = [...s.players.values()].map((p: any) => ({ sid: p.sessionId, name: p.name, isPet: p.isPet, alive: p.alive }));
+      console.log('[MultiBattleScene.renderState] 📋 s.players (first frame):', JSON.stringify(playerList), 'total=', s.players.size);
+      this['_diagPlayersLogged'] = true;
+    }
+
     const inCombat = s.phase === 'combat';
     const inCommand = inCombat && s.roundPhase === 'command';
     const inExecute = inCombat && s.roundPhase === 'execute';
@@ -656,13 +667,50 @@ export class MultiBattleScene extends Phaser.Scene {
 
   private syncCards(map: Map<string, Card>, src: Map<string, any>, isPlayer: boolean): void {
     const list = [...(src as Map<string, any>).values()];
+    // 玩家侧特殊布局：人物+灵宠并排同行（人物左 / 宠物右），而非上下堆叠
+    const ownerPositions: Record<string, { x: number; y: number }> = {};
+    if (isPlayer) {
+      let row = 0;
+      // 第一遍：先排非宠物（人物/队友），记录每行位置
+      for (const c of list) {
+        if (!c.isPet) {
+          const id = c.sessionId || c.id;
+          ownerPositions[id] = {
+            x: this.scale.width * 0.20,
+            y: 170 + row * 120,
+          };
+          row++;
+        }
+      }
+      // 第二遍：宠物紧跟主人右侧（同一行）
+      for (const c of list) {
+        if (c.isPet && c.ownerSid) {
+          const op = ownerPositions[c.ownerSid];
+          if (op) {
+            ownerPositions[c.sessionId] = {
+              x: this.scale.width * 0.48,
+              y: op.y,
+            };
+          } else {
+            // 无主人位置时 fallback 到独立行
+            ownerPositions[c.sessionId] = {
+              x: this.scale.width * 0.20,
+              y: 170 + row * 120,
+            };
+            row++;
+          }
+        }
+      }
+    }
+
     list.forEach((c: any, i: number) => {
       const id = c.sessionId || c.id;
-      // 站位：我方左侧单列（最多 4 行，预留队友/灵宠）；敌方右侧 2 列 × 4 行（最多 8 只）
+      // 站位：我方（人物/灵宠并排同行）；敌方右侧 2 列 × 4 行（最多 8 只）
       let x: number, y: number;
       if (isPlayer) {
-        x = this.scale.width * 0.28;
-        y = 170 + i * 120;
+        const pos = ownerPositions[id];
+        x = pos?.x ?? this.scale.width * 0.28;
+        y = pos?.y ?? 170 + i * 120;
       } else {
         const col = i % 2, row = Math.floor(i / 2);
         x = this.scale.width * (col === 0 ? 0.66 : 0.86);
