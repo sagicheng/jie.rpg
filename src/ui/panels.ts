@@ -2145,6 +2145,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     const contentH = items.length * rowH + 8;
     const scrollable = contentH > viewH;
     const scrollContent = scene.add.container(0, 0); c.add(scrollContent);
+    let maskG: Phaser.GameObjects.Graphics | null = null;
     const rowBtns: any[] = [];
     const btnS = (lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void): void => {
       const bw = Math.max(48, label.length * 13 + 16), bh = 24;
@@ -2163,7 +2164,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     };
     items.forEach((it, i) => { const ry = 12 + i * rowH; renderRow(it, i, ry, scrollContent, btnS); });
     if (scrollable) {
-      const maskG = scene.make.graphics({});
+      maskG = scene.make.graphics({});
       maskG.fillStyle(0xffffff);
       maskG.fillRect(cx + colLeft, cy + vpTop, colWidth, viewH);
       scrollContent.setMask(maskG.createGeometryMask());
@@ -2220,10 +2221,13 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       scrollBar.on('pointerdown', () => { dragging = true; });
       scene.input.on('pointermove', onMove);
       scene.input.on('pointerup', onUp);
-      c.once(Phaser.GameObjects.Events.DESTROY, () => {
+      // 挂到 scrollContent 的 DESTROY（而非面板 c）：拍卖行改为「只重建列表区」后，面板 c 不再销毁，
+      // 必须由 scrollContent 级联销毁来触发监听清理，否则 wheel/drag 监听会泄漏并多实例冲突。
+      scrollContent.once(Phaser.GameObjects.Events.DESTROY, () => {
         scene.input.off('wheel', onWheel);
         scene.input.off('pointermove', onMove);
         scene.input.off('pointerup', onUp);
+        if (maskG) maskG.destroy();
       });
     }
   }
@@ -2613,10 +2617,12 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     else if (auctionPanelTab === 'history') requestAuctionHistory();
   }
 
+  // 只重建列表区（auctionBody），不销毁整个面板壳——避免每次操作都 resumeFromMenu/pauseForMenu
+  // 造成相机闪烁，也根除「重建时 scene.auctionPanel 短暂为 null → renderAuctionBody 直接 return」的时序 bug。
   function rebuildAuction(scene: GameScene): void {
-    closeAuctionPanel(scene);
-    scene.pauseForMenu();
-    scene.auctionPanel = renderAuctionPanel(scene, false);
+    if (!scene.auctionPanel) { openAuctionPanel(scene); return; }
+    renderAuctionBody(scene);
+    if (!auctionCreating) reqAuctionTab();
   }
 
   function aBtn(scene: GameScene, c: Phaser.GameObjects.Container, lx: number, ly: number, label: string, color: number, textColor: string, cb: () => void): void {
@@ -2726,6 +2732,9 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     auctionCx = Math.round(cam.scrollX) + GAME_WIDTH / 2;
     auctionCy = Math.round(cam.scrollY) + GAME_HEIGHT / 2;
     const c = scene.add.container(auctionCx, auctionCy).setDepth(500);
+    // 关键：在 renderAuctionBody 之前即绑定引用，否则 renderAuctionBody 内 `if (!scene.auctionPanel) return`
+    // 会因赋值时机（renderAuctionPanel 返回后才赋值）而直接 return，导致内容区空白（尤其上架模式无异步补渲染）。
+    scene.auctionPanel = c;
     const PW = AUCTION_PW, PH = AUCTION_PH;
     const px = -PW / 2, py = -PH / 2;
 
@@ -2812,6 +2821,9 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     if (auctionBody) { auctionBody.destroy(true); auctionBody = null; }
     auctionBodyInputs.forEach(el => { try { if (el.parentNode) el.parentNode.removeChild(el); } catch {} });
     auctionBodyInputs = [];
+    // 面板壳不再随切 tab 重建，故按当前 tab 显隐市场搜索框（非 market/上架时隐藏，避免残留）
+    const showShell = auctionPanelTab === 'market' && !auctionCreating;
+    auctionShellInputs.forEach(it => { it.el.style.display = showShell ? '' : 'none'; });
     const c = scene.auctionPanel!;
     const body = scene.add.container(0, 0); c.add(body); auctionBody = body;
 
