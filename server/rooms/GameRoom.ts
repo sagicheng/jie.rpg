@@ -8,8 +8,9 @@
 import { Room, Client } from '@colyseus/core';
 import { GameRoomState, GamePlayer, MonsterState } from '../schema';
 import { world, type OpResult } from '../world';
-import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld, addGuildExp, addMemberContribution, getFriends } from '../db';
+import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld, addGuildExp, addMemberContribution, getFriends, listAuctions, myAuctions, getFavorites, addFavorite, removeFavorite, isFavorited, getHistory } from '../db';
 import { guildShopBuy } from '../guildShop';
+import { createAuction, buyAuction, cancelAuction } from '../auction';
 import { enqueueArena, dequeueArena, queueSize } from '../arenaService';
 import { isArenaOpen, ARENA_WEEKLY_CAP } from '../arena';
 import { zoneName } from '../zoneNames';
@@ -73,6 +74,24 @@ export function sendToCharId(charId: number, msgType: string, data: any): boolea
     if (rec.charId === charId) { rec.client.send(msgType, data); sent = true; }
   });
   return sent;
+}
+
+/** 给某角色加金币：在线→通过其 GameRoom 实例 worldSync 到账；离线→直接改 DB world_data（安全，无内存副本）。用于拍卖行卖家成交结算。 */
+function addGoldToChar(charId: number, amt: number): void {
+  let targetSid: string | undefined;
+  onlineClients.forEach((rec) => { if (rec.charId === charId) targetSid = rec.client.sessionId; });
+  if (targetSid !== undefined) {
+    const pw = world.get(targetSid);
+    if (pw) {
+      world.addGold(pw, amt);
+      onlineClients.get(targetSid)?.client.send('worldSync', pw);
+    }
+    return;
+  }
+  try {
+    const c = getCharacter(charId);
+    if (c) { const w: any = JSON.parse(c.world_data); w.gold = (w.gold || 0) + amt; saveCharacterWorld(charId, JSON.stringify(w)); }
+  } catch {}
 }
 
 /** 取某 charId 的当前在线地图场景名（不在线返回 null）。 */
@@ -430,6 +449,66 @@ export class GameRoom extends Room<GameRoomState> {
           const cid = sessionCharMap.get(client.sessionId);
           if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
           res = guildShopBuy(pw, cid, String(data.itemId || ''));
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
+        // ——— 拍卖行（一口价）———
+        case 'auctionList': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          const list = listAuctions(data.filter || {});
+          const favSet = new Set(getFavorites(cid));
+          client.send('auctionData', { tab: 'market', auctions: list.map((a: any) => ({ ...a, favorited: favSet.has(a.id) })) });
+          return; // 列表非 pw，不走 worldSync
+        }
+        case 'auctionMine': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          const list = myAuctions(cid);
+          client.send('auctionData', { tab: 'mine', auctions: list.map((a: any) => ({ ...a, favorited: isFavorited(cid, a.id) })) });
+          return;
+        }
+        case 'auctionFavList': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          const ids = getFavorites(cid);
+          const list = listAuctions({}).filter((a: any) => ids.includes(a.id));
+          client.send('auctionData', { tab: 'fav', auctions: list.map((a: any) => ({ ...a, favorited: true })) });
+          return;
+        }
+        case 'auctionHistory': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          client.send('auctionData', { tab: 'history', history: getHistory(cid) });
+          return;
+        }
+        case 'auctionFav': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          const id = Number(data.auctionId);
+          if (data.on) addFavorite(cid, id); else removeFavorite(cid, id);
+          res = { ok: true, msg: data.on ? '已收藏' : '已取消收藏' };
+          break;
+        }
+        case 'auctionCreate': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = createAuction(pw, cid, String(data.itemId || ''), Number(data.qty) || 1, Number(data.price) || 0);
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
+        case 'auctionBuy': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          const r = buyAuction(pw, cid, Number(data.auctionId) || 0);
+          if (r.ok && r.data) { addGoldToChar(r.data.sellerCharId, r.data.sellerGain); try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          res = r;
+          break;
+        }
+        case 'auctionCancel': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = cancelAuction(pw, cid, Number(data.auctionId) || 0);
           if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
           break;
         }

@@ -25,6 +25,8 @@ export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
     friendList: Array<{ charId: number; name: string; online: boolean; location: string }> = [];
     friendRequests: Array<{ charId: number; name: string }> = [];
     friendOnline: Record<number, boolean> = {};
+    /** 拍卖行（客户端缓存，收到 auctionData 消息时由 GameRoom 写入；面板据此渲染） */
+    auctionData: any = null;
     /** 统一聊天记录：多频道（world/guild/team/whisper/system/event）合并，按 channel 分流展示 */
     chatLog: Array<{ channel: string; fromName: string; fromCharId: number; text: string; ts: number }> = [];
     level = 1;
@@ -47,6 +49,7 @@ export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
       this.guildLevel = 1; this.guildExp = 0; this.guildExpCap = 0;
       this.guildContribution = 0; this.guildMyContribution = 0; this.guildSkills = {};
       this.friendList = []; this.friendRequests = []; this.friendOnline = {};
+      this.auctionData = null;
       Inventory.reset();
       Kido.reset();
     }

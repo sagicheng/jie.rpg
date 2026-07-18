@@ -13,7 +13,7 @@ import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
-import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel, renderFriendPanel } from '../ui/panels';
+import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel, renderFriendPanel, renderAuctionPanel, openAuctionPanel, closeAuctionPanel, toggleAuctionPanel, refreshAuctionPanel } from '../ui/panels';
 import { GuildClient } from '../systems/GuildClient';
 import { applyGuildStatBonus } from '../systems/GuildSkills';
 import { getClient } from '../net/Net';
@@ -80,6 +80,8 @@ export class GameScene extends Phaser.Scene {
   public guildPanel: Phaser.GameObjects.Container | null = null;
   // 好友面板（O 键开关）
   public friendPanel: Phaser.GameObjects.Container | null = null;
+  // 拍卖行面板（P 键开关）
+  public auctionPanel: Phaser.GameObjects.Container | null = null;
   // 全局聊天 HUD（底部常驻，统一多频道）
   public chatHud: Phaser.GameObjects.Container | null = null;
   public chatHudLines: Phaser.GameObjects.Container | null = null;
@@ -266,6 +268,7 @@ export class GameScene extends Phaser.Scene {
       if (this.titlePanel) { closeTitlePanel(this); return; }
       if (this.bestiaryPanel) { closeBestiaryPanel(this); return; }
       if (this.questLogPanel) { this.questLogPanel.destroy(true); this.questLogPanel = null; this.resumeFromMenu(); return; }
+      if (this.auctionPanel) { closeAuctionPanel(this); return; }
       if (this.isInDialogue) return;
       SaveManager.save();
       const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '已存档', {
@@ -280,7 +283,7 @@ export class GameScene extends Phaser.Scene {
 
     // 鼠标点击移动（组队非队长禁止）
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel || this.mallPanel || this.guildPanel || this.friendPanel) return;
+      if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel || this.namingPanelActive || this.shopPanel || this.mallPanel || this.guildPanel || this.friendPanel || this.auctionPanel) return;
       if (this.teamPanelFull || this.dungeonConfirmOpen) return; // 模态界面打开时不移动
       if (this.teamId && this.teamLeaderSid !== this.mySessionId) return; // 非队长不移
       const wp = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
@@ -418,6 +421,15 @@ export class GameScene extends Phaser.Scene {
       if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
       if (this.inventoryPanel || this.statPanel) return;
       this.toggleFriendPanel();
+    });
+
+    // P 键：开关拍卖行面板（一口价交易 + 收藏/历史）
+    this.input.keyboard!.addKey('P').on('down', () => {
+      if (this.ctrlKey.isDown) return;
+      if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
+      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
+      if (this.inventoryPanel || this.statPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.guildPanel || this.friendPanel) return;
+      this.toggleAuctionPanel();
     });
 
     // Enter 键：聚焦全局聊天输入框（模态/战斗/副本中不抢占）
@@ -1316,6 +1328,12 @@ export class GameScene extends Phaser.Scene {
           }
         });
 
+        // 拍卖行数据（列表/我的挂单/收藏/历史经 intent 请求后由服务端下发，客户端缓存并渲染/重渲染）
+        room.onMessage('auctionData', (m: any) => {
+          GameState.auctionData = m;
+          if (this.auctionPanel) refreshAuctionPanel(this);
+        });
+
         // 进房后拉取公会归属（供聊天发送/面板首屏/战斗加成）
         GuildClient.info(this.authToken, this.characterId).then((r: any) => {
           if (r && r.ok && r.inGuild) {
@@ -1691,6 +1709,17 @@ export class GameScene extends Phaser.Scene {
   /** 好友面板内刷新（申请后/实时通知到达时重拉列表）。 */
   private refreshFriendPanel(): void {
     if (this.friendPanel) { this.closeFriendPanel(); this.openFriendPanel(); }
+  }
+
+  // ——— 拍卖行面板（P 键）———
+  private toggleAuctionPanel(): void {
+    if (this.auctionPanel) closeAuctionPanel(this);
+    else openAuctionPanel(this);
+  }
+  public openAuctionPanel(reset = true): void {
+    closeAuctionPanel(this);
+    this.pauseForMenu();
+    this.auctionPanel = renderAuctionPanel(this, reset);
   }
   /** 从好友面板"私聊"按钮进入：关闭面板 + 切到私聊频道 + 设定目标 + 聚焦输入框。 */
   public whisperTo(charId: number, name?: string): void {

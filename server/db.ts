@@ -431,4 +431,114 @@ export function removeFriend(charId: number, friendId: number): void {
     .run(charId, friendId, friendId, charId);
 }
 
+// ============= 拍卖行系统（建表，幂等） =============
+// 一口价挂单（竞价为二期）。auctions 冻结物品用 item_data(JSON) 存全量 WorldItem；冗余 item_name/quality 便于名称模糊搜 + 品质筛选。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS auctions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    seller_char_id  INTEGER NOT NULL,
+    seller_name     TEXT NOT NULL,
+    item_name       TEXT NOT NULL,
+    item_data       TEXT NOT NULL,
+    quantity        INTEGER NOT NULL DEFAULT 1,
+    price           INTEGER NOT NULL,
+    category        TEXT NOT NULL,
+    quality         TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at      TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS auction_favorites (
+    char_id    INTEGER NOT NULL,
+    auction_id INTEGER NOT NULL,
+    PRIMARY KEY (char_id, auction_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS auction_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    auction_id      INTEGER NOT NULL,
+    seller_char_id  INTEGER NOT NULL,
+    buyer_char_id   INTEGER,
+    item_name       TEXT NOT NULL,
+    price           INTEGER NOT NULL,
+    kind            TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+// ============= 拍卖行系统查询 =============
+export interface AuctionRow {
+  id: number; seller_char_id: number; seller_name: string; item_name: string;
+  item_data: string; quantity: number; price: number; category: string; quality: string | null;
+  created_at: string; expires_at: string;
+}
+
+export interface AuctionFilter {
+  category?: string; quality?: string; name?: string;
+  minPrice?: number; maxPrice?: number;
+  sort?: 'price_asc' | 'price_desc' | 'recent';
+}
+
+/** 浏览挂单（一口价）。支持 类型/品质/名称模糊/价格区间/排序 过滤。 */
+export function listAuctions(f: AuctionFilter = {}): AuctionRow[] {
+  const where: string[] = [];
+  const args: any[] = [];
+  if (f.category) { where.push('category = ?'); args.push(f.category); }
+  if (f.quality) { where.push('quality = ?'); args.push(f.quality); }
+  if (f.name) { where.push('item_name LIKE ?'); args.push(`%${f.name}%`); }
+  if (typeof f.minPrice === 'number') { where.push('price >= ?'); args.push(f.minPrice); }
+  if (typeof f.maxPrice === 'number') { where.push('price <= ?'); args.push(f.maxPrice); }
+  const order = f.sort === 'price_desc' ? 'price DESC' : f.sort === 'recent' ? 'created_at DESC' : 'price ASC';
+  const sql = `SELECT * FROM auctions ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${order}`;
+  return db.prepare(sql).all(...args) as AuctionRow[];
+}
+
+export function getAuction(id: number): AuctionRow | undefined {
+  return db.prepare('SELECT * FROM auctions WHERE id = ?').get(id) as AuctionRow | undefined;
+}
+
+/** 我的在售挂单。 */
+export function myAuctions(charId: number): AuctionRow[] {
+  return db.prepare('SELECT * FROM auctions WHERE seller_char_id = ? ORDER BY created_at DESC').all(charId) as AuctionRow[];
+}
+
+export function deleteAuction(id: number): void {
+  db.prepare('DELETE FROM auctions WHERE id = ?').run(id);
+}
+
+/** 清理过期挂单：返回已过期的挂单（物品由调用方退回卖家背包）。 */
+export function expiredAuctions(): AuctionRow[] {
+  return db.prepare("SELECT * FROM auctions WHERE expires_at < datetime('now')").all() as AuctionRow[];
+}
+
+// ——— 收藏 ———
+export function addFavorite(charId: number, auctionId: number): void {
+  db.prepare('INSERT OR IGNORE INTO auction_favorites (char_id, auction_id) VALUES (?, ?)').run(charId, auctionId);
+}
+export function removeFavorite(charId: number, auctionId: number): void {
+  db.prepare('DELETE FROM auction_favorites WHERE char_id = ? AND auction_id = ?').run(charId, auctionId);
+}
+export function isFavorited(charId: number, auctionId: number): boolean {
+  return !!db.prepare('SELECT 1 FROM auction_favorites WHERE char_id = ? AND auction_id = ?').get(charId, auctionId);
+}
+export function getFavorites(charId: number): number[] {
+  return (db.prepare('SELECT auction_id FROM auction_favorites WHERE char_id = ?').all(charId) as Array<{ auction_id: number }>).map(r => r.auction_id);
+}
+
+// ——— 历史 ———
+export interface AuctionHistoryRow {
+  id: number; auction_id: number; seller_char_id: number; buyer_char_id: number | null;
+  item_name: string; price: number; kind: string; created_at: string;
+}
+export function insertHistory(h: {
+  auction_id: number; seller_char_id: number; buyer_char_id: number | null;
+  item_name: string; price: number; kind: string;
+}): void {
+  db.prepare('INSERT INTO auction_history (auction_id, seller_char_id, buyer_char_id, item_name, price, kind) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(h.auction_id, h.seller_char_id, h.buyer_char_id, h.item_name, h.price, h.kind);
+}
+export function getHistory(charId: number): AuctionHistoryRow[] {
+  return db.prepare('SELECT * FROM auction_history WHERE seller_char_id = ? OR buyer_char_id = ? ORDER BY created_at DESC').all(charId, charId) as AuctionHistoryRow[];
+}
+
 export default db;

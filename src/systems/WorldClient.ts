@@ -126,6 +126,16 @@ export function requestDevGrantSet(zone: number, quality: string): boolean {
 export function requestGuildShopBuy(itemId: string): boolean {
   return sendIntent('guildBuy', { itemId });
 }
+
+// ——— 拍卖行（一口价）———
+export function requestAuctionList(filter: any): boolean { return sendIntent('auctionList', { filter }); }
+export function requestAuctionMine(): boolean { return sendIntent('auctionMine', {}); }
+export function requestAuctionFavList(): boolean { return sendIntent('auctionFavList', {}); }
+export function requestAuctionHistory(): boolean { return sendIntent('auctionHistory', {}); }
+export function requestAuctionFav(auctionId: number, on: boolean): boolean { return sendIntent('auctionFav', { auctionId, on }); }
+export function requestAuctionCreate(itemId: string, qty: number, price: number): boolean { return sendIntent('auctionCreate', { itemId, qty, price }); }
+export function requestAuctionBuy(auctionId: number): boolean { return sendIntent('auctionBuy', { auctionId }); }
+export function requestAuctionCancel(auctionId: number): boolean { return sendIntent('auctionCancel', { auctionId }); }
 export function requestClaimQuest(questId: string): boolean {
   return sendIntent('claimQuest', { questId });
 }

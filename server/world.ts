@@ -380,6 +380,15 @@ export class WorldService {
     pw.inventory.push({ ...item, quantity: item.quantity || 1 });
   }
 
+  /** 从背包移除指定物品及数量（上架冻结/消耗用）。数量不足或不存在返回 false。 */
+  removeItem(pw: PlayerWorld, itemId: string, qty: number): boolean {
+    const item = pw.inventory.find(i => i.id === itemId);
+    if (!item || (item.quantity || 0) < qty) return false;
+    if ((item.quantity || 0) > qty) item.quantity -= qty;
+    else pw.inventory = pw.inventory.filter(i => i !== item);
+    return true;
+  }
+
   /** 战利品（来自 BattleRoom 权威结算）。 */
   grantLoot(pw: PlayerWorld, drops: WorldItem[]): void {
     for (const d of drops) this.grantItem(pw, d);
