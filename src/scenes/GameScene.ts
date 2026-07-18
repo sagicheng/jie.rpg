@@ -13,7 +13,7 @@ import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData
 import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
 import { BOSS_CONFIG } from '../systems/BossMechanics';
-import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel, renderFriendPanel, renderAuctionPanel, openAuctionPanel, closeAuctionPanel, toggleAuctionPanel, refreshAuctionPanel } from '../ui/panels';
+import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel, renderFriendPanel, renderAuctionPanel, openAuctionPanel, closeAuctionPanel, toggleAuctionPanel, refreshAuctionPanel, openPetPanel, closePetPanel } from '../ui/panels';
 import { GuildClient } from '../systems/GuildClient';
 import { applyGuildStatBonus } from '../systems/GuildSkills';
 import { getClient } from '../net/Net';
@@ -25,7 +25,7 @@ const CHAT_COLORS: Record<string, string> = {
 const CHAT_PREFIX: Record<string, string> = {
   world: '[世界] ', guild: '[公会] ', team: '[队伍] ', system: '[系统] ', event: '[活动] ',
 };
-import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
+import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, requestPetGrantDev, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -82,6 +82,7 @@ export class GameScene extends Phaser.Scene {
   public friendPanel: Phaser.GameObjects.Container | null = null;
   // 拍卖行面板（P 键开关）
   public auctionPanel: Phaser.GameObjects.Container | null = null;
+  public petPanel: Phaser.GameObjects.Container | null = null;
   // 全局聊天 HUD（底部常驻，统一多频道）
   public chatHud: Phaser.GameObjects.Container | null = null;
   public chatHudLines: Phaser.GameObjects.Container | null = null;
@@ -269,6 +270,7 @@ export class GameScene extends Phaser.Scene {
       if (this.bestiaryPanel) { closeBestiaryPanel(this); return; }
       if (this.questLogPanel) { this.questLogPanel.destroy(true); this.questLogPanel = null; this.resumeFromMenu(); return; }
       if (this.auctionPanel) { closeAuctionPanel(this); return; }
+      if (this.petPanel) { closePetPanel(this); return; }
       if (this.isInDialogue) return;
       SaveManager.save();
       const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '已存档', {
@@ -388,6 +390,15 @@ export class GameScene extends Phaser.Scene {
           }
           break;
         }
+        case 'y':
+          // Dev 作弊键：发放一只随机灵宠（联机权威，落库以免重连丢失）
+          if (isOnline()) {
+            requestPetGrantDev();
+            showDevNotif('已申请发放灵宠（随机物种）', '#aaffcc');
+          } else {
+            showDevNotif('灵宠发放需联机（Ctrl+Y）', '#ff8888');
+          }
+          break;
         default:
           return; // 非调试键不拦截（Ctrl+C/V/X 等保持原行为）
       }
@@ -409,7 +420,7 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.addKey('J').on('down', () => {
       if (this.ctrlKey.isDown) return;
       if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
-      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
+      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel || this.petPanel) return;
       if (this.inventoryPanel || this.statPanel) return;
       this.toggleGuildPanel();
     });
@@ -418,7 +429,7 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.addKey('O').on('down', () => {
       if (this.ctrlKey.isDown) return;
       if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
-      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
+      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel || this.petPanel) return;
       if (this.inventoryPanel || this.statPanel) return;
       this.toggleFriendPanel();
     });
@@ -427,9 +438,18 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.addKey('P').on('down', () => {
       if (this.ctrlKey.isDown) return;
       if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
-      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
-      if (this.inventoryPanel || this.statPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.guildPanel || this.friendPanel) return;
+      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel || this.petPanel) return;
+      if (this.inventoryPanel || this.statPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.guildPanel || this.friendPanel || this.petPanel) return;
       this.toggleAuctionPanel();
+    });
+
+    // U 键：开关灵宠面板
+    this.input.keyboard!.addKey('U').on('down', () => {
+      if (this.ctrlKey.isDown) return;
+      if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
+      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel || this.petPanel) return;
+      if (this.inventoryPanel || this.statPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.guildPanel || this.friendPanel || this.auctionPanel) return;
+      this.togglePetPanel();
     });
 
     // Enter 键：聚焦全局聊天输入框（模态/战斗/副本中不抢占）
@@ -1475,6 +1495,7 @@ export class GameScene extends Phaser.Scene {
     if (this.enhancePanel) { closeEnhancePanel(this); toggleEnhancePanel(this); }
     if (this.shopPanel && this.lastShopItems) { openShop(this, this.lastShopItems); }
     if (this.mallPanel) { openMall(this); }
+    if (this.petPanel) { closePetPanel(this); openPetPanel(this); }
     // 好友面板不在此刷新：worldSync 联机下极频繁，每次重拉会反复闪「加载中」+ 打 REST。
     // 好友数据靠 friendNotify（上线/下线/申请/接受/拒绝/移除）实时自刷新，无需 worldSync 驱动。
   }
@@ -1720,6 +1741,11 @@ export class GameScene extends Phaser.Scene {
     closeAuctionPanel(this);
     this.pauseForMenu();
     this.auctionPanel = renderAuctionPanel(this, reset);
+  }
+  // ——— 灵宠面板（U 键）———
+  private togglePetPanel(): void {
+    if (this.petPanel) closePetPanel(this);
+    else openPetPanel(this);
   }
   /** 从好友面板"私聊"按钮进入：关闭面板 + 切到私聊频道 + 设定目标 + 聚焦输入框。 */
   public whisperTo(charId: number, name?: string): void {

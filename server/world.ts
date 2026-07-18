@@ -104,6 +104,75 @@ export interface PlayerWorld {
   activeTitle: string | null;
   // PVP 竞技场（服务端权威 + 持久化）
   arena: ArenaState;
+  // 灵宠（服务端权威 + 持久化；落库随 worldSync，重连不丢）
+  pets: Pet[];
+}
+
+export interface Pet {
+  id: string;
+  speciesId: string;
+  name: string;
+  level: number;
+  exp: number;
+  hp: number; maxHp: number;
+  atk: number; def: number; matk: number; mdef: number; spd: number;
+  loyalty: number;
+  active: boolean;
+}
+
+/** 灵宠物种定义（服务端权威；客户端仅镜像展示用字段）。 */
+export interface PetSpecies {
+  id: string; name: string; icon: string; color: number; desc: string;
+  base: { hp: number; atk: number; def: number; matk: number; mdef: number; spd: number };
+  growth: { hp: number; atk: number; def: number; matk: number; mdef: number; spd: number };
+  obtainZone: number;
+  skill?: { name: string; desc: string };
+}
+
+export const PET_SLOT_CAP = 6;
+
+export const PET_SPECIES: Record<string, PetSpecies> = {
+  fox_fire: { id: 'fox_fire', name: '赤焰狐', icon: '🦊', color: 0xff6633, desc: '火属性灵狐，魔攻与速度见长。', obtainZone: 2,
+    base: { hp: 120, atk: 18, def: 12, matk: 28, mdef: 16, spd: 22 }, growth: { hp: 14, atk: 2, def: 1.5, matk: 3, mdef: 2, spd: 2.5 },
+    skill: { name: '烈焰吐息', desc: '战斗中有几率对敌附加灼烧。' } },
+  tortoise_rock: { id: 'tortoise_rock', name: '玄岩龟', icon: '🐢', color: 0x889977, desc: '土属性灵龟，血厚防高。', obtainZone: 3,
+    base: { hp: 260, atk: 14, def: 30, matk: 8, mdef: 22, spd: 8 }, growth: { hp: 28, atk: 1.5, def: 3, matk: 1, mdef: 2.5, spd: 0.8 },
+    skill: { name: '岩石壁垒', desc: '开场为玩家附加护盾。' } },
+  hawk_wind: { id: 'hawk_wind', name: '青翼鹰', icon: '🦅', color: 0x66ccff, desc: '风属性灵鹰，速度与物攻突出。', obtainZone: 4,
+    base: { hp: 130, atk: 26, def: 12, matk: 14, mdef: 14, spd: 34 }, growth: { hp: 14, atk: 3, def: 1, matk: 1.5, mdef: 1.5, spd: 3 } },
+  serpent_water: { id: 'serpent_water', name: '碧水蟒', icon: '🐍', color: 0x33ccaa, desc: '水属性灵蟒，魔攻与血量兼备。', obtainZone: 5,
+    base: { hp: 200, atk: 16, def: 16, matk: 26, mdef: 20, spd: 16 }, growth: { hp: 22, atk: 1.5, def: 1.5, matk: 3, mdef: 2, spd: 1.5 } },
+  wolf_shadow: { id: 'wolf_shadow', name: '暗影狼', icon: '🐺', color: 0x9966cc, desc: '暗属性灵狼，物攻与速度凶猛。', obtainZone: 6,
+    base: { hp: 160, atk: 30, def: 16, matk: 12, mdef: 14, spd: 26 }, growth: { hp: 18, atk: 3, def: 1.5, matk: 1.2, mdef: 1.5, spd: 2.5 } },
+  bear_earth: { id: 'bear_earth', name: '撼地熊', icon: '🐻', color: 0xcc8844, desc: '土属性灵熊，血防物攻全面。', obtainZone: 7,
+    base: { hp: 300, atk: 28, def: 26, matk: 6, mdef: 14, spd: 10 }, growth: { hp: 32, atk: 3, def: 3, matk: 0.8, mdef: 1.5, spd: 1 } },
+  rabbit_spirit: { id: 'rabbit_spirit', name: '灵兔', icon: '🐇', color: 0xff99cc, desc: '光属性灵兔，魔防与速度灵巧。', obtainZone: 8,
+    base: { hp: 110, atk: 12, def: 10, matk: 22, mdef: 24, spd: 28 }, growth: { hp: 12, atk: 1, def: 1, matk: 2.5, mdef: 2.5, spd: 2.5 } },
+  dragonet: { id: 'dragonet', name: '幼麟', icon: '🐉', color: 0xffcc33, desc: '稀有麒麟幼兽，六维均衡且成长极高。', obtainZone: 9,
+    base: { hp: 220, atk: 24, def: 22, matk: 24, mdef: 22, spd: 24 }, growth: { hp: 24, atk: 2.5, def: 2.5, matk: 2.5, mdef: 2.5, spd: 2.5 },
+    skill: { name: '祥瑞', desc: '提升玩家全属性光环。' } },
+};
+
+/** 灵宠升到下一级所需经验。 */
+export function petExpForLevel(level: number): number {
+  return 80 * level;
+}
+
+/** 按物种与等级计算灵宠属性快照。 */
+export function computePetStats(sp: PetSpecies, level: number): { hp: number; atk: number; def: number; matk: number; mdef: number; spd: number } {
+  const f = (b: number, g: number) => Math.round(b + g * (level - 1));
+  return {
+    hp: f(sp.base.hp, sp.growth.hp),
+    atk: f(sp.base.atk, sp.growth.atk),
+    def: f(sp.base.def, sp.growth.def),
+    matk: f(sp.base.matk, sp.growth.matk),
+    mdef: f(sp.base.mdef, sp.growth.mdef),
+    spd: f(sp.base.spd, sp.growth.spd),
+  };
+}
+
+function genPetId(): string {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
 export interface OpResult { ok: boolean; msg: string; data?: any; type?: string; }
@@ -126,6 +195,7 @@ function seedWorld(): PlayerWorld {
     unlocks: [], zanpakuto: '', kidoSchool: null, kidoNodes: {}, kidoEquipped: [], kidoPoints: 0,
     bestiaryTierClaimed: [], unlockedTitles: [], activeTitle: null,
     arena: newArenaState(),
+    pets: [],
   };
 }
 
@@ -167,6 +237,7 @@ export class WorldService {
     if (data.dungeonWeekly) w.dungeonWeekly = data.dungeonWeekly;
     if (data.dungeon !== undefined) w.dungeon = data.dungeon;
     if (Array.isArray(data.unlocks)) w.unlocks = data.unlocks;
+    if (Array.isArray(data.pets)) w.pets = data.pets as Pet[];
     if (typeof data.zanpakuto === 'string') w.zanpakuto = data.zanpakuto;
     if (typeof data.kidoSchool === 'string' || data.kidoSchool === null) w.kidoSchool = data.kidoSchool;
     if (data.kidoNodes) w.kidoNodes = data.kidoNodes;
@@ -616,6 +687,87 @@ export class WorldService {
     armorSlots.forEach(s => give(s, armorStats));
     jewelSlots.forEach(s => give(s, jewelStats));
     return { ok: true, msg: `已发放测试套装 第${zone}区·${quality}（5防具+4饰品已装备）` };
+  }
+
+  // ───────────────── 灵宠系统（服务端权威） ─────────────────
+  /** 获得一只灵宠（按物种生成 Lv1 属性快照）。首只自动出战。 */
+  createPet(pw: PlayerWorld, speciesId: string, name?: string): OpResult {
+    const sp = PET_SPECIES[speciesId];
+    if (!sp) return { ok: false, msg: '未知灵宠物种' };
+    if (!Array.isArray(pw.pets)) pw.pets = [];
+    if (pw.pets.length >= PET_SLOT_CAP) return { ok: false, msg: `灵宠栏已满（上限 ${PET_SLOT_CAP}）` };
+    const stats = computePetStats(sp, 1);
+    const pet: Pet = {
+      id: genPetId(), speciesId, name: name || sp.name, level: 1, exp: 0,
+      hp: stats.hp, maxHp: stats.hp, atk: stats.atk, def: stats.def, matk: stats.matk, mdef: stats.mdef, spd: stats.spd,
+      loyalty: 50, active: pw.pets.length === 0,
+    };
+    pw.pets.push(pet);
+    return { ok: true, msg: `获得灵宠 ${pet.name}`, data: { pet } };
+  }
+
+  /** 设置出战灵宠（同玩家仅一只出战）。 */
+  setActivePet(pw: PlayerWorld, petId: string): OpResult {
+    if (!Array.isArray(pw.pets)) pw.pets = [];
+    const pet = pw.pets.find(p => p.id === petId);
+    if (!pet) return { ok: false, msg: '灵宠不存在' };
+    pw.pets.forEach(p => { p.active = p.id === petId; });
+    return { ok: true, msg: `${pet.name} 已出战` };
+  }
+
+  /** 给灵宠加经验并自动升级（重算属性快照，回满血）。 */
+  addPetExp(pw: PlayerWorld, petId: string, amount: number): OpResult {
+    if (!Array.isArray(pw.pets)) pw.pets = [];
+    const pet = pw.pets.find(p => p.id === petId);
+    if (!pet) return { ok: false, msg: '灵宠不存在' };
+    const sp = PET_SPECIES[pet.speciesId];
+    if (!sp) return { ok: false, msg: '灵宠物种缺失' };
+    pet.exp += Math.max(0, amount);
+    let leveled = false;
+    while (pet.level < 70 && pet.exp >= petExpForLevel(pet.level)) {
+      pet.exp -= petExpForLevel(pet.level);
+      pet.level++;
+      leveled = true;
+    }
+    if (leveled) {
+      const s = computePetStats(sp, pet.level);
+      pet.hp = pet.maxHp = s.hp; pet.atk = s.atk; pet.def = s.def; pet.matk = s.matk; pet.mdef = s.mdef; pet.spd = s.spd;
+    }
+    return { ok: true, msg: leveled ? `${pet.name} 升至 Lv${pet.level}` : '经验已增加', data: { leveled, level: pet.level } };
+  }
+
+  /** 放生灵宠（若出战中则改由首只接替出战）。 */
+  releasePet(pw: PlayerWorld, petId: string): OpResult {
+    if (!Array.isArray(pw.pets)) pw.pets = [];
+    const idx = pw.pets.findIndex(p => p.id === petId);
+    if (idx < 0) return { ok: false, msg: '灵宠不存在' };
+    const wasActive = pw.pets[idx].active;
+    const name = pw.pets[idx].name;
+    pw.pets.splice(idx, 1);
+    if (wasActive && pw.pets.length > 0) pw.pets[0].active = true;
+    return { ok: true, msg: `已放生 ${name}` };
+  }
+
+  /** 收回出战（取消出战，不删除灵宠；同玩家可无出战灵宠）。 */
+  recallPet(pw: PlayerWorld, petId: string): OpResult {
+    if (!Array.isArray(pw.pets)) pw.pets = [];
+    const pet = pw.pets.find(p => p.id === petId);
+    if (!pet) return { ok: false, msg: '灵宠不存在' };
+    pet.active = false;
+    return { ok: true, msg: `${pet.name} 已收回` };
+  }
+
+  /** 取当前出战灵宠（无则 null）。 */
+  getActivePet(pw: PlayerWorld): Pet | null {
+    if (!Array.isArray(pw.pets)) return null;
+    return pw.pets.find(p => p.active) || null;
+  }
+
+  /** Dev 作弊键触发：发放一只灵宠（随机物种或指定）。服务端权威，落库以免重连丢失。 */
+  grantPetTest(pw: PlayerWorld, speciesId?: string): OpResult {
+    const keys = Object.keys(PET_SPECIES);
+    const id = speciesId && PET_SPECIES[speciesId] ? speciesId : keys[Math.floor(Math.random() * keys.length)];
+    return this.createPet(pw, id);
   }
 
   // ───────────────── 强化 / 精炼 / 分解 / 重铸 ─────────────────

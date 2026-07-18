@@ -19,6 +19,15 @@ export interface WorldItem {
   set?: string; // 套装标识 `${zone}_${quality}`
   enhanceLevel?: number; refineStats?: Array<{ key: string; value: number }>;
 }
+/** 灵宠客户端镜像类型（与服务端 world.ts 的 Pet 保持一致）。 */
+export interface Pet {
+  id: string; speciesId: string; name: string;
+  level: number; exp: number;
+  hp: number; maxHp: number;
+  atk: number; def: number; matk: number; mdef: number; spd: number;
+  loyalty: number; active: boolean;
+}
+export const PET_SLOT_CAP_CLIENT = 6;
 export interface PlayerWorld {
   inventory: WorldItem[];
   equipment: Record<string, WorldItem | null>;
@@ -46,6 +55,7 @@ export interface PlayerWorld {
     bestTierEver: string; weeklyUsed: number; week: string;
     history: Array<{ season: number; tier: string; points: number }>;
   } | null;
+  pets: Pet[];
 }
 
 /** 副本进度客户端镜像（供地图传送阵提示使用）。 */
@@ -136,6 +146,11 @@ export function requestAuctionFav(auctionId: number, on: boolean): boolean { ret
 export function requestAuctionCreate(itemId: string, qty: number, price: number): boolean { return sendIntent('auctionCreate', { itemId, qty, price }); }
 export function requestAuctionBuy(auctionId: number): boolean { return sendIntent('auctionBuy', { auctionId }); }
 export function requestAuctionCancel(auctionId: number): boolean { return sendIntent('auctionCancel', { auctionId }); }
+// ——— 灵宠系统 ———
+export function requestPetSetActive(petId: string): boolean { return sendIntent('petSetActive', { petId }); }
+export function requestPetRelease(petId: string): boolean { return sendIntent('petRelease', { petId }); }
+export function requestPetGrantDev(speciesId?: string): boolean { return sendIntent('petGrantDev', { speciesId: speciesId || null }); }
+export function requestPetRecall(petId: string): boolean { return sendIntent('petRecall', { petId }); }
 export function requestClaimQuest(questId: string): boolean {
   return sendIntent('claimQuest', { questId });
 }
@@ -225,6 +240,9 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
   GameState.bestiaryTierClaimed = Array.isArray(pw.bestiaryTierClaimed) ? [...pw.bestiaryTierClaimed] : [];
   GameState.unlockedTitles = Array.isArray(pw.unlockedTitles) ? [...pw.unlockedTitles] : [];
   GameState.activeTitle = pw.activeTitle === undefined ? GameState.activeTitle : pw.activeTitle;
+
+  // 灵宠（服务端权威 + 持久化）：覆盖本地，使出战/属性随 worldSync 实时更新
+  GameState.pets = Array.isArray(pw.pets) ? pw.pets : [];
 
   // 已完成任务（服务端权威；与本地活动任务进度合并，避免本地标记丢失）
   const merged = new Set<string>([...GameState.questCompleted, ...pw.completedQuests]);

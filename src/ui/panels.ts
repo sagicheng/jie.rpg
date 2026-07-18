@@ -10,6 +10,7 @@ import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierP
 import { expForLevel } from '../systems/BattleData';
 import { Inventory, EquipSlot, Item } from '../systems/Inventory';
 import { listSetProgress, setShortName } from '../systems/SetSystem';
+import { PET_SPECIES_CLIENT, petIcon, petColor, computePetAura } from '../systems/PetSystem';
 import { applyConsumable, getConsumableEffect } from '../systems/ConsumableSystem';
 import { createPlayerStatus } from '../systems/StatusSystem';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS, getQuestDef, rollDailyPool, rollWeeklyPool, DAILY_CAP, WEEKLY_CAP } from '../systems/QuestData';
@@ -28,6 +29,7 @@ import {
   requestGuildShopBuy,
   requestAuctionList, requestAuctionMine, requestAuctionFavList, requestAuctionHistory,
   requestAuctionFav, requestAuctionCreate, requestAuctionBuy, requestAuctionCancel,
+  requestPetSetActive, requestPetRelease, requestPetRecall,
 } from '../systems/WorldClient';
 import { GUILD_SHOP_ITEMS } from '../systems/GuildShop';
 
@@ -557,6 +559,11 @@ export function renderStatPanel(scene: GameScene): void {
       .on('pointerover', function (this: any) { this.setColor('#ffe0a0'); this.setBackgroundColor('#553300aa'); })
       .on('pointerout', function (this: any) { this.setColor('#ffcc88'); this.setBackgroundColor('#33220088'); })
       .on('pointerdown', () => { closeStatPanel(scene); openMall(scene); }));
+    // 灵宠入口
+    p.add(scene.add.text(ox + ow - 300, oy + th / 2, '灵宠', { fontSize: '15px', color: '#c9b6ff', fontStyle: 'bold', padding: { x: 8, y: 4 }, backgroundColor: '#221a44aa' }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+      .on('pointerover', function (this: any) { this.setColor('#e0d2ff'); this.setBackgroundColor('#332a66cc'); })
+      .on('pointerout', function (this: any) { this.setColor('#c9b6ff'); this.setBackgroundColor('#221a44aa'); })
+      .on('pointerdown', () => { closeStatPanel(scene); openPetPanel(scene); }));
 
     // Two-column layout with generous spacing
     const colW = (ow - 100) / 2;
@@ -3105,3 +3112,115 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       aBtn(scene, body, bx + 260, by + 320, '返回', 0x444466, '#aaaacc', () => { auctionCreateItem = null; rebuildAuction(scene); });
     }
   }
+
+// ══════════════════════════════════════════════════
+//  灵宠面板（U 键）— 查看 / 出战 / 收回 / 放生 + 光环预览
+// ══════════════════════════════════════════════════
+const PET_PW = 1100, PET_PH = 720;
+
+export function closePetPanel(scene: GameScene): void {
+  if (scene.petPanel) { scene.petPanel.destroy(true); scene.petPanel = null; }
+  scene.resumeFromMenu();
+}
+
+export function refreshPetPanel(scene: GameScene): void {
+  if (scene.petPanel) { closePetPanel(scene); openPetPanel(scene); }
+}
+
+export function openPetPanel(scene: GameScene): void {
+  closePetPanel(scene);
+  scene.pauseForMenu();
+  scene.petPanel = renderPetPanel(scene);
+}
+
+export function renderPetPanel(scene: GameScene): Phaser.GameObjects.Container {
+  const cam = scene.cameras.main;
+  const c = scene.add.container(Math.round(cam.scrollX), Math.round(cam.scrollY)).setDepth(500);
+  scene.petPanel = c;
+
+  const PW = PET_PW, PH = PET_PH;
+  const ox = 40, oy = 30, ow = PW - 80, oh = PH - 60;
+
+  const ov = scene.add.graphics(); ov.fillStyle(0x000000, 0.78); ov.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT); ov.setInteractive(new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT), Phaser.Geom.Rectangle.Contains); c.add(ov);
+  const mb = scene.add.graphics(); mb.fillStyle(0x121224, 0.98); mb.fillRoundedRect(ox, oy, ow, oh, 12); mb.lineStyle(2, 0x6a5acd, 0.6); mb.strokeRoundedRect(ox, oy, ow, oh, 12); c.add(mb);
+
+  const th = 50;
+  const tb = scene.add.graphics(); tb.fillStyle(0x1a1a36, 1); tb.fillRoundedRect(ox + 4, oy + 4, ow - 8, th, { tl: 10, tr: 10, bl: 0, br: 0 }); c.add(tb);
+  c.add(scene.add.text(ox + 24, oy + th / 2, '🐾 灵 宠', { fontSize: '22px', color: '#c9b6ff', fontStyle: 'bold', padding: { x: 4, y: 4 } }).setOrigin(0, 0.5));
+  c.add(scene.add.text(ox + ow - 40, oy + th / 2, '✕', { fontSize: '22px', color: '#cc6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+    .on('pointerover', function (this: any) { this.setColor('#ff8888'); }).on('pointerout', function (this: any) { this.setColor('#cc6666'); })
+    .on('pointerdown', () => closePetPanel(scene)));
+
+  const pets: any[] = (GameState as any).pets || [];
+  const listY = oy + th + 16;
+  const cardH = 104, gap = 12;
+  const cw = ow - 40;
+  const cx0 = ox + 20;
+
+  if (pets.length === 0) {
+    c.add(scene.add.text(ox + ow / 2, oy + oh / 2 - 16, '暂无灵宠', { fontSize: '20px', color: '#aaaaaa', padding: { x: 4, y: 4 } }).setOrigin(0.5));
+    c.add(scene.add.text(ox + ow / 2, oy + oh / 2 + 18, '击败妖兽有机会收服，或按 Ctrl+Y 让开发快捷键发放一只', { fontSize: '14px', color: '#888888', padding: { x: 4, y: 4 } }).setOrigin(0.5));
+    return c;
+  }
+
+  pets.forEach((pet: any, i: number) => {
+    const cardY = listY + i * (cardH + gap);
+    const isActive = !!pet.active;
+    const card = scene.add.graphics();
+    card.fillStyle(isActive ? 0x1c2540 : 0x171728, 0.98);
+    card.fillRoundedRect(cx0, cardY, cw, cardH, 10);
+    card.lineStyle(2, isActive ? 0x7c6cff : petColor(pet.speciesId), isActive ? 0.9 : 0.5);
+    card.strokeRoundedRect(cx0, cardY, cw, cardH, 10);
+    c.add(card);
+
+    const ix = cx0 + 18, iy = cardY + cardH / 2;
+    const tile = scene.add.graphics(); tile.fillStyle(petColor(pet.speciesId), 0.22); tile.fillRoundedRect(ix, iy - 32, 64, 64, 10); tile.lineStyle(2, petColor(pet.speciesId), 0.8); tile.strokeRoundedRect(ix, iy - 32, 64, 64, 10); c.add(tile);
+    c.add(scene.add.text(ix + 32, iy, petIcon(pet.speciesId), { fontSize: '34px' }).setOrigin(0.5));
+
+    const tx = ix + 86;
+    c.add(scene.add.text(tx, cardY + 16, `${pet.name}`, { fontSize: '18px', color: '#ffffff', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0, 0.5));
+    c.add(scene.add.text(tx + 4, cardY + 40, `Lv.${pet.level}`, { fontSize: '14px', color: '#ffd27a', padding: { x: 4, y: 2 } }).setOrigin(0, 0.5));
+    if (isActive) {
+      const badge = scene.add.graphics(); badge.fillStyle(0x2a6e4a, 1); badge.fillRoundedRect(tx + 56, cardY + 30, 56, 22, 6); c.add(badge);
+      c.add(scene.add.text(tx + 84, cardY + 41, '出战', { fontSize: '13px', color: '#cfeedd', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0.5));
+    }
+
+    const need = 80 * pet.level;
+    const ratio = Math.min(1, (pet.exp || 0) / need);
+    const barX = tx, barY = cardY + 60, barW = 220, barH = 8;
+    const bg = scene.add.graphics(); bg.fillStyle(0x000000, 0.5); bg.fillRoundedRect(barX, barY, barW, barH, 4); c.add(bg);
+    const fg = scene.add.graphics(); fg.fillStyle(0x66ccff, 1); fg.fillRoundedRect(barX, barY, Math.max(2, barW * ratio), barH, 4); c.add(fg);
+    c.add(scene.add.text(barX + barW + 8, barY + barH / 2, `EXP ${pet.exp || 0}/${need}`, { fontSize: '11px', color: '#9fb8d8', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
+
+    const sx = tx + 320;
+    c.add(scene.add.text(sx, cardY + 14, `HP ${pet.maxHp}  ATK ${pet.atk}  DEF ${pet.def}`, { fontSize: '13px', color: '#cfd6e6', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
+    c.add(scene.add.text(sx, cardY + 36, `MATK ${pet.matk}  MDEF ${pet.mdef}  SPD ${pet.spd}`, { fontSize: '13px', color: '#cfd6e6', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
+    const sp = PET_SPECIES_CLIENT[pet.speciesId];
+    if (sp && sp.skillName) c.add(scene.add.text(sx, cardY + 58, `技能：${sp.skillName}`, { fontSize: '12px', color: '#b89cff', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
+
+    const btnX = cx0 + cw - 180;
+    const btnY = cardY + cardH / 2;
+    const toggle = scene.add.text(btnX, btnY, isActive ? '收回' : '出战', {
+      fontSize: '15px', color: isActive ? '#ffd27a' : '#cfeedd', fontStyle: 'bold', padding: { x: 14, y: 6 }, backgroundColor: isActive ? '#553a00aa' : '#113311aa',
+    }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
+    toggle.on('pointerdown', () => { if (isActive) requestPetRecall(pet.id); else requestPetSetActive(pet.id); refreshPetPanel(scene); });
+    c.add(toggle);
+
+    const rel = scene.add.text(btnX + 90, btnY, '放生', {
+      fontSize: '15px', color: '#ff9999', fontStyle: 'bold', padding: { x: 14, y: 6 }, backgroundColor: '#441111aa',
+    }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
+    rel.on('pointerdown', () => { requestPetRelease(pet.id); refreshPetPanel(scene); });
+    c.add(rel);
+  });
+
+  const active = pets.find((p: any) => p.active);
+  if (active) {
+    const aura = computePetAura(active);
+    if (aura) {
+      const ay = oy + oh - 26;
+      c.add(scene.add.text(ox + ow / 2, ay, `出战光环 →  HP+${aura.hp}  ATK+${aura.atk}  DEF+${aura.def}  MATK+${aura.matk}  MDEF+${aura.mdef}  SPD+${aura.spd}`, { fontSize: '14px', color: '#9fe6c0', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0.5));
+    }
+  }
+
+  return c;
+}

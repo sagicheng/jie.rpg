@@ -5,6 +5,7 @@ import { STAT_PER_POINT, POINTS_PER_LEVEL, ZANPAKUTO_GROWTH } from '../config';
 import { Inventory } from './Inventory';
 import { Kido } from './Kido';
 import { computeSetBonuses } from './SetSystem';
+import { computePetAura } from './PetSystem';
 import { expForLevel } from './BattleData';
 import { Constructor } from '../types';
 
@@ -21,6 +22,9 @@ export function GameStateStatsMixin<TBase extends Constructor>(Base: TBase) {
     element = '';
     statusAcc = 0;
     statusRes = 0;
+
+    // 灵宠（由 worldSync 重建；recalcStats 据此算光环加成）
+    pets: any[] = [];
 
     resetStats(): void {
       this.hp = 100; this.maxHp = 100; this.mp = 50; this.maxMp = 50;
@@ -87,6 +91,21 @@ export function GameStateStatsMixin<TBase extends Constructor>(Base: TBase) {
       if (setBonus.matk) this.matk = Math.round(this.matk * (1 + setBonus.matk));
       if (setBonus.mdef) this.mdef = Math.round(this.mdef * (1 + setBonus.mdef));
       if (setBonus.spd) this.spd = Math.round(this.spd * (1 + setBonus.spd));
+
+      // 灵宠光环（出战灵宠按比例提升玩家属性；联机下 pets 由 worldSync 重建并带 active 标记）
+      const petsArr = (this as any).pets as any[] | undefined;
+      const activePet = petsArr ? petsArr.find((p: any) => p.active) : null;
+      if (activePet) {
+        const aura = computePetAura(activePet);
+        if (aura) {
+          this.maxHp += aura.hp;
+          this.atk += aura.atk;
+          this.def += aura.def;
+          this.matk += aura.matk;
+          this.mdef += aura.mdef;
+          this.spd += aura.spd;
+        }
+      }
 
       this.statusAcc = (g as any).statusAcc || 0;
       this.hp = Math.min(this.hp || this.maxHp, this.maxHp);

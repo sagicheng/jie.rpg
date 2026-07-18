@@ -512,6 +512,35 @@ export class GameRoom extends Room<GameRoomState> {
           if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
           break;
         }
+        // ── 灵宠系统（服务端权威，变更即落库，worldSync 下发）──
+        case 'petSetActive': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = world.setActivePet(pw, String(data.petId || ''));
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
+        case 'petRelease': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = world.releasePet(pw, String(data.petId || ''));
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
+        case 'petGrantDev': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = world.grantPetTest(pw, data.speciesId ? String(data.speciesId) : undefined);
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
+        case 'petRecall': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = world.recallPet(pw, String(data.petId || ''));
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
       }
       client.send('intentResult', res);
       client.send('worldSync', pw);
