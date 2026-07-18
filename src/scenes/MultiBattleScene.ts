@@ -35,6 +35,7 @@ interface Card {
 interface Button {
   container: Phaser.GameObjects.Container;
   setEnable: (b: boolean) => void;
+  setVisible: (b: boolean) => void;
 }
 
 export interface ClientLoadout {
@@ -63,6 +64,9 @@ export class MultiBattleScene extends Phaser.Scene {
   private logText!: Phaser.GameObjects.Text;
   private turnText!: Phaser.GameObjects.Text;
   private actionBtns: Record<string, Button> = {};
+  private petActionBtns: Record<string, Button> = {};
+  private nextBtn!: Button;
+  private backBtn!: Button;
   private mpText!: Phaser.GameObjects.Text;
   private resultPanel: Phaser.GameObjects.Container | null = null;
 
@@ -89,19 +93,24 @@ export class MultiBattleScene extends Phaser.Scene {
   // 出战灵宠（v1.1 战斗协同）：随负载下发；宠物作为同一客户端的第二战斗员（SID = mySessionId+':pet'）
   private pet: ClientLoadout['pet'] = undefined;
   private petSid = '';
-  /** 本轮已提交指令的战斗员 SID 集合（人物 / 宠物分别守卫，支持同回合分别指挥）。 */
+  /** 本轮已提交指令的战斗员 SID 集合（人物 / 宠物分别守卫）。 */
   private submittedActors: Set<string> = new Set();
-  private petBtn: Button | null = null;
+
+  // —— 两步固定选择（梦幻/飘流式）：先人物、后灵宠 ——
+  /** 0=非指令阶段；1=人物指令阶段；2=灵宠指令阶段 */
+  private commandStep: 0 | 1 | 2 = 0;
+  /** 已暂存（本地）未上报的人物/灵宠指令；两步都确定后一起上报服务端 */
+  private stagedChar: { type: string; id?: string; targetId?: string } | null = null;
+  private stagedPet: { type: string; id?: string; targetId?: string } | null = null;
+  /** 待选目标：某 actor 已确定动作类型，等待点卡片选目标（多怪/选目标时） */
+  private pendingTarget: { actor: 'char' | 'pet'; type: string; id?: string } | null = null;
+
   /** 诊断标记：renderState 首帧是否已打印 players 快照 */
   private _diagPlayersLogged = false;
 
   // 子菜单 / 目标选择弹层
   private menu: Phaser.GameObjects.Container | null = null;
   private menuOpen = false;
-  private lastIsMyTurn = false;
-
-  // 待释放的单体意图（攻击 / 敌方单体技能 / 伤害型鬼道）：选中后不再弹选怪框，直接点敌人卡片释放
-  private pendingAction: { type: string; id?: string; actorSid?: string } | null = null;
 
   // 20s 决策倒计时显示（截止时间来自服务端 schema.turnExpiresAt，自己/队友回合都显示）
   private turnCountdownText!: Phaser.GameObjects.Text;
@@ -123,7 +132,10 @@ export class MultiBattleScene extends Phaser.Scene {
     this.pet = this.loadout.pet;
     this.petSid = '';
     this.submittedActors.clear();
-    this.petBtn = null;
+    this.commandStep = 0;
+    this.stagedChar = null;
+    this.stagedPet = null;
+    this.pendingTarget = null;
     this._diagPlayersLogged = false;
     this.dungeonId = data?.dungeonId || 0;
     this.dungeonStage = data?.dungeonStage || 0;
@@ -141,7 +153,6 @@ export class MultiBattleScene extends Phaser.Scene {
     this.intentionalLeave = false;
     this.menu = null;
     this.menuOpen = false;
-    this.pendingAction = null;
     this.lastReward = null;
   }
 
@@ -157,28 +168,42 @@ export class MultiBattleScene extends Phaser.Scene {
       fontSize: '14px', color: '#cccccc', wordWrap: { width: w - 120 }, lineSpacing: 4,
     }).setDepth(10);
 
-    // 命令栏：攻击/技能/鬼道/道具/防御/逃跑（还原单机完整指令，左右布局不变）
-    const cmdDefs: { label: string; type: string; color: number; act: () => void }[] = [
-      { label: '攻击', type: 'attack', color: 0x2e7d32, act: () => this.onAttack() },
+    // ——— 两步固定选择指令栏（梦幻/飘流式：先人物 6 项，后灵宠 3 项）———
+    const by = h - 70;
+    const bw = 140, bh = 48, bgap = 6;
+
+    // STEP1 人物指令（6 项）
+    const charDefs: { label: string; type: string; color: number; act: () => void }[] = [
+      { label: '攻击', type: 'attack', color: 0x2e7d32, act: () => this.onCharAttack() },
       { label: '技能', type: 'skill', color: 0x1565c0, act: () => this.openSkillMenu() },
       { label: '鬼道', type: 'kido', color: 0x283593, act: () => this.openKidoMenu() },
       { label: '道具', type: 'item', color: 0xef6c00, act: () => this.openItemMenu() },
-      { label: '防御', type: 'defend', color: 0x455a64, act: () => this.send({ type: 'defend' }) },
-      { label: '逃跑', type: 'escape', color: 0xc62828, act: () => this.send({ type: 'escape' }) },
+      { label: '防御', type: 'defend', color: 0x455a64, act: () => this.stageChar({ type: 'defend' }) },
+      { label: '逃跑', type: 'escape', color: 0xc62828, act: () => this.stageChar({ type: 'escape' }) },
     ];
-    const bw = 140, bh = 48, bgap = 6;
-    const totalW = bw * cmdDefs.length + bgap * (cmdDefs.length - 1);
-    const startX = (w - totalW) / 2 + bw / 2;
-    const by = h - 70;
-    cmdDefs.forEach((c, i) => {
-      const bx = startX + i * (bw + bgap);
+    const charTotalW = bw * charDefs.length + bgap * (charDefs.length - 1);
+    const charStartX = (w - charTotalW) / 2 + bw / 2;
+    charDefs.forEach((c, i) => {
+      const bx = charStartX + i * (bw + bgap);
       this.actionBtns[c.type] = this.makeButton(bx, by, c.label, c.color, c.act, bw, bh);
     });
-    // 「宠物」按钮：独立放置于命令栏最左侧，打开灵宠指令菜单（攻击/宠物技能/防御）。
-    // 不与 6 个角色按钮共用启用逻辑（角色按钮在人物已提交后禁用，宠物按钮按宠物是否提交独立判定）。
-    if (this.pet) {
-      this.petBtn = this.makeButton(95, by, '🐾宠物', 0x8a5cff, () => this.openPetMenu(), 120, bh);
-    }
+
+    // STEP2 灵宠指令（3 项：攻击 / 宠物技能 / 防御）
+    const petDefs: { label: string; color: number; act: () => void }[] = [
+      { label: '🐾攻击', color: 0x2e7d32, act: () => this.onPetAttack() },
+      { label: '✨宠物技能', color: 0x8a5cff, act: () => this.openPetSkillMenu() },
+      { label: '🛡防御', color: 0x455a64, act: () => this.stagePet({ type: 'defend' }) },
+    ];
+    const petTotalW = bw * petDefs.length + bgap * (petDefs.length - 1);
+    const petStartX = (w - petTotalW) / 2 + bw / 2;
+    petDefs.forEach((c, i) => {
+      const bx = petStartX + i * (bw + bgap);
+      this.petActionBtns[c.label] = this.makeButton(bx, by, c.label, c.color, c.act, bw, bh);
+    });
+
+    // 阶段切换按钮：STEP1「▶ 下一步(指挥灵宠)」、STEP2「← 返回改人物」
+    this.nextBtn = this.makeButton(w - 95, by, '▶ 下一步', 0x5c6bc0, () => this.advanceAfterChar(), 130, bh);
+    this.backBtn = this.makeButton(95, by, '← 返回', 0x8a5cff, () => this.goBackToChar(), 120, bh);
     this.mpText = this.add.text(w / 2, 110, '', { fontSize: '15px', color: '#88aaff' }).setOrigin(0.5).setDepth(10);
 
     // 20s 决策倒计时（由服务端 turnExpiresAt 驱动，覆盖自己与队友回合）
@@ -323,12 +348,55 @@ export class MultiBattleScene extends Phaser.Scene {
     this.renderState();
   }
 
-  // ——— 攻击：单怪直接打；多怪设待释放意图，点敌人卡片释放 ———
-  private onAttack(): void {
+  // ——— 两步选择辅助：暂存与上报 ———
+  private petAlive(): boolean {
+    if (!this.pet || !this.room?.state) return false;
+    const petp = this.room.state.players.get(this.petSid);
+    return !!petp && petp.alive;
+  }
+  private stageChar(a: { type: string; id?: string; targetId?: string }): void {
+    this.stagedChar = a;
+    this.advanceAfterChar();
+  }
+  private stagePet(a: { type: string; id?: string; targetId?: string }): void {
+    this.stagedPet = a;
+    this.advanceAfterPet();
+  }
+  private advanceAfterChar(): void {
+    if (!this.stagedChar) return;
+    if (this.petAlive()) this.commandStep = 2;
+    else this.submitAll();
+    this.refreshButtons();
+    this.renderState();
+  }
+  private advanceAfterPet(): void {
+    if (!this.stagedPet) return;
+    this.submitAll();
+  }
+  private submitAll(): void {
+    if (this.stagedChar) this.send({ type: this.stagedChar.type, id: this.stagedChar.id, targetId: this.stagedChar.targetId }, this.mySessionId);
+    if (this.stagedPet) this.send({ type: this.stagedPet.type, id: this.stagedPet.id, targetId: this.stagedPet.targetId }, this.petSid);
+    this.commandStep = 0;
+    this.stagedChar = null;
+    this.stagedPet = null;
+    this.pendingTarget = null;
+    this.refreshButtons();
+  }
+  private goBackToChar(): void {
+    if (this.commandStep !== 2) return;
+    this.commandStep = 1;
+    this.stagedPet = null;
+    this.pendingTarget = null;
+    this.refreshButtons();
+    this.renderState();
+  }
+
+  // ——— 人物：攻击（单怪直接暂存；多怪进待选目标）———
+  private onCharAttack(): void {
     if (!this.room || !this.room.state) return;
     const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
-    if (enemies.length === 1) this.send({ type: 'attack', targetId: enemies[0].id });
-    else this.setPendingTarget('attack');
+    if (enemies.length === 1) this.stageChar({ type: 'attack', targetId: enemies[0].id });
+    else this.armTarget('char', 'attack');
   }
 
   // ——— 技能子菜单 ———
@@ -362,9 +430,9 @@ export class MultiBattleScene extends Phaser.Scene {
     const tt = getSkillTargetType(sk);
     if (tt === 'enemy') {
       const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
-      if (enemies.length === 1) this.send({ type: 'skill', id: sk.name, targetId: enemies[0].id });
-      else this.setPendingTarget('skill', sk.name); // 多怪：点敌人卡片释放
-    } else this.send({ type: 'skill', id: sk.name }); // self / ally / ally-all / enemy-all 无需选怪
+      if (enemies.length === 1) this.stageChar({ type: 'skill', id: sk.name, targetId: enemies[0].id });
+      else this.armTarget('char', 'skill', sk.name); // 多怪：点敌人卡片释放
+    } else this.stageChar({ type: 'skill', id: sk.name }); // self / ally / ally-all / enemy-all 无需选怪
   }
 
   // ——— 鬼道子菜单 ———
@@ -390,9 +458,9 @@ export class MultiBattleScene extends Phaser.Scene {
     const eff = k.effect.type;
     if (eff === 'damage' || eff === 'control') {
       const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
-      if (enemies.length === 1) this.send({ type: 'kido', id: k.id, targetId: enemies[0].id });
-      else this.setPendingTarget('kido', k.id); // 多怪：点敌人卡片释放
-    } else this.send({ type: 'kido', id: k.id }); // heal / revive / cleanse / shield 作用于自身或队友
+      if (enemies.length === 1) this.stageChar({ type: 'kido', id: k.id, targetId: enemies[0].id });
+      else this.armTarget('char', 'kido', k.id); // 多怪：点敌人卡片释放
+    } else this.stageChar({ type: 'kido', id: k.id }); // heal / revive / cleanse / shield 作用于自身或队友
   }
 
   // ——— 道具子菜单（选道具→选目标，可对队友使用）———
@@ -401,28 +469,17 @@ export class MultiBattleScene extends Phaser.Scene {
     const entries: MenuEntry[] = this.loadout.items.map((it) => ({
       label: `道具·${it.name}`,
       sub: it.desc,
-      onClick: () => this.setPendingTarget('item', it.id),
+      onClick: () => this.armTarget('char', 'item', it.id),
     }));
     this.openList('使用道具（再选目标）', entries);
   }
 
-  // ——— 出战灵宠指令菜单（v1.1 战斗协同）———
-  private openPetMenu(): void {
-    if (!this.pet) { this.flashMessage('没有出战灵宠'); return; }
-    if (this.submittedActors.has(this.petSid)) { this.flashMessage('灵宠已待命'); return; }
-    const entries: MenuEntry[] = [
-      { label: '🐾 攻击', sub: '灵宠普通攻击（按属性结算）', onClick: () => this.onPetAttack() },
-      { label: '✨ 宠物技能', sub: '释放灵宠先天技能', onClick: () => this.openPetSkillMenu() },
-      { label: '🛡 防御', sub: '灵宠进入防御姿态', onClick: () => this.send({ type: 'defend' }, this.petSid) },
-    ];
-    this.openList(`指挥灵宠 · ${this.pet.name || '灵宠'}`, entries);
-  }
-
+  // ——— 灵宠：攻击（单怪直接暂存；多怪进待选目标）———
   private onPetAttack(): void {
     if (!this.room || !this.room.state) return;
     const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
-    if (enemies.length === 1) this.send({ type: 'attack', targetId: enemies[0].id }, this.petSid);
-    else this.setPendingTarget('attack', undefined, this.petSid);
+    if (enemies.length === 1) this.stagePet({ type: 'attack', targetId: enemies[0].id });
+    else this.armTarget('pet', 'attack');
   }
 
   private openPetSkillMenu(): void {
@@ -447,18 +504,17 @@ export class MultiBattleScene extends Phaser.Scene {
   private onPickPetSkill(skillId: string): void {
     if (!this.room || !this.room.state) return;
     const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
-    if (enemies.length === 1) this.send({ type: 'petSkill', id: skillId, targetId: enemies[0].id }, this.petSid);
-    else this.setPendingTarget('petSkill', skillId, this.petSid);
+    if (enemies.length === 1) this.stagePet({ type: 'petSkill', id: skillId, targetId: enemies[0].id });
+    else this.armTarget('pet', 'petSkill', skillId);
   }
 
-  // ——— 目标选择：道具选队友，攻击/技能/鬼道/宠物攻击/宠物技能选敌人 ———
-  private setPendingTarget(type: string, id?: string, actorSid?: string): void {
+  // ——— 待选目标：某 actor 已确定动作类型，等待点卡片选目标 ———
+  private armTarget(actor: 'char' | 'pet', type: string, id?: string): void {
     if (!this.room || !this.room.state) return;
-    this.pendingAction = { type, id, actorSid: actorSid || this.mySessionId };
+    this.pendingTarget = { actor, type, id };
     this.closeMenu();
-    if (type === 'item') {
-      this.flashMessage('请点击目标（自己或队友）');
-    } else {
+    if (type === 'item') this.flashMessage('请点击目标（自己或队友）');
+    else {
       const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
       if (enemies.length === 0) return;
       this.flashMessage('请点击要攻击的敌人');
@@ -469,31 +525,29 @@ export class MultiBattleScene extends Phaser.Scene {
     this.syncCards(this.playerCards, s.players, true);
   }
 
-  // 敌人卡片被点击：若有待释放意图则直接发送（全局适用：主场景与镜像场景共用此场景）
+  // 敌人卡片被点击：若有待选目标则暂存为对应 actor 的指令
   private onEnemyCardClicked(enemyId: string): void {
-    if (!this.pendingAction) return;
+    if (!this.pendingTarget) return;
     if (!this.room || !this.room.state) return;
-    // DQ式回合：指令阶段全员可发，每轮每战斗员限1次（与 send() 一致，按 actorSid 守卫）
-    const aid = this.pendingAction.actorSid || this.mySessionId;
-    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command' || this.submittedActors.has(aid)) return;
-    const action = { type: this.pendingAction.type, id: this.pendingAction.id, targetId: enemyId };
-    const pa = this.pendingAction;
-    this.pendingAction = null;
-    this.send(action, pa.actorSid);
+    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command') return;
+    const pt = this.pendingTarget;
+    const action = { type: pt.type, id: pt.id, targetId: enemyId };
+    this.pendingTarget = null;
+    if (pt.actor === 'char') this.stageChar(action);
+    else this.stagePet(action);
     this.syncCards(this.enemyCards, this.room.state.enemies, false); // 清除高亮
   }
 
   // 玩家卡片被点击：道具选目标（对自己或队友使用）
   private onPlayerCardClicked(playerId: string): void {
-    if (!this.pendingAction || this.pendingAction.type !== 'item') return;
+    if (!this.pendingTarget || this.pendingTarget.type !== 'item') return;
     if (!this.room || !this.room.state) return;
-    const aid = this.pendingAction.actorSid || this.mySessionId;
-    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command' || this.submittedActors.has(aid)) return;
-    const action = { type: this.pendingAction.type, id: this.pendingAction.id, targetId: playerId };
-    const pa = this.pendingAction;
-    this.pendingAction = null;
-    this.send(action, pa.actorSid);
-    // 刷新卡片状态（清除高亮、禁用点击）
+    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command') return;
+    const pt = this.pendingTarget;
+    const action = { type: pt.type, id: pt.id, targetId: playerId };
+    this.pendingTarget = null;
+    if (pt.actor === 'char') this.stageChar(action);
+    else this.stagePet(action);
     const s = this.room.state;
     this.syncCards(this.enemyCards, s.enemies, false);
     this.syncCards(this.playerCards, s.players, true);
@@ -557,19 +611,29 @@ export class MultiBattleScene extends Phaser.Scene {
   }
 
   private refreshButtons(): void {
-    // DQ 式回合制：指令阶段全员可用（非「仅当前回合者」），由 renderState 统一管理
+    // 两步固定选择：按钮可见性/可用性完全由 commandStep 驱动
     if (!this.room || !this.room.state) return;
     const s = this.room.state;
     const inCommand = s.phase === 'combat' && s.roundPhase === 'command';
-    // 角色按钮：人物已提交指令后禁用
-    const charSubmitted = this.submittedActors.has(this.mySessionId);
-    const btnEnable = inCommand && !charSubmitted && !this.menuOpen;
-    for (const b of Object.values(this.actionBtns)) b.setEnable(btnEnable);
-    // 宠物按钮：宠物未提交且未开菜单时可用（有宠才显示）
-    if (this.petBtn) {
-      const petSubmitted = this.submittedActors.has(this.petSid);
-      this.petBtn.setEnable(inCommand && !petSubmitted && !this.menuOpen && !!this.pet);
+
+    // STEP1：仅人物 6 按钮可见/可点（无待选目标时）
+    const charVisible = this.commandStep === 1;
+    for (const b of Object.values(this.actionBtns)) {
+      b.setVisible(charVisible);
+      b.setEnable(charVisible && inCommand && !this.pendingTarget && !this.menuOpen);
     }
+    // STEP2：仅灵宠 3 按钮可见/可点
+    const petVisible = this.commandStep === 2;
+    for (const b of Object.values(this.petActionBtns)) {
+      b.setVisible(petVisible);
+      b.setEnable(petVisible && inCommand && !this.pendingTarget && !this.menuOpen);
+    }
+    // 「▶ 下一步（指挥灵宠）」：STEP1 且人物已选（含返回后重进）
+    this.nextBtn.setVisible(this.commandStep === 1 && !!this.pet && !!this.stagedChar);
+    this.nextBtn.setEnable(this.commandStep === 1 && !!this.stagedChar && inCommand && !this.pendingTarget);
+    // 「← 返回改人物」：STEP2
+    this.backBtn.setVisible(this.commandStep === 2);
+    this.backBtn.setEnable(this.commandStep === 2 && inCommand && !this.pendingTarget);
   }
 
   private flashMessage(text: string): void {
@@ -609,9 +673,13 @@ export class MultiBattleScene extends Phaser.Scene {
     const inCommand = inCombat && s.roundPhase === 'command';
     const inExecute = inCombat && s.roundPhase === 'execute';
 
-    // 新一轮指令阶段：清除已提交标记（人物/宠物分别重置）
+    // 新一轮指令阶段：重置两步选择状态，进入人物指令阶段
     if (inCommand && this.lastRoundSeen !== s.round) {
       this.submittedActors.clear();
+      this.stagedChar = null;
+      this.stagedPet = null;
+      this.pendingTarget = null;
+      this.commandStep = 1; // 进入人物指令阶段
     }
     this.lastRoundSeen = s.round;
 
@@ -622,10 +690,12 @@ export class MultiBattleScene extends Phaser.Scene {
     if ((!inCommand || allSubmitted) && this.menuOpen) this.closeMenu();
 
     if (inCommand) {
-      const label = allSubmitted ? '已选择，等待执行…'
-        : (charSubmitted && !petSubmitted ? '灵宠待命…（点🐾指挥灵宠）' : '★ 选择指令');
+      let label: string;
+      if (allSubmitted) label = '已选择，等待执行…';
+      else if (this.commandStep === 1) label = this.stagedChar ? '② 人物已选 — 点「▶ 下一步」指挥灵宠' : '① 选择人物指令';
+      else label = '② 选择灵宠指令（或「← 返回」改人物）';
       this.turnText.setText(label);
-      this.turnText.setColor(allSubmitted ? '#ffe8b0' : '#88ff88');
+      this.turnText.setColor(allSubmitted ? '#ffe8b0' : (this.commandStep === 1 ? '#88ff88' : '#c9a0ff'));
     } else if (inExecute) {
       const cur = s.players.get(s.currentTurn) || s.enemies.get(s.currentTurn);
       this.turnText.setText(`执行中 — ${cur?.name ?? ''} 行动`);
@@ -634,8 +704,7 @@ export class MultiBattleScene extends Phaser.Scene {
       this.turnText.setText(`阶段：${s.phase}`); this.turnText.setColor('#aaaacc');
     }
 
-    const btnEnable = inCommand && !charSubmitted && !this.menuOpen;
-    for (const b of Object.values(this.actionBtns)) b.setEnable(btnEnable);
+    this.refreshButtons();
 
     const me = s.players.get(this.mySessionId);
     let mpStr = me ? `灵力 MP ${Math.max(0, Math.round(me.mp))} / ${Math.round(me.maxMp)}` : '';
@@ -732,11 +801,11 @@ export class MultiBattleScene extends Phaser.Scene {
         card.root.setPosition(x, y);
       }
       // 玩家卡片：道具选目标时可点击
-      if (isPlayer && this.pendingAction && this.pendingAction.type === 'item') {
+      if (isPlayer && this.pendingTarget && this.pendingTarget.type === 'item') {
         card.root.setSize(380, 96).setInteractive({ useHandCursor: true });
         card.root.off('pointerdown');
         card.root.on('pointerdown', () => this.onPlayerCardClicked(id));
-      } else if (isPlayer && !(this.pendingAction && this.pendingAction.type === 'item')) {
+      } else if (isPlayer && !(this.pendingTarget && this.pendingTarget.type === 'item')) {
         card.root.disableInteractive();
       }
       card.name.setText(`${c.name}${c.alive ? '' : '（倒下）'}`);
@@ -751,8 +820,8 @@ export class MultiBattleScene extends Phaser.Scene {
       }
       this.drawHpBar(card, c.hp, c.maxHp);
       card.root.setAlpha(c.alive ? 1 : 0.4);
-      // 高亮：多怪且有待释放意图时，存活敌人边框发光提示「点我释放」
-      const highlight = !isPlayer && !!this.pendingAction && c.alive;
+      // 高亮：多怪且有待选目标时，存活敌人边框发光提示「点我释放」
+      const highlight = !isPlayer && !!this.pendingTarget && c.alive;
       card.hl.clear();
       if (highlight) {
         card.hl.lineStyle(3, 0xffe066, 1);
@@ -811,8 +880,8 @@ export class MultiBattleScene extends Phaser.Scene {
     draw(true);
     container.add([bg, text]);
     container.setSize(w, h).setInteractive({ useHandCursor: true });
-    container.on('pointerdown', () => cb());
     let enabled = true;
+    container.on('pointerdown', () => { if (enabled) cb(); });
     return {
       container,
       setEnable: (b: boolean) => {
@@ -822,6 +891,7 @@ export class MultiBattleScene extends Phaser.Scene {
         text.setColor(b ? '#ffffff' : '#888899');
         container.setAlpha(b ? 1 : 0.55);
       },
+      setVisible: (b: boolean) => { container.setVisible(b); },
     };
   }
 
