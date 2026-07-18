@@ -26,6 +26,7 @@ const CHAT_PREFIX: Record<string, string> = {
   world: '[世界] ', guild: '[公会] ', team: '[队伍] ', system: '[系统] ', event: '[活动] ',
 };
 import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, requestPetGrantDev, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
+import { createPetLocal, petElementInfo, petQualityInfo } from '../systems/PetSystem';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -391,12 +392,27 @@ export class GameScene extends Phaser.Scene {
           break;
         }
         case 'y':
-          // Dev 作弊键：发放一只随机灵宠（联机权威，落库以免重连丢失）
+          // Dev 作弊键：发放一只随机灵宠
           if (isOnline()) {
+            // 联机：服务端权威发放并 worldSync 下发 + 落库（重连不丢）
             requestPetGrantDev();
             showDevNotif('已申请发放灵宠（随机物种）', '#aaffcc');
           } else {
-            showDevNotif('灵宠发放需联机（Ctrl+Y）', '#ff8888');
+            // 离线/单机：本地造宠（镜像服务端 createPet，不落库），与其他 Dev 键（Ctrl+E 等）离线行为一致
+            if (!Array.isArray(GameState.pets)) GameState.pets = [];
+            if (GameState.pets.length >= 6) {
+              showDevNotif('灵宠栏已满（上限 6）', '#ff8888');
+              break;
+            }
+            const pet = createPetLocal(GameState.zone);
+            if (!pet) { showDevNotif('灵宠栏已满（上限 6）', '#ff8888'); break; }
+            if (GameState.pets.length === 0) pet.active = true; // 首只自动出战
+            GameState.pets.push(pet);
+            GameState.recalcStats();
+            this.refreshOpenPanels?.();
+            const el = petElementInfo(pet.element).label;
+            const q = petQualityInfo(pet.quality).label;
+            showDevNotif(`灵宠已发放（离线）：${pet.name}（${el}·${q}）`, '#aaffcc');
           }
           break;
         default:
@@ -1624,6 +1640,23 @@ export class GameScene extends Phaser.Scene {
 
   /** 组装联机权威战斗的可用技能/鬼道/道具清单，传给战斗房间做权威校验。 */
   private buildBattleLoadout() {
+    // 出战灵宠：取出战中的宠，映射为战斗 DTO（属性快照 + 技能 + 宠MP），随负载下发到权威战斗房
+    const activePet = (GameState.pets || []).find((p: any) => p.active);
+    const petDto = activePet ? {
+      name: activePet.name,
+      speciesId: activePet.speciesId,
+      element: activePet.element,
+      quality: activePet.quality,
+      level: activePet.level || 1,
+      stats: {
+        hp: activePet.hp, maxHp: activePet.maxHp,
+        atk: activePet.atk, def: activePet.def,
+        matk: activePet.matk, mdef: activePet.mdef, spd: activePet.spd,
+      },
+      // 宠MP：随等级成长的灵力池（仅用于宠物技能释放）
+      maxMp: 30 + (activePet.level || 1) * 4, mp: 30 + (activePet.level || 1) * 4,
+      skills: Array.isArray(activePet.skills) ? activePet.skills : [],
+    } : undefined;
     return {
       skills: getAvailableSkills(GameState.zanpakuto, GameState.element, GameState.hasShikai, GameState.hasBankai, false, false, false).map((s) => s.name),
       kidos: Kido.getActiveLearned(),
@@ -1637,6 +1670,8 @@ export class GameScene extends Phaser.Scene {
         matk: GameState.matk, mdef: GameState.mdef,
         spd: GameState.spd,
       }, GameState.guildSkills),
+      // 出战灵宠（v1.1 战斗协同）：undefined = 无宠
+      pet: petDto,
     };
   }
 

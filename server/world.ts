@@ -128,16 +128,18 @@ export const PET_QUALITIES: Record<PetQuality, { label: string; color: number; m
   legend: { label: '传说', color: 0xffcc33, mult: 1.65, attrPerLevel: 6, weight: 2 },
 };
 
-/** 灵宠技能注册表（id → 名称/描述/元素）。 */
-export const PET_SKILLS: Record<string, { name: string; desc: string; element?: PetElement }> = {
-  flame_breath: { name: '烈焰吐息', desc: '战斗中有几率对敌附加灼烧。', element: 'fire' },
-  rock_bulwark: { name: '岩石壁垒', desc: '开场为玩家附加护盾。', element: 'earth' },
-  gale_edge:    { name: '疾风之刃', desc: '提升出战者的速度。', element: 'wind' },
-  tide_veil:    { name: '碧水纱', desc: '提升出战者的魔防与回复。', element: 'water' },
-  shadow_fang:  { name: '暗影撕咬', desc: '高物攻并概率连击。', element: 'wind' },
-  quake_smash:  { name: '撼地重击', desc: '高血防，开场嘲讽。', element: 'earth' },
-  spirit_grace: { name: '灵兔祝福', desc: '提升出战者魔防与灵敏。', element: 'water' },
-  auspice:      { name: '祥瑞', desc: '提升玩家全属性光环。', element: 'fire' },
+/** 灵宠技能注册表（id → 名称/描述/元素/战斗参数）。
+ *  v1.1 战斗协同：宠物技能实现为可主动释放的伤害技（按元素用宠物 atk/matk 结算，消耗宠MP）。
+ *  power 为伤害系数，damageType 决定物理/魔法结算，mp 为宠MP消耗。 */
+export const PET_SKILLS: Record<string, { name: string; desc: string; element?: PetElement; power: number; damageType: 'physical' | 'magical'; mp: number }> = {
+  flame_breath: { name: '烈焰吐息', desc: '喷吐烈焰灼烧敌人。', element: 'fire',  power: 1.4, damageType: 'magical',  mp: 10 },
+  rock_bulwark: { name: '岩石壁垒', desc: '以岩石砸击敌人。', element: 'earth', power: 1.2, damageType: 'physical', mp: 10 },
+  gale_edge:    { name: '疾风之刃', desc: '疾风般的利爪连斩。', element: 'wind',  power: 1.3, damageType: 'physical', mp: 10 },
+  tide_veil:    { name: '碧水纱', desc: '碧水冲击敌人。', element: 'water', power: 1.3, damageType: 'magical',  mp: 10 },
+  shadow_fang:  { name: '暗影撕咬', desc: '暗影撕咬造成重创。', element: 'wind',  power: 1.5, damageType: 'physical', mp: 12 },
+  quake_smash:  { name: '撼地重击', desc: '撼地一击重创敌人。', element: 'earth', power: 1.4, damageType: 'physical', mp: 12 },
+  spirit_grace: { name: '灵兔祝福', desc: '灵力冲击敌人。', element: 'water', power: 1.2, damageType: 'magical',  mp: 10 },
+  auspice:      { name: '祥瑞', desc: '祥瑞之光重创敌人。', element: 'fire',  power: 1.6, damageType: 'magical',  mp: 15 },
 };
 
 export interface Pet {

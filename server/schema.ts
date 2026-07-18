@@ -36,13 +36,17 @@ export class GameRoomState extends Schema {
   @type({ map: MonsterState }) monsters = new MapSchema<MonsterState>();
 }
 
-/** 战斗房间：战斗员（玩家） */
+/** 战斗房间：战斗员（玩家 / 出战灵宠） */
 export class CombatPlayer extends Schema {
   @type('string') sessionId = '';
   @type('string') name = '';
   @type('string') color = '';
   /** PVP 阵营：A / B（区分敌我，绝不借用敌人 AI）。 */
   @type('string') team = 'A';
+  /** 是否为出战灵宠（与主人同属一个客户端，共享回合决策）。 */
+  @type('boolean') isPet = false;
+  /** 灵宠主人 sessionId（人物战斗员此字段为空）。 */
+  @type('string') ownerSid = '';
   @type('number') hp = 0;
   @type('number') maxHp = 0;
   @type('number') atk = 0;

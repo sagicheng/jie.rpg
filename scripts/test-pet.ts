@@ -64,6 +64,20 @@ function waitServerReady(proc: any, ms = 30_000): Promise<void> {
   });
 }
 
+function waitFor(pred: () => boolean, ms = 10_000): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const t0 = Date.now();
+    const tick = () => {
+      let ok = false;
+      try { ok = pred(); } catch { ok = false; }
+      if (ok) return resolve();
+      if (Date.now() - t0 > ms) return reject(new Error('waitFor 超时'));
+      setTimeout(tick, 80);
+    };
+    tick();
+  });
+}
+
 async function apiRaw(post: string, body: any): Promise<any> {
   const res = await fetch(`${BASE}${post}`, {
     method: 'POST',
@@ -289,6 +303,52 @@ async function main(): Promise<void> {
       assert('H 光环 MDEF=mdef*20%', aura.mdef === expMdef);
       assert('H 光环 SPD=spd*20%', aura.spd === expSpd);
       log(`H 出战灵宠[${active.name}] 光环 HP+${aura.hp} ATK+${aura.atk} DEF+${aura.def} MATK+${aura.matk} MDEF+${aura.mdef} SPD+${aura.spd}`);
+    }
+
+    // ── L. 宠物入战（BattleRoom 出战灵宠协同 v1.1）──
+    {
+      const active = (lastPw.pets || []).find((p: any) => p.active) || (lastPw.pets || [])[0];
+      assert('L 存在可出战灵宠', !!active);
+      const lvl = active.level || 1;
+      const petDto = {
+        name: active.name, speciesId: active.speciesId, element: active.element, quality: active.quality, level: lvl,
+        stats: { hp: active.hp, maxHp: active.maxHp, atk: active.atk, def: active.def, matk: active.matk, mdef: active.mdef, spd: active.spd },
+        maxMp: 30 + lvl * 4, mp: 30 + lvl * 4,
+        skills: Array.isArray(active.skills) ? active.skills : [],
+      };
+      const ownerSessionId = room.sessionId;
+      const bcli = new Client(WS);
+      const battle: any = await bcli.joinOrCreate('battle', {
+        name: 'p_e2e_1', ownerSessionId,
+        enemyParty: [{ name: '虚', type: '杂妖', element: '火', zone: 2, hp: 300, maxHp: 300, atk: 10, def: 12, matk: 8, mdef: 10, spd: 8 }],
+        monsterId: 'test-mon',
+        playerStats: { hp: 400, maxHp: 400, mp: 120, maxMp: 120, atk: 60, def: 35, matk: 45, mdef: 35, spd: 22 },
+        pet: petDto,
+      });
+      // 战斗房自身 client.sessionId（与地图房 GameRoom 的 sessionId 不同）
+      const battleSid = battle.sessionId;
+      await waitFor(() => !!battle.state && battle.state.phase === 'combat' && battle.state.roundPhase === 'command', 9000);
+      const players = [...battle.state.players.values()] as any[];
+      const petEntry = players.find((p: any) => p.isPet === true);
+      const charEntry = players.find((p: any) => !p.isPet && p.sessionId === battleSid);
+      assert('L 战斗内出现出战灵宠卡片', !!petEntry);
+      assert('L 宠物 isPet=true', !!petEntry && petEntry.isPet === true);
+      assert('L 宠物 ownerSid=主人(地图房SID)', !!petEntry && petEntry.ownerSid === ownerSessionId);
+      assert('L 人物战斗员存在', !!charEntry);
+      assert('L 宠物独立 SID', !!petEntry && petEntry.sessionId === battleSid + ':pet');
+
+      // 提交人物攻击 + 宠物攻击（两个 actor 分别提交）
+      const firstEnemy = [...battle.state.enemies.values()][0];
+      battle.send('action', { type: 'attack', targetId: firstEnemy.id, actorSid: ownerSessionId });
+      battle.send('action', { type: 'attack', targetId: firstEnemy.id, actorSid: petEntry.sessionId });
+      // 等待执行阶段（双方指令齐备后服务端立即开战）
+      await waitFor(() => battle.state.roundPhase === 'execute' || battle.state.phase !== 'combat', 9000);
+      // 等待敌人受到伤害（人物或宠物造成）
+      await waitFor(() => [...battle.state.enemies.values()].some((e: any) => e.hp < e.maxHp), 12000);
+      const enemyAfter = [...battle.state.enemies.values()][0] as any;
+      assert('L 敌人在人物/宠物攻击下受损', enemyAfter.hp < enemyAfter.maxHp);
+      await battle.leave().catch(() => {});
+      log(`L 宠物入战 OK：宠=${petEntry?.name}（${petEntry?.element}·${petEntry?.quality}）敌HP ${enemyAfter.maxHp}→${enemyAfter.hp}`);
     }
 
     room.leave();

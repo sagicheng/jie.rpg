@@ -9,6 +9,7 @@ import { Room, Client } from '@colyseus/core';
 import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage } from '../schema';
 import { createEnemyData, calcDamage, calcMagicDamage, generateLoot } from '../../src/systems/BattleData';
 import { world } from '../world';
+import { PET_SKILLS } from '../world';
 
 import type { EnemyData } from '../../src/systems/BattleData';
 import { SKILL_BY_NAME, getSkillTargetType } from '../../src/systems/Skills';
@@ -20,6 +21,10 @@ interface KidoLoadoutDTO {
 }
 interface PlayerLoadout {
   skills: Set<string>; kidos: Map<string, KidoLoadoutDTO>; items: Set<string>;
+  /** 出战灵宠标记（仅宠物战斗员为 true）。 */
+  isPet?: boolean;
+  /** 宠物技能 → 战斗参数（仅宠物战斗员有值）。 */
+  petSkills?: Map<string, { power: number; damageType: 'physical' | 'magical'; mp: number }>;
 }
 const EMPTY_LOADOUT: PlayerLoadout = { skills: new Set(), kidos: new Map(), items: new Set() };
 
@@ -70,6 +75,8 @@ export class BattleRoom extends Room<BattleRoomState> {
     name?: string; enemyData?: any; enemyParty?: EnemyData[]; monsterId?: string;
     loadout?: { skills?: string[]; kidos?: KidoLoadoutDTO[]; items?: string[] };
     playerStats?: { hp?: number; maxHp?: number; mp?: number; maxMp?: number; atk?: number; def?: number; matk?: number; mdef?: number; spd?: number };
+    /** 出战灵宠战斗 DTO（含属性快照与技能列表）。 */
+    pet?: { name?: string; speciesId?: string; element?: string; quality?: string; level?: number; stats?: { hp: number; maxHp?: number; atk: number; def: number; matk: number; mdef: number; spd: number }; mp?: number; maxMp?: number; skills?: string[] };
     dungeonId?: number; dungeonStage?: number; dungeonRoomId?: string;
   }) {
     const p = new CombatPlayer();
@@ -84,6 +91,37 @@ export class BattleRoom extends Room<BattleRoomState> {
     p.alive = true;
     this.state.players.set(client.sessionId, p);
     this.ownerSids.set(client.sessionId, (options as any).ownerSessionId || client.sessionId);
+
+    // 出战灵宠：作为同一客户端的第二战斗员（独立 SID + 独立回合）。
+    // 宠物 inherit 主人的 ownerSid，便于胜利回写与断连清理。
+    const petOpt: any = options?.pet;
+    if (petOpt && petOpt.stats && typeof petOpt.stats.hp === 'number') {
+      const pet = new CombatPlayer();
+      const petSid = client.sessionId + ':pet';
+      pet.sessionId = petSid;
+      pet.name = (petOpt.name ? `${petOpt.name}` : '灵宠');
+      pet.color = COLORS[(Math.floor(Math.random() * COLORS.length) + 3) % COLORS.length];
+      pet.isPet = true;
+      pet.ownerSid = (options as any).ownerSessionId || client.sessionId;
+      const ps = petOpt.stats;
+      pet.maxHp = ps.maxHp ?? ps.hp; pet.hp = ps.hp ?? pet.maxHp;
+      pet.atk = ps.atk ?? 0; pet.def = ps.def ?? 0;
+      pet.matk = ps.matk ?? 0; pet.mdef = ps.mdef ?? 0; pet.spd = ps.spd ?? 0;
+      pet.maxMp = petOpt.maxMp ?? 30; pet.mp = petOpt.mp ?? pet.maxMp;
+      pet.alive = true;
+      this.state.players.set(petSid, pet);
+      this.ownerSids.set(petSid, client.sessionId);
+      // 宠物技能负载（id → 战斗参数，从 PET_SKILLS 取）
+      const plo: PlayerLoadout = { skills: new Set(), kidos: new Map(), items: new Set(), isPet: true, petSkills: new Map() };
+      if (Array.isArray(petOpt.skills)) {
+        for (const sid of petOpt.skills) {
+          const sk = PET_SKILLS[sid];
+          if (sk) plo.petSkills!.set(sid, { power: sk.power, damageType: sk.damageType, mp: sk.mp });
+        }
+      }
+      this.loadouts.set(petSid, plo);
+      this.logMsg('system', `${pet.name}（灵宠）随 ${p.name} 出战`);
+    }
 
     if (typeof options?.dungeonId === 'number' && options.dungeonId > 0) {
       this.dungeonId = options.dungeonId; this.dungeonStage = options.dungeonStage || 0; this.dungeonRoomId = options.dungeonRoomId || '';
@@ -132,6 +170,10 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.loadouts.delete(client.sessionId);
     const p = this.state.players.get(client.sessionId);
     if (p) p.alive = false;
+    // 同步击倒该客户端的出战灵宠（宠物非独立连接，随主人离场）
+    for (const [sid, pl] of this.state.players) {
+      if (pl.ownerSid === client.sessionId) { pl.alive = false; this.loadouts.delete(sid); }
+    }
   }
 
   onDispose() { this.clearCommandTimer(); this.clearExecTimer(); }
@@ -140,25 +182,33 @@ export class BattleRoom extends Room<BattleRoomState> {
   //  指令阶段 — 收集所有玩家操作
   // ══════════════════════════════════════════════════
 
-  private receiveAction(client: Client, data: { type?: string; id?: string; targetId?: string }) {
+  private receiveAction(client: Client, data: { type?: string; id?: string; targetId?: string; actorSid?: string }) {
     if (this.state.phase !== 'combat' || this.state.roundPhase !== 'command') return;
-    const sid = client.sessionId;
-    const p = this.state.players.get(sid);
+    // 同一客户端可分别指挥「人物」与「出战灵宠」两个战斗员（各自独立 SID / 独立回合）
+    const actorSid = (data.actorSid === client.sessionId || data.actorSid === client.sessionId + ':pet')
+      ? data.actorSid : client.sessionId;
+    const p = this.state.players.get(actorSid);
     if (!p || !p.alive) return;
-    // 已提交过本轮指令？
-    if (this.pendingActions.has(sid)) return;
+    // 该战斗员已提交过本轮指令？
+    if (this.pendingActions.has(actorSid)) return;
 
-    const lo = this.loadouts.get(sid) || EMPTY_LOADOUT;
+    const lo = this.loadouts.get(actorSid) || EMPTY_LOADOUT;
 
     // 校验指令合法性（不执行，仅存储）
     const type = String(data.type || 'attack');
-    if (type === 'skill' && (!data.id || !lo.skills.has(data.id))) return;
-    if (type === 'kido' && (!data.id || !lo.kidos.has(data.id))) return;
-    if (type === 'item' && (!data.id || !lo.items.has(data.id))) return;
+    if (p.isPet) {
+      // 宠物仅允许：攻击 / 防御 / 宠物技能
+      if (type !== 'attack' && type !== 'defend' && type !== 'petSkill') return;
+      if (type === 'petSkill' && (!data.id || !lo.petSkills?.has(data.id))) return;
+    } else {
+      if (type === 'skill' && (!data.id || !lo.skills.has(data.id))) return;
+      if (type === 'kido' && (!data.id || !lo.kidos.has(data.id))) return;
+      if (type === 'item' && (!data.id || !lo.items.has(data.id))) return;
+    }
 
-    this.pendingActions.set(sid, {
-      type, playerSid: sid,
-      skillId: type === 'skill' ? data.id : undefined,
+    this.pendingActions.set(actorSid, {
+      type, playerSid: actorSid,
+      skillId: (type === 'skill' || type === 'petSkill') ? data.id : undefined,
       kidoId: type === 'kido' ? data.id : undefined,
       itemId: type === 'item' ? data.id : undefined,
       targetId: data.targetId,
@@ -344,6 +394,28 @@ export class BattleRoom extends Room<BattleRoomState> {
         const itemId = action.itemId || '';
         if (!lo.items.has(itemId)) { this.scheduleExecuteNext(); return; }
         this.executeItem(p, itemId, action.targetId);
+        break;
+      }
+      case 'petSkill': {
+        const sk = action.skillId ? lo.petSkills?.get(action.skillId) : undefined;
+        if (!sk) { this.scheduleExecuteNext(); return; }
+        if (p.mp < sk.mp) {
+          // 灵力不足：自动转为普攻，保证宠物当回合仍有行动
+          this.logMsg(p.name, `${p.name} 灵力不足，改为普攻`);
+          const tid = this.resolveTarget(action.targetId);
+          if (tid) this.executeAttack(p.sessionId, tid);
+          break;
+        }
+        p.mp = Math.max(0, p.mp - sk.mp);
+        const magic = sk.damageType === 'magical';
+        const tid = this.resolveTarget(action.targetId);
+        if (!tid) { this.scheduleExecuteNext(); return; }
+        const e = this.state.enemies.get(tid)!;
+        const r = magic ? calcMagicDamage(p.matk, e.mdef, sk.power) : calcDamage(p.atk, e.def, sk.power);
+        e.hp = Math.max(0, e.hp - r.damage);
+        const skName = PET_SKILLS[action.skillId!]?.name || action.skillId!;
+        this.logMsg(p.name, `${p.name}「${skName}」→ ${e.name} -${r.damage}${r.crit ? '（暴击！）' : ''}`);
+        if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
         break;
       }
       case 'defend':

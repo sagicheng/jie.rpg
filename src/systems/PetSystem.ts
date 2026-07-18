@@ -94,3 +94,70 @@ export function petSkillNames(pet: any): string {
   if (!Array.isArray(pet?.skills) || pet.skills.length === 0) return '无';
   return pet.skills.map((id: string) => PET_SKILLS_CLIENT[id]?.name || id).join('、');
 }
+
+// ══ 离线模式（单机/未联网）下 Ctrl+Y 作弊键本地造宠 ══
+// 仅 Dev 用，逻辑镜像服务端 world.createPet（精简版，不依赖服务端，便于单机测试灵宠系统）。
+// 与服务端 PET_SPECIES 字段保持一致；element/skillIds 用于造宠，base/growth 用于属性快照。
+interface PetSpeciesStat {
+  id: string; name: string; icon: string; color: number; element: string;
+  base: { hp: number; atk: number; def: number; matk: number; mdef: number; spd: number };
+  growth: { hp: number; atk: number; def: number; matk: number; mdef: number; spd: number };
+  skillIds: string[];
+}
+const PET_SPECIES_STATS_CLIENT: Record<string, PetSpeciesStat> = {
+  fox_fire:      { id: 'fox_fire',      name: '赤焰狐', icon: '🦊', color: 0xff6633, element: 'fire',  base: { hp: 120, atk: 18, def: 12, matk: 28, mdef: 16, spd: 22 }, growth: { hp: 14, atk: 2, def: 1.5, matk: 3, mdef: 2, spd: 2.5 }, skillIds: ['flame_breath'] },
+  tortoise_rock: { id: 'tortoise_rock', name: '玄岩龟', icon: '🐢', color: 0x889977, element: 'earth', base: { hp: 260, atk: 14, def: 30, matk: 8, mdef: 22, spd: 8 },  growth: { hp: 28, atk: 1.5, def: 3, matk: 1, mdef: 2.5, spd: 0.8 }, skillIds: ['rock_bulwark'] },
+  hawk_wind:     { id: 'hawk_wind',     name: '青翼鹰', icon: '🦅', color: 0x66ccff, element: 'wind',  base: { hp: 130, atk: 26, def: 12, matk: 14, mdef: 14, spd: 34 }, growth: { hp: 14, atk: 3, def: 1, matk: 1.5, mdef: 1.5, spd: 3 }, skillIds: ['gale_edge'] },
+  serpent_water: { id: 'serpent_water', name: '碧水蟒', icon: '🐍', color: 0x33ccaa, element: 'water', base: { hp: 200, atk: 16, def: 16, matk: 26, mdef: 20, spd: 16 }, growth: { hp: 22, atk: 1.5, def: 1.5, matk: 3, mdef: 2, spd: 1.5 }, skillIds: ['tide_veil'] },
+  wolf_shadow:   { id: 'wolf_shadow',   name: '暗影狼', icon: '🐺', color: 0x9966cc, element: 'wind',  base: { hp: 160, atk: 30, def: 16, matk: 12, mdef: 14, spd: 26 }, growth: { hp: 18, atk: 3, def: 1.5, matk: 1.2, mdef: 1.5, spd: 2.5 }, skillIds: ['shadow_fang'] },
+  bear_earth:    { id: 'bear_earth',    name: '撼地熊', icon: '🐻', color: 0xcc8844, element: 'earth', base: { hp: 300, atk: 28, def: 26, matk: 6, mdef: 14, spd: 10 },  growth: { hp: 32, atk: 3, def: 3, matk: 0.8, mdef: 1.5, spd: 1 }, skillIds: ['quake_smash'] },
+  rabbit_spirit: { id: 'rabbit_spirit', name: '灵兔',   icon: '🐇', color: 0xff99cc, element: 'water', base: { hp: 110, atk: 12, def: 10, matk: 22, mdef: 24, spd: 28 }, growth: { hp: 12, atk: 1, def: 1, matk: 2.5, mdef: 2.5, spd: 2.5 }, skillIds: ['spirit_grace'] },
+  dragonet:      { id: 'dragonet',      name: '幼麟',   icon: '🐉', color: 0xffcc33, element: 'fire',  base: { hp: 220, atk: 24, def: 22, matk: 24, mdef: 22, spd: 24 }, growth: { hp: 24, atk: 2.5, def: 2.5, matk: 2.5, mdef: 2.5, spd: 2.5 }, skillIds: ['auspice'] },
+};
+// 品质倍率（与 PET_QUALITIES.mult 一致） + 权重（与 rollPetQuality 一致）
+const PET_QUALITY_MULT_CLIENT: Record<string, number> = { normal: 1.00, fine: 1.12, choice: 1.25, rare: 1.40, legend: 1.65 };
+const PET_QUALITY_WEIGHT: Record<string, number> = { normal: 50, fine: 28, choice: 14, rare: 6, legend: 2 };
+
+/** 离线本地品质随机（区域越高传说概率略升，镜像服务端 rollPetQuality）。 */
+function rollQualityLocal(zone: number): string {
+  const boost = Math.min(0.4, Math.max(0, (zone - 1) * 0.03));
+  const entries = Object.entries(PET_QUALITY_WEIGHT).map(([q, w]) => {
+    let ww = w;
+    if (q === 'rare' || q === 'legend') ww = Math.round(ww * (1 + boost * (q === 'legend' ? 2 : 1)));
+    return { q, w: ww };
+  });
+  const total = entries.reduce((s, e) => s + e.w, 0);
+  let r = Math.random() * total;
+  for (const e of entries) { r -= e.w; if (r <= 0) return e.q; }
+  return 'normal';
+}
+
+/**
+ * 离线模式下由 Ctrl+Y 调用：返回一只随机灵宠（Lv1，随机元素/品质/技能），不落库不依赖服务端。
+ * 返回 null 表示灵宠栏已满（上限 6）。调用方负责 push 进 GameState.pets 并重算属性。
+ */
+export function createPetLocal(zone = 1): any | null {
+  const keys = Object.keys(PET_SPECIES_STATS_CLIENT);
+  const sp = PET_SPECIES_STATS_CLIENT[keys[Math.floor(Math.random() * keys.length)]];
+  const q = rollQualityLocal(zone);
+  const qMult = PET_QUALITY_MULT_CLIENT[q] ?? 1;
+  const f = (b: number) => Math.round(b * qMult); // Lv1：属性 = 基础值 × 品质倍率（无等级成长加成）
+  const stats = {
+    hp: f(sp.base.hp),
+    atk: f(sp.base.atk),
+    def: f(sp.base.def),
+    matk: f(sp.base.matk),
+    mdef: f(sp.base.mdef),
+    spd: f(sp.base.spd),
+  };
+  return {
+    id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+    speciesId: sp.id, name: sp.name, level: 1, exp: 0,
+    element: sp.element, quality: q,
+    hp: stats.hp, maxHp: stats.hp,
+    atk: stats.atk, def: stats.def, matk: stats.matk, mdef: stats.mdef, spd: stats.spd,
+    attrStr: 0, attrVit: 0, attrAgi: 0, attrInt: 0, attrPoints: 0,
+    skills: [...sp.skillIds], loyalty: 50,
+    active: false, // 调用方按"首只自动出战"规则决定
+  };
+}

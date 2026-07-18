@@ -21,9 +21,11 @@ import { Kido, KidoNode } from '../systems/Kido';
 import { Inventory } from '../systems/Inventory';
 import type { Item } from '../systems/Inventory';
 import type { EnemyData } from '../systems/BattleData';
+import { PET_SKILLS_CLIENT } from '../systems/PetSystem';
 
 interface Card {
   root: Phaser.GameObjects.Container;
+  bg: Phaser.GameObjects.Graphics;  // 卡片底色（灵宠卡片重绘为紫调）
   name: Phaser.GameObjects.Text;
   hpBar: Phaser.GameObjects.Graphics;
   hpText: Phaser.GameObjects.Text;
@@ -40,6 +42,8 @@ export interface ClientLoadout {
   kidos: KidoNode[];
   items: Item[];
   playerStats?: { hp?: number; maxHp?: number; mp?: number; maxMp?: number; atk?: number; def?: number; matk?: number; mdef?: number; spd?: number };
+  /** 出战灵宠战斗 DTO（v1.1 战斗协同）；undefined = 无宠。 */
+  pet?: { name?: string; speciesId?: string; element?: string; quality?: string; level?: number; stats?: any; mp?: number; maxMp?: number; skills?: string[] };
 }
 
 interface MenuEntry {
@@ -77,11 +81,17 @@ export class MultiBattleScene extends Phaser.Scene {
   private returnScene = 'GameScene';
   private isTeamPull = false;
   private ownerSessionId = '';          // GameRoom sessionId（用于奖励写回正确世界）
-  private lastActionSent = false;        // 本轮是否已发送指令
-  private lastRoundSeen = 0;             // 上次看到的回合号（切轮时重置 lastActionSent）
+  private lastRoundSeen = 0;             // 上次看到的回合号（切轮时重置 submittedActors）
 
   // 进房携带的可用技能/鬼道/道具/玩家真实属性（服务端据其做权威校验与结算）
   private loadout: ClientLoadout = { skills: [], kidos: [], items: [] };
+
+  // 出战灵宠（v1.1 战斗协同）：随负载下发；宠物作为同一客户端的第二战斗员（SID = mySessionId+':pet'）
+  private pet: ClientLoadout['pet'] = undefined;
+  private petSid = '';
+  /** 本轮已提交指令的战斗员 SID 集合（人物 / 宠物分别守卫，支持同回合分别指挥）。 */
+  private submittedActors: Set<string> = new Set();
+  private petBtn: Button | null = null;
 
   // 子菜单 / 目标选择弹层
   private menu: Phaser.GameObjects.Container | null = null;
@@ -89,7 +99,7 @@ export class MultiBattleScene extends Phaser.Scene {
   private lastIsMyTurn = false;
 
   // 待释放的单体意图（攻击 / 敌方单体技能 / 伤害型鬼道）：选中后不再弹选怪框，直接点敌人卡片释放
-  private pendingAction: { type: string; id?: string } | null = null;
+  private pendingAction: { type: string; id?: string; actorSid?: string } | null = null;
 
   // 20s 决策倒计时显示（截止时间来自服务端 schema.turnExpiresAt，自己/队友回合都显示）
   private turnCountdownText!: Phaser.GameObjects.Text;
@@ -108,6 +118,10 @@ export class MultiBattleScene extends Phaser.Scene {
     this.enemyParty = data?.enemyParty || [];
     this.monsterId = data?.monsterId || '';
     this.loadout = data?.loadout || { skills: [], kidos: [], items: [] };
+    this.pet = this.loadout.pet;
+    this.petSid = '';
+    this.submittedActors.clear();
+    this.petBtn = null;
     this.dungeonId = data?.dungeonId || 0;
     this.dungeonStage = data?.dungeonStage || 0;
     this.dungeonRoomId = data?.dungeonRoomId || '';
@@ -157,6 +171,11 @@ export class MultiBattleScene extends Phaser.Scene {
       const bx = startX + i * (bw + bgap);
       this.actionBtns[c.type] = this.makeButton(bx, by, c.label, c.color, c.act, bw, bh);
     });
+    // 「宠物」按钮：独立放置于命令栏最左侧，打开灵宠指令菜单（攻击/宠物技能/防御）。
+    // 不与 6 个角色按钮共用启用逻辑（角色按钮在人物已提交后禁用，宠物按钮按宠物是否提交独立判定）。
+    if (this.pet) {
+      this.petBtn = this.makeButton(95, by, '🐾宠物', 0x8a5cff, () => this.openPetMenu(), 120, bh);
+    }
     this.mpText = this.add.text(w / 2, 110, '', { fontSize: '15px', color: '#88aaff' }).setOrigin(0.5).setDepth(10);
 
     // 20s 决策倒计时（由服务端 turnExpiresAt 驱动，覆盖自己与队友回合）
@@ -232,11 +251,14 @@ export class MultiBattleScene extends Phaser.Scene {
       dungeonId: this.dungeonStage > 0 ? this.dungeonId : undefined,
       dungeonStage: this.dungeonStage > 0 ? this.dungeonStage : undefined,
       dungeonRoomId: this.dungeonStage > 0 ? this.dungeonRoomId : undefined,
+      // 出战灵宠 DTO（v1.1 战斗协同）：服务端据此生成宠物战斗员
+      pet: this.loadout.pet,
     })
       .then((room: any) => {
         failTimer.remove();
         this.room = room;
         this.mySessionId = room.sessionId;
+        this.petSid = this.mySessionId + ':pet';
         const myRoom = room; // 闭包捕获，避免场景复用单例下旧房间异步离开误判
         room.onStateChange(() => this.renderState());
         room.onLeave(() => {
@@ -284,14 +306,15 @@ export class MultiBattleScene extends Phaser.Scene {
       });
   }
 
-  /** 发送意图（仅指令阶段可发，每人每轮限1次）。 */
-  private send(action: { type: string; id?: string; targetId?: string }): void {
+  /** 发送意图（仅指令阶段可发；人物/宠物各自每轮限1次，按 actorSid 分别守卫）。 */
+  private send(action: { type: string; id?: string; targetId?: string }, actorSid?: string): void {
     if (!this.room || !this.room.state) return;
     if (this.room.state.phase !== 'combat') return;
     if (this.room.state.roundPhase !== 'command') return;
-    if (this.lastActionSent) return;
-    this.lastActionSent = true;
-    this.room.send('action', action);
+    const aid = actorSid || this.mySessionId;
+    if (this.submittedActors.has(aid)) return;
+    this.submittedActors.add(aid);
+    this.room.send('action', { ...action, actorSid: aid });
     // 立即刷新 UI：显示"已选择，等待执行…"（Colyseus 消息不触发 onStateChange）
     this.renderState();
   }
@@ -379,10 +402,55 @@ export class MultiBattleScene extends Phaser.Scene {
     this.openList('使用道具（再选目标）', entries);
   }
 
-  // ——— 目标选择：道具选队友，攻击/技能/鬼道选敌人 ———
-  private setPendingTarget(type: string, id?: string): void {
+  // ——— 出战灵宠指令菜单（v1.1 战斗协同）———
+  private openPetMenu(): void {
+    if (!this.pet) { this.flashMessage('没有出战灵宠'); return; }
+    if (this.submittedActors.has(this.petSid)) { this.flashMessage('灵宠已待命'); return; }
+    const entries: MenuEntry[] = [
+      { label: '🐾 攻击', sub: '灵宠普通攻击（按属性结算）', onClick: () => this.onPetAttack() },
+      { label: '✨ 宠物技能', sub: '释放灵宠先天技能', onClick: () => this.openPetSkillMenu() },
+      { label: '🛡 防御', sub: '灵宠进入防御姿态', onClick: () => this.send({ type: 'defend' }, this.petSid) },
+    ];
+    this.openList(`指挥灵宠 · ${this.pet.name || '灵宠'}`, entries);
+  }
+
+  private onPetAttack(): void {
     if (!this.room || !this.room.state) return;
-    this.pendingAction = { type, id };
+    const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
+    if (enemies.length === 1) this.send({ type: 'attack', targetId: enemies[0].id }, this.petSid);
+    else this.setPendingTarget('attack', undefined, this.petSid);
+  }
+
+  private openPetSkillMenu(): void {
+    if (!this.pet) { this.flashMessage('没有出战灵宠'); return; }
+    const skills = Array.isArray(this.pet.skills) ? this.pet.skills : [];
+    if (skills.length === 0) { this.flashMessage('灵宠没有可用技能'); return; }
+    const petp = this.room?.state?.players?.get(this.petSid);
+    const entries: MenuEntry[] = skills.map((sid: string) => {
+      const sk = PET_SKILLS_CLIENT[sid];
+      const mp = (petp?.mp ?? 0);
+      const can = (petp?.maxMp ?? 0) > 0; // 灵力不足时服务端会自动转普攻，此处仅提示
+      return {
+        label: `✨ ${sk?.name || sid}${can ? '' : '（灵力不足→普攻）'}`,
+        sub: sk?.desc || '',
+        disabled: false,
+        onClick: () => this.onPickPetSkill(sid),
+      };
+    });
+    this.openList('灵宠技能', entries);
+  }
+
+  private onPickPetSkill(skillId: string): void {
+    if (!this.room || !this.room.state) return;
+    const enemies = [...this.room.state.enemies.values()].filter((e: any) => e.alive);
+    if (enemies.length === 1) this.send({ type: 'petSkill', id: skillId, targetId: enemies[0].id }, this.petSid);
+    else this.setPendingTarget('petSkill', skillId, this.petSid);
+  }
+
+  // ——— 目标选择：道具选队友，攻击/技能/鬼道/宠物攻击/宠物技能选敌人 ———
+  private setPendingTarget(type: string, id?: string, actorSid?: string): void {
+    if (!this.room || !this.room.state) return;
+    this.pendingAction = { type, id, actorSid: actorSid || this.mySessionId };
     this.closeMenu();
     if (type === 'item') {
       this.flashMessage('请点击目标（自己或队友）');
@@ -401,11 +469,13 @@ export class MultiBattleScene extends Phaser.Scene {
   private onEnemyCardClicked(enemyId: string): void {
     if (!this.pendingAction) return;
     if (!this.room || !this.room.state) return;
-    // DQ式回合：指令阶段全员可发，每轮限1次（与 send() 一致）
-    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command' || this.lastActionSent) return;
+    // DQ式回合：指令阶段全员可发，每轮每战斗员限1次（与 send() 一致，按 actorSid 守卫）
+    const aid = this.pendingAction.actorSid || this.mySessionId;
+    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command' || this.submittedActors.has(aid)) return;
     const action = { type: this.pendingAction.type, id: this.pendingAction.id, targetId: enemyId };
+    const pa = this.pendingAction;
     this.pendingAction = null;
-    this.send(action);
+    this.send(action, pa.actorSid);
     this.syncCards(this.enemyCards, this.room.state.enemies, false); // 清除高亮
   }
 
@@ -413,10 +483,12 @@ export class MultiBattleScene extends Phaser.Scene {
   private onPlayerCardClicked(playerId: string): void {
     if (!this.pendingAction || this.pendingAction.type !== 'item') return;
     if (!this.room || !this.room.state) return;
-    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command' || this.lastActionSent) return;
+    const aid = this.pendingAction.actorSid || this.mySessionId;
+    if (this.room.state.phase !== 'combat' || this.room.state.roundPhase !== 'command' || this.submittedActors.has(aid)) return;
     const action = { type: this.pendingAction.type, id: this.pendingAction.id, targetId: playerId };
+    const pa = this.pendingAction;
     this.pendingAction = null;
-    this.send(action);
+    this.send(action, pa.actorSid);
     // 刷新卡片状态（清除高亮、禁用点击）
     const s = this.room.state;
     this.syncCards(this.enemyCards, s.enemies, false);
@@ -484,8 +556,16 @@ export class MultiBattleScene extends Phaser.Scene {
     // DQ 式回合制：指令阶段全员可用（非「仅当前回合者」），由 renderState 统一管理
     if (!this.room || !this.room.state) return;
     const s = this.room.state;
-    const btnEnable = s.phase === 'combat' && s.roundPhase === 'command' && !this.lastActionSent && !this.menuOpen;
+    const inCommand = s.phase === 'combat' && s.roundPhase === 'command';
+    // 角色按钮：人物已提交指令后禁用
+    const charSubmitted = this.submittedActors.has(this.mySessionId);
+    const btnEnable = inCommand && !charSubmitted && !this.menuOpen;
     for (const b of Object.values(this.actionBtns)) b.setEnable(btnEnable);
+    // 宠物按钮：宠物未提交且未开菜单时可用（有宠才显示）
+    if (this.petBtn) {
+      const petSubmitted = this.submittedActors.has(this.petSid);
+      this.petBtn.setEnable(inCommand && !petSubmitted && !this.menuOpen && !!this.pet);
+    }
   }
 
   private flashMessage(text: string): void {
@@ -518,17 +598,23 @@ export class MultiBattleScene extends Phaser.Scene {
     const inCommand = inCombat && s.roundPhase === 'command';
     const inExecute = inCombat && s.roundPhase === 'execute';
 
-    // 新一轮指令阶段：清除已发送标记
-    if (inCommand && this.lastActionSent && this.lastRoundSeen !== s.round) {
-      this.lastActionSent = false;
+    // 新一轮指令阶段：清除已提交标记（人物/宠物分别重置）
+    if (inCommand && this.lastRoundSeen !== s.round) {
+      this.submittedActors.clear();
     }
     this.lastRoundSeen = s.round;
 
-    if ((!inCommand || this.lastActionSent) && this.menuOpen) this.closeMenu();
+    const charSubmitted = this.submittedActors.has(this.mySessionId);
+    const petSubmitted = this.pet ? this.submittedActors.has(this.petSid) : true;
+    const allSubmitted = charSubmitted && petSubmitted;
+
+    if ((!inCommand || allSubmitted) && this.menuOpen) this.closeMenu();
 
     if (inCommand) {
-      this.turnText.setText(this.lastActionSent ? '已选择，等待执行…' : '★ 选择指令');
-      this.turnText.setColor(this.lastActionSent ? '#ffe8b0' : '#88ff88');
+      const label = allSubmitted ? '已选择，等待执行…'
+        : (charSubmitted && !petSubmitted ? '灵宠待命…（点🐾指挥灵宠）' : '★ 选择指令');
+      this.turnText.setText(label);
+      this.turnText.setColor(allSubmitted ? '#ffe8b0' : '#88ff88');
     } else if (inExecute) {
       const cur = s.players.get(s.currentTurn) || s.enemies.get(s.currentTurn);
       this.turnText.setText(`执行中 — ${cur?.name ?? ''} 行动`);
@@ -537,11 +623,16 @@ export class MultiBattleScene extends Phaser.Scene {
       this.turnText.setText(`阶段：${s.phase}`); this.turnText.setColor('#aaaacc');
     }
 
-    const btnEnable = inCommand && !this.lastActionSent && !this.menuOpen;
+    const btnEnable = inCommand && !charSubmitted && !this.menuOpen;
     for (const b of Object.values(this.actionBtns)) b.setEnable(btnEnable);
 
     const me = s.players.get(this.mySessionId);
-    if (this.mpText) this.mpText.setText(me ? `灵力 MP ${Math.max(0, Math.round(me.mp))} / ${Math.round(me.maxMp)}` : '');
+    let mpStr = me ? `灵力 MP ${Math.max(0, Math.round(me.mp))} / ${Math.round(me.maxMp)}` : '';
+    if (this.pet) {
+      const petp = s.players.get(this.petSid);
+      if (petp) mpStr += `    🐾MP ${Math.max(0, Math.round(petp.mp))} / ${Math.round(petp.maxMp)}`;
+    }
+    if (this.mpText) this.mpText.setText(mpStr);
 
     this.syncCards(this.playerCards, s.players, true);
     this.syncCards(this.enemyCards, s.enemies, false);
@@ -598,6 +689,15 @@ export class MultiBattleScene extends Phaser.Scene {
         card.root.disableInteractive();
       }
       card.name.setText(`${c.name}${c.alive ? '' : '（倒下）'}`);
+      // 出战灵宠卡片：紫调描边 + 🐾 标识，与人物区分
+      if (c.isPet) {
+        card.name.setText(`🐾 ${c.name}${c.alive ? '' : '（倒下）'}`);
+        card.bg.clear();
+        card.bg.fillStyle(0x241a36, 0.95);
+        card.bg.fillRoundedRect(-190, -48, 380, 96, 8);
+        card.bg.lineStyle(2, c.alive ? 0xaa7cff : 0x66508c, 0.9);
+        card.bg.strokeRoundedRect(-190, -48, 380, 96, 8);
+      }
       this.drawHpBar(card, c.hp, c.maxHp);
       card.root.setAlpha(c.alive ? 1 : 0.4);
       // 高亮：多怪且有待释放意图时，存活敌人边框发光提示「点我释放」
@@ -630,7 +730,7 @@ export class MultiBattleScene extends Phaser.Scene {
     const hpText = this.add.text(-w / 2 + 16, barY + 4, '', { fontSize: '12px', color: '#dddddd' });
     const hl = this.add.graphics(); // 待选目标高亮（默认隐藏）
     root.add([bg, name, hpBar, hpText, hl]);
-    return { root, name, hpBar, hpText, hl };
+    return { root, bg, name, hpBar, hpText, hl };
   }
 
   private drawHpBar(card: Card, hp: number, maxHp: number): void {
