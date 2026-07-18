@@ -2637,7 +2637,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     const g = scene.add.graphics();
     g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
     g.lineStyle(1, 0xc9a96e, 0.5); g.strokeRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6);
-    const t = scene.add.text(lx, ly, label, { fontSize: '12px', color: textColor, fontStyle: 'bold' }).setOrigin(0.5);
+    const t = scene.add.text(lx, ly, label, { padding: { x: 4, y: 4 }, fontSize: '12px', color: textColor, fontStyle: 'bold' }).setOrigin(0.5);
     const z = scene.add.zone(lx, ly, bw, bh).setInteractive({ useHandCursor: true });
     z.on('pointerover', () => { g.clear(); g.fillStyle(color, 1); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
     z.on('pointerout', () => { g.clear(); g.fillStyle(color, 0.92); g.fillRoundedRect(lx - bw / 2, ly - bh / 2, bw, bh, 6); });
@@ -2646,7 +2646,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
   }
 
   function aToast(scene: GameScene, c: Phaser.GameObjects.Container, msg: string): void {
-    const t = scene.add.text(0, -296, msg, { fontSize: '14px', color: '#ffcc88', fontStyle: 'bold' }).setOrigin(0.5);
+    const t = scene.add.text(0, -296, msg, { padding: { x: 4, y: 4 }, fontSize: '14px', color: '#ffcc88', fontStyle: 'bold' }).setOrigin(0.5);
     c.add(t);
     scene.time.delayedCall(1800, () => t.destroy());
   }
@@ -2722,7 +2722,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       g.fillStyle(0x1a1a30, 0.9); g.fillRoundedRect(cx - w / 2, cy - h / 2, w, h, 8);
       g.lineStyle(1, 0x33405e, 0.6); g.strokeRoundedRect(cx - w / 2, cy - h / 2, w, h, 8);
     }
-    const t = scene.add.text(cx, cy, label, { fontSize: '14px', color: active ? accent.text : '#8899bb', fontStyle: active ? 'bold' : 'normal' }).setOrigin(0.5);
+    const t = scene.add.text(cx, cy, label, { padding: { x: 4, y: 4 }, fontSize: '14px', color: active ? accent.text : '#8899bb', fontStyle: active ? 'bold' : 'normal' }).setOrigin(0.5);
     const z = scene.add.zone(cx, cy, w, h).setInteractive({ useHandCursor: true });
     z.on('pointerover', () => { if (!active) { g.clear(); g.fillStyle(0x2a2a48, 1); g.fillRoundedRect(cx - w / 2, cy - h / 2, w, h, 8); g.lineStyle(1, 0x445577, 0.8); g.strokeRoundedRect(cx - w / 2, cy - h / 2, w, h, 8); } });
     z.on('pointerout', () => { if (!active) { g.clear(); g.fillStyle(0x1a1a30, 0.9); g.fillRoundedRect(cx - w / 2, cy - h / 2, w, h, 8); g.lineStyle(1, 0x33405e, 0.6); g.strokeRoundedRect(cx - w / 2, cy - h / 2, w, h, 8); } });
@@ -2765,9 +2765,9 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
 
     // 标题栏
     const tb = scene.add.graphics(); tb.fillStyle(0x1a1a36, 1); tb.fillRoundedRect(px + 2, py + 2, PW - 4, 54, { tl: 12, tr: 12, bl: 0, br: 0 }); c.add(tb);
-    c.add(scene.add.text(px + 28, py + 28, '拍卖行', { fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
-    c.add(scene.add.text(px + PW - 250, py + 28, `金币 ${fmtNum((GameState as any).gold || 0)}`, { fontSize: '15px', color: '#ffd24a', fontStyle: 'bold' }).setOrigin(0, 0.5));
-    const close = scene.add.text(px + PW - 28, py + 28, '✕', { fontSize: '24px', color: '#aa6677', fontStyle: 'bold' }).setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
+    c.add(scene.add.text(px + 28, py + 28, '拍卖行', { padding: { x: 4, y: 4 }, fontSize: '22px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+    c.add(scene.add.text(px + PW - 250, py + 28, `金币 ${fmtNum((GameState as any).gold || 0)}`, { padding: { x: 4, y: 4 }, fontSize: '15px', color: '#ffd24a', fontStyle: 'bold' }).setOrigin(0, 0.5));
+    const close = scene.add.text(px + PW - 28, py + 28, '✕', { padding: { x: 4, y: 4 }, fontSize: '24px', color: '#aa6677', fontStyle: 'bold' }).setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
     close.on('pointerdown', () => closeAuctionPanel(scene));
     close.on('pointerover', () => close.setColor('#ff8899'));
     close.on('pointerout', () => close.setColor('#aa6677'));
@@ -2856,7 +2856,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     // 左侧色条（3px 竖线标识当前 Tab）
     banG.fillStyle(accent.border, 0.8); banG.fillRect(bPx + 16, bannerY + 3, 3, 22);
     body.add(banG);
-    body.add(scene.add.text(bPx + 28, bannerY + 14, TAB_LABELS[auctionPanelTab] || '', { fontSize: '14px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(bPx + 28, bannerY + 14, TAB_LABELS[auctionPanelTab] || '', { padding: { x: 4, y: 4 }, fontSize: '14px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
 
     // 三栏：左筛选 / 中卡片网格 / 右详情（从 banner 下方开始）
     renderSidebar(scene, body);
@@ -2874,7 +2874,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     g.lineStyle(8, col, 0.16); g.strokeRoundedRect(cx - size / 2, cy - size / 2, size, size, 10);
     parent.add(g);
     const icon = A_CAT_ICON[category] || '·';
-    parent.add(scene.add.text(cx, cy, icon, { fontSize: Math.round(size * 0.46) + 'px', color: qc, fontStyle: 'bold' }).setOrigin(0.5));
+    parent.add(scene.add.text(cx, cy, icon, { padding: { x: 4, y: 4 }, fontSize: Math.round(size * 0.46) + 'px', color: qc, fontStyle: 'bold' }).setOrigin(0.5));
   }
 
   // 物品卡片（DNF 式：图标 + 名 + 价格，稀有度边框发光）
@@ -2890,8 +2890,8 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     drawIconTile(scene, parent, x + w / 2, y + 46, iconSz, a.category, a.quality);
     // 物品名：wordWrap 宽度留足内边距，防止长名截断
     const nameWrapW = w - 16;
-    parent.add(scene.add.text(x + w / 2, y + 90, a.item_name, { fontSize: '13px', color: qc, fontStyle: 'bold', align: 'center', wordWrap: { width: nameWrapW } }).setOrigin(0.5, 0.5));
-    parent.add(scene.add.text(x + w / 2, y + h - 22, `${fmtNum(a.price)} 金`, { fontSize: '14px', color: '#ffd24a', fontStyle: 'bold' }).setOrigin(0.5));
+    parent.add(scene.add.text(x + w / 2, y + 90, a.item_name, { padding: { x: 4, y: 4 }, fontSize: '13px', color: qc, fontStyle: 'bold', align: 'center', wordWrap: { width: nameWrapW } }).setOrigin(0.5, 0.5));
+    parent.add(scene.add.text(x + w / 2, y + h - 22, `${fmtNum(a.price)} 金`, { padding: { x: 4, y: 4 }, fontSize: '14px', color: '#ffd24a', fontStyle: 'bold' }).setOrigin(0.5));
     const z = scene.add.zone(x + w / 2, y + h / 2, w, h).setInteractive({ useHandCursor: true });
     z.on('pointerdown', onClick);
     parent.add(z);
@@ -2904,7 +2904,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     g.fillStyle(active ? 0x33507a : 0x16162a, active ? 0.95 : 0.55); g.fillRoundedRect(x, y, w, h, 6);
     if (active) { g.fillStyle(0x9fc0ff, 1); g.fillRoundedRect(x, y, 4, h, 2); }
     g.lineStyle(1, active ? 0x9fc0ff : 0x2a3450, active ? 0.8 : 0.5); g.strokeRoundedRect(x, y, w, h, 6);
-    const t = scene.add.text(x + 14, y + h / 2, label, { fontSize: '13px', color: active ? '#dceaff' : '#9fb0d0' }).setOrigin(0, 0.5);
+    const t = scene.add.text(x + 14, y + h / 2, label, { padding: { x: 4, y: 4 }, fontSize: '13px', color: active ? '#dceaff' : '#9fb0d0' }).setOrigin(0, 0.5);
     const z = scene.add.zone(x + w / 2, y + h / 2, w, h).setInteractive({ useHandCursor: true });
     z.on('pointerover', () => { if (!active) { g.clear(); g.fillStyle(0x222238, 0.9); g.fillRoundedRect(x, y, w, h, 6); g.lineStyle(1, 0x3a4a6a, 0.8); g.strokeRoundedRect(x, y, w, h, 6); } });
     z.on('pointerout', () => { if (!active) { g.clear(); g.fillStyle(0x16162a, 0.55); g.fillRoundedRect(x, y, w, h, 6); g.lineStyle(1, 0x2a3450, 0.5); g.strokeRoundedRect(x, y, w, h, 6); } });
@@ -2919,14 +2919,14 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     const sh = (py + AUCTION_PH - 16) - sy;
     const accent = A_TAB_ACCENT[auctionPanelTab] || A_TAB_ACCENT.market;
     const g = scene.add.graphics(); g.fillStyle(0x0e0e1c, 0.6); g.fillRoundedRect(sx, sy, sw, sh, 10); g.lineStyle(1, accent.border, 0.4); g.strokeRoundedRect(sx, sy, sw, sh, 10); body.add(g);
-    body.add(scene.add.text(sx + 14, sy + 16, '分类', { fontSize: '13px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(sx + 14, sy + 16, '分类', { padding: { x: 4, y: 4 }, fontSize: '13px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
     const cats: (string | null)[] = [null, ...A_CAT_ORDER];
     cats.forEach((cat, i) => {
       const label = cat ? (A_CAT[cat] || cat) : '全部';
       aSideRow(scene, body, sx + 8, sy + 34 + i * 28, sw - 16, label, auctionFilter.category === cat, () => { auctionFilter.category = cat; applyAuctionFilter(scene); });
     });
     const rLabelY = sy + 34 + cats.length * 28 + 10;
-    body.add(scene.add.text(sx + 14, rLabelY, '稀有度', { fontSize: '13px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(sx + 14, rLabelY, '稀有度', { padding: { x: 4, y: 4 }, fontSize: '13px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
     A_QUAL_ORDER.forEach((q, i) => {
       const label = q ? (A_QUAL[q] || q) : '全部';
       aSideRow(scene, body, sx + 8, rLabelY + 20 + i * 28, sw - 16, label, auctionFilter.quality === q, () => { auctionFilter.quality = q; applyAuctionFilter(scene); });
@@ -2944,10 +2944,10 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
       const o = auctionFilter.sort;
       list = [...list].sort((a: any, b: any) => o === 'price_desc' ? b.price - a.price : o === 'recent' ? (b.id - a.id) : a.price - b.price);
     }
-    if (!GameState.auctionData) { body.add(scene.add.text(gridX + 392, gridTop + 156, '加载中…', { fontSize: '16px', color: '#8899bb' }).setOrigin(0.5)); return; }
+    if (!GameState.auctionData) { body.add(scene.add.text(gridX + 392, gridTop + 156, '加载中…', { padding: { x: 4, y: 4 }, fontSize: '16px', color: '#8899bb' }).setOrigin(0.5)); return; }
     const accent = A_TAB_ACCENT[auctionPanelTab] || A_TAB_ACCENT.market;
     const emptyMsg = auctionPanelTab === 'mine' ? '你还没有在售挂单' : auctionPanelTab === 'fav' ? '你还没有收藏任何挂单' : '暂无在售物品，去「上架」挂点东西吧';
-    if (list.length === 0) { body.add(scene.add.text(gridX + 392, gridTop + 156, emptyMsg, { fontSize: '15px', color: accent.text }).setOrigin(0.5)); return; }
+    if (list.length === 0) { body.add(scene.add.text(gridX + 392, gridTop + 156, emptyMsg, { padding: { x: 4, y: 4 }, fontSize: '15px', color: accent.text }).setOrigin(0.5)); return; }
     const pages = Math.max(1, Math.ceil(list.length / AUCTION_PAGE_SIZE));
     auctionPage = Phaser.Math.Clamp(auctionPage, 0, pages - 1);
     const start = auctionPage * AUCTION_PAGE_SIZE;
@@ -2961,7 +2961,7 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     // 分页
     const pgY = gridTop + 3 * cardH + 2 * gapY + 22;
     aBtn(scene, body, gridX + 70, pgY, '上一页', 0x2a3a5a, auctionPage > 0 ? '#bcd4ff' : '#556677', () => { if (auctionPage > 0) { auctionPage--; renderAuctionBody(scene); } });
-    body.add(scene.add.text(gridX + 392, pgY, `第 ${auctionPage + 1} / ${pages} 页`, { fontSize: '13px', color: '#aabbcc' }).setOrigin(0.5));
+    body.add(scene.add.text(gridX + 392, pgY, `第 ${auctionPage + 1} / ${pages} 页`, { padding: { x: 4, y: 4 }, fontSize: '13px', color: '#aabbcc' }).setOrigin(0.5));
     aBtn(scene, body, gridX + 714, pgY, '下一页', 0x2a3a5a, auctionPage < pages - 1 ? '#bcd4ff' : '#556677', () => { if (auctionPage < pages - 1) { auctionPage++; renderAuctionBody(scene); } });
   }
 
@@ -2971,25 +2971,25 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     const dx = px + PW - 264, dy = py + 184, dw = 248, dh = (py + AUCTION_PH - 16) - dy;
     const accent = A_TAB_ACCENT[auctionPanelTab] || A_TAB_ACCENT.market;
     const g = scene.add.graphics(); g.fillStyle(0x0e0e1c, 0.6); g.fillRoundedRect(dx, dy, dw, dh, 10); g.lineStyle(1, accent.border, 0.4); g.strokeRoundedRect(dx, dy, dw, dh, 10); body.add(g);
-    body.add(scene.add.text(dx + 14, dy + 16, '物品详情', { fontSize: '14px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(dx + 14, dy + 16, '物品详情', { padding: { x: 4, y: 4 }, fontSize: '14px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
     const list = (GameState.auctionData && (GameState.auctionData as any).auctions) || [];
     const a = list.find((x: any) => x.id === auctionSelectedId);
-    if (!a) { body.add(scene.add.text(dx + dw / 2, dy + dh / 2, '选择左侧物品\n查看详情', { fontSize: '14px', color: accent.text, align: 'center' }).setOrigin(0.5)); return; }
+    if (!a) { body.add(scene.add.text(dx + dw / 2, dy + dh / 2, '选择左侧物品\n查看详情', { padding: { x: 4, y: 4 }, fontSize: '14px', color: accent.text, align: 'center' }).setOrigin(0.5)); return; }
     const item = parseAuctionItem(a);
     drawIconTile(scene, body, dx + dw / 2, dy + 92, 76, a.category, a.quality);
-    body.add(scene.add.text(dx + dw / 2, dy + 150, a.item_name, { fontSize: '15px', color: A_QUAL_COLOR[a.quality] || '#cdd6e8', fontStyle: 'bold', align: 'center', wordWrap: { width: dw - 20 } }).setOrigin(0.5, 0));
-    body.add(scene.add.text(dx + dw / 2, dy + 178, `${A_CAT[a.category] || a.category} · ${A_QUAL[a.quality] || a.quality}`, { fontSize: '12px', color: '#99aabb', align: 'center' }).setOrigin(0.5, 0));
+    body.add(scene.add.text(dx + dw / 2, dy + 150, a.item_name, { padding: { x: 4, y: 4 }, fontSize: '15px', color: A_QUAL_COLOR[a.quality] || '#cdd6e8', fontStyle: 'bold', align: 'center', wordWrap: { width: dw - 20 } }).setOrigin(0.5, 0));
+    body.add(scene.add.text(dx + dw / 2, dy + 178, `${A_CAT[a.category] || a.category} · ${A_QUAL[a.quality] || a.quality}`, { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#99aabb', align: 'center' }).setOrigin(0.5, 0));
     let yy = dy + 204;
-    if (item.desc) { body.add(scene.add.text(dx + 16, yy, item.desc, { fontSize: '11px', color: '#7788aa', wordWrap: { width: dw - 32 } }).setOrigin(0, 0)); yy += 24; }
+    if (item.desc) { body.add(scene.add.text(dx + 16, yy, item.desc, { padding: { x: 4, y: 4 }, fontSize: '11px', color: '#7788aa', wordWrap: { width: dw - 32 } }).setOrigin(0, 0)); yy += 24; }
     const lines = auctionStatsLines(item);
     if (lines.length) {
-      body.add(scene.add.text(dx + 16, yy, '属性', { fontSize: '12px', color: '#9fb0d0', fontStyle: 'bold' }).setOrigin(0, 0)); yy += 18;
-      for (const ln of lines) { body.add(scene.add.text(dx + 18, yy, ln, { fontSize: '12px', color: '#cdd6e8' }).setOrigin(0, 0)); yy += 18; }
+      body.add(scene.add.text(dx + 16, yy, '属性', { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#9fb0d0', fontStyle: 'bold' }).setOrigin(0, 0)); yy += 18;
+      for (const ln of lines) { body.add(scene.add.text(dx + 18, yy, ln, { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#cdd6e8' }).setOrigin(0, 0)); yy += 18; }
     }
     const isMine = auctionPanelTab === 'mine';
-    body.add(scene.add.text(dx + 16, dy + dh - 150, `数量  ×${a.quantity}`, { fontSize: '13px', color: '#aabbcc' }).setOrigin(0, 0));
-    body.add(scene.add.text(dx + 16, dy + dh - 122, `单价  ${fmtNum(a.price)} 金`, { fontSize: '15px', color: '#ffd24a', fontStyle: 'bold' }).setOrigin(0, 0));
-    body.add(scene.add.text(dx + 16, dy + dh - 94, `卖家  ${a.seller_name || '—'}`, { fontSize: '12px', color: '#99aabb' }).setOrigin(0, 0));
+    body.add(scene.add.text(dx + 16, dy + dh - 150, `数量  ×${a.quantity}`, { padding: { x: 4, y: 4 }, fontSize: '13px', color: '#aabbcc' }).setOrigin(0, 0));
+    body.add(scene.add.text(dx + 16, dy + dh - 122, `单价  ${fmtNum(a.price)} 金`, { padding: { x: 4, y: 4 }, fontSize: '15px', color: '#ffd24a', fontStyle: 'bold' }).setOrigin(0, 0));
+    body.add(scene.add.text(dx + 16, dy + dh - 94, `卖家  ${a.seller_name || '—'}`, { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#99aabb' }).setOrigin(0, 0));
     if (isMine) aBtn(scene, body, dx + dw / 2 - 58, dy + dh - 40, '撤单', 0x6a4a2a, '#ffd9a0', () => onCancel(scene, a));
     else aBtn(scene, body, dx + dw / 2 - 58, dy + dh - 40, '购买', 0x2a6e4a, '#cfeedd', () => onBuy(scene, a));
     aBtn(scene, body, dx + dw / 2 + 58, dy + dh - 40, a.favorited ? '★' : '☆', 0x33507a, '#bcd4ff', () => onFav(scene, a));
@@ -3005,17 +3005,17 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     banG.lineStyle(1, accent.border, 0.35); banG.strokeRoundedRect(px + 16, bannerY, PW - 32, 28, 6);
     banG.fillStyle(accent.border, 0.8); banG.fillRect(px + 16, bannerY + 3, 3, 22);
     body.add(banG);
-    body.add(scene.add.text(px + 28, bannerY + 14, '📋  交易记录', { fontSize: '14px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(px + 28, bannerY + 14, '📋  交易记录', { padding: { x: 4, y: 4 }, fontSize: '14px', color: accent.text, fontStyle: 'bold' }).setOrigin(0, 0.5));
 
-    if (!GameState.auctionData) { body.add(scene.add.text(0, py + 380, '加载中…', { fontSize: '16px', color: '#8899bb' }).setOrigin(0.5)); return; }
+    if (!GameState.auctionData) { body.add(scene.add.text(0, py + 380, '加载中…', { padding: { x: 4, y: 4 }, fontSize: '16px', color: '#8899bb' }).setOrigin(0.5)); return; }
     const hist = (GameState.auctionData as any).history || [];
-    if (hist.length === 0) { body.add(scene.add.text(0, py + 380, '暂无交易记录', { fontSize: '15px', color: accent.text, fontStyle: 'bold' }).setOrigin(0.5)); return; }
+    if (hist.length === 0) { body.add(scene.add.text(0, py + 380, '暂无交易记录', { padding: { x: 4, y: 4 }, fontSize: '15px', color: accent.text, fontStyle: 'bold' }).setOrigin(0.5)); return; }
     const hdrY = py + 196;
-    body.add(scene.add.text(px + 60, hdrY, '物品', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
-    body.add(scene.add.text(px + 420, hdrY, '类型', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
-    body.add(scene.add.text(px + 580, hdrY, '价格', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
-    body.add(scene.add.text(px + 760, hdrY, '对方', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
-    body.add(scene.add.text(px + 980, hdrY, '时间', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(px + 60, hdrY, '物品', { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(px + 420, hdrY, '类型', { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(px + 580, hdrY, '价格', { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(px + 760, hdrY, '对方', { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
+    body.add(scene.add.text(px + 980, hdrY, '时间', { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
     const vpTop = py + 214, vpBottom = py + AUCTION_PH - 16;
     setupScroll(scene, body, auctionCx, auctionCy, hist, 34, vpTop, vpBottom, px + 40, PW - 80,
       (h: any, i: number, ry: number, sc: Phaser.GameObjects.Container, _btnS: any) => {
@@ -3024,11 +3024,11 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
         const kindColor = h.kind === 'sold' ? '#9fe6a0' : h.kind === 'bought' ? '#ffd24a' : '#aa6677';
         const other = h.kind === 'sold' ? ('给 #' + h.buyer_char_id) : h.kind === 'bought' ? ('自 #' + h.seller_char_id) : '—';
         const time = (h.created_at || '').replace('T', ' ').slice(0, 16);
-        sc.add(scene.add.text(px + 60, ry, h.item_name, { fontSize: '13px', color: '#cdd6e8' }).setOrigin(0, 0.5));
-        sc.add(scene.add.text(px + 420, ry, kindLabel, { fontSize: '12px', color: kindColor }).setOrigin(0, 0.5));
-        sc.add(scene.add.text(px + 580, ry, `${h.price} 金`, { fontSize: '12px', color: '#ffd24a' }).setOrigin(0, 0.5));
-        sc.add(scene.add.text(px + 760, ry, other, { fontSize: '11px', color: '#99aabb' }).setOrigin(0, 0.5));
-        sc.add(scene.add.text(px + 980, ry, time, { fontSize: '11px', color: '#7788aa' }).setOrigin(0, 0.5));
+        sc.add(scene.add.text(px + 60, ry, h.item_name, { padding: { x: 4, y: 4 }, fontSize: '13px', color: '#cdd6e8' }).setOrigin(0, 0.5));
+        sc.add(scene.add.text(px + 420, ry, kindLabel, { padding: { x: 4, y: 4 }, fontSize: '12px', color: kindColor }).setOrigin(0, 0.5));
+        sc.add(scene.add.text(px + 580, ry, `${h.price} 金`, { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#ffd24a' }).setOrigin(0, 0.5));
+        sc.add(scene.add.text(px + 760, ry, other, { padding: { x: 4, y: 4 }, fontSize: '11px', color: '#99aabb' }).setOrigin(0, 0.5));
+        sc.add(scene.add.text(px + 980, ry, time, { padding: { x: 4, y: 4 }, fontSize: '11px', color: '#7788aa' }).setOrigin(0, 0.5));
       });
   }
 
@@ -3038,32 +3038,32 @@ export function showBestiaryDetail(scene: GameScene, x:number,y:number,w:number,
     const dim = scene.add.graphics(); dim.fillStyle(0, 0.55); dim.fillRoundedRect(px + 8, py + 156, PW - 16, AUCTION_PH - 156 - 16, 10); body.add(dim);
     const bw = 860, bh = AUCTION_PH - 168 - 16, bx = px + (PW - bw) / 2, by = py + 168;
     const g = scene.add.graphics(); g.fillStyle(0x14142a, 0.99); g.fillRoundedRect(bx, by, bw, bh, 12); g.lineStyle(2, 0xc9a96e, 0.7); g.strokeRoundedRect(bx, by, bw, bh, 12); body.add(g);
-    body.add(scene.add.text(bx + bw / 2, by + 28, '上架物品', { fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0.5));
+    body.add(scene.add.text(bx + bw / 2, by + 28, '上架物品', { padding: { x: 4, y: 4 }, fontSize: '20px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0.5));
     aBtn(scene, body, bx + bw - 64, by + 28, '✕', 0x6a2a2a, '#ffb0b0', () => { auctionCreating = false; rebuildAuction(scene); });
     if (!auctionCreateItem) {
       const items = Inventory.items.filter(it => it.quantity > 0);
-      if (items.length === 0) { body.add(scene.add.text(bx + bw / 2, by + bh / 2, '背包为空，无可上架物品', { fontSize: '15px', color: '#667788' }).setOrigin(0.5)); return; }
-      body.add(scene.add.text(bx + 24, by + 56, `选择要上架的物品（共 ${items.length} 件）：`, { fontSize: '14px', color: '#8899bb' }).setOrigin(0, 0.5));
+      if (items.length === 0) { body.add(scene.add.text(bx + bw / 2, by + bh / 2, '背包为空，无可上架物品', { padding: { x: 4, y: 4 }, fontSize: '15px', color: '#667788' }).setOrigin(0.5)); return; }
+      body.add(scene.add.text(bx + 24, by + 56, `选择要上架的物品（共 ${items.length} 件）：`, { padding: { x: 4, y: 4 }, fontSize: '14px', color: '#8899bb' }).setOrigin(0, 0.5));
       setupScroll(scene, body, auctionCx, auctionCy, items, 36, by + 86, by + bh - 20, bx + 24, bw - 48,
         (it: any, i: number, ry: number, sc: Phaser.GameObjects.Container, btnS: any) => {
           if (i % 2 === 0) { const rb = scene.add.graphics(); rb.fillStyle(0x1a1a2e, 0.35); rb.fillRoundedRect(bx + 24, ry - 14, bw - 48, 30, 4); sc.add(rb); }
           const qc = A_QUAL_COLOR[it.quality] || '#cdd6e8';
-          sc.add(scene.add.text(bx + 36, ry, it.name, { fontSize: '14px', color: qc, fontStyle: 'bold' }).setOrigin(0, 0.5));
-          sc.add(scene.add.text(bx + 400, ry, A_CAT[it.type] || it.type || '—', { fontSize: '12px', color: '#99aabb' }).setOrigin(0, 0.5));
-          sc.add(scene.add.text(bx + 520, ry, `×${it.quantity}`, { fontSize: '12px', color: '#aabbcc' }).setOrigin(0, 0.5));
+          sc.add(scene.add.text(bx + 36, ry, it.name, { padding: { x: 4, y: 4 }, fontSize: '14px', color: qc, fontStyle: 'bold' }).setOrigin(0, 0.5));
+          sc.add(scene.add.text(bx + 400, ry, A_CAT[it.type] || it.type || '—', { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#99aabb' }).setOrigin(0, 0.5));
+          sc.add(scene.add.text(bx + 520, ry, `×${it.quantity}`, { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#aabbcc' }).setOrigin(0, 0.5));
           btnS(bx + bw - 90, ry, '选择', 0x33507a, '#bcd4ff', () => { auctionCreateItem = it; rebuildAuction(scene); });
         });
     } else {
       const it = auctionCreateItem;
       const detail = `${it.name}（${A_CAT[it.type] || it.type} · ${A_QUAL[it.quality || 'white'] || it.quality || '—'}）`;
       drawIconTile(scene, body, bx + 100, by + 124, 76, it.type, it.quality);
-      body.add(scene.add.text(bx + 160, by + 108, '上架：' + detail, { fontSize: '15px', color: '#e8d5a3', wordWrap: { width: bw - 200 } }).setOrigin(0, 0.5));
-      body.add(scene.add.text(bx + 50, by + 210, '数量', { fontSize: '14px', color: '#8899bb' }).setOrigin(0, 0.5));
+      body.add(scene.add.text(bx + 160, by + 108, '上架：' + detail, { padding: { x: 4, y: 4 }, fontSize: '15px', color: '#e8d5a3', wordWrap: { width: bw - 200 } }).setOrigin(0, 0.5));
+      body.add(scene.add.text(bx + 50, by + 210, '数量', { padding: { x: 4, y: 4 }, fontSize: '14px', color: '#8899bb' }).setOrigin(0, 0.5));
       const qtyInput = aPlaceBodyInput(scene, bx + 120, by + 210, 120, 30, 4, '1');
-      body.add(scene.add.text(bx + 255, by + 210, `（上限 ${it.quantity}）`, { fontSize: '12px', color: '#556677' }).setOrigin(0, 0.5));
-      body.add(scene.add.text(bx + 50, by + 264, '单价(金)', { fontSize: '14px', color: '#8899bb' }).setOrigin(0, 0.5));
+      body.add(scene.add.text(bx + 255, by + 210, `（上限 ${it.quantity}）`, { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#556677' }).setOrigin(0, 0.5));
+      body.add(scene.add.text(bx + 50, by + 264, '单价(金)', { padding: { x: 4, y: 4 }, fontSize: '14px', color: '#8899bb' }).setOrigin(0, 0.5));
       const priceInput = aPlaceBodyInput(scene, bx + 120, by + 264, 160, 30, 9, '');
-      body.add(scene.add.text(bx + 295, by + 264, `（成交收取 ${Math.round(AUCTION_FEE_RATE * 100)}% 手续费）`, { fontSize: '12px', color: '#556677' }).setOrigin(0, 0.5));
+      body.add(scene.add.text(bx + 295, by + 264, `（成交收取 ${Math.round(AUCTION_FEE_RATE * 100)}% 手续费）`, { padding: { x: 4, y: 4 }, fontSize: '12px', color: '#556677' }).setOrigin(0, 0.5));
       aBtn(scene, body, bx + 130, by + 340, '确认上架', 0x2a6e4a, '#cfeedd', () => {
         const qty = Math.max(1, Math.min(it.quantity, parseInt(qtyInput.value, 10) || 1));
         const price = parseInt(priceInput.value, 10) || 0;
