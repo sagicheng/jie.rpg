@@ -667,36 +667,40 @@ export class MultiBattleScene extends Phaser.Scene {
 
   private syncCards(map: Map<string, Card>, src: Map<string, any>, isPlayer: boolean): void {
     const list = [...(src as Map<string, any>).values()];
-    // 玩家侧特殊布局：人物+灵宠并排同行（人物左 / 宠物右），而非上下堆叠
+    //
+    // ═══ 全屏响应式战场布局 ═══
+    //
+    //  纵轴：标题(~5%) + 状态栏(~6%) → 卡片区起始于 ~22% 屏高
+    //        指令按钮区在底部 ~10% → 卡片区终止于 ~72% 屏高
+    //        可用卡片区 ≈ 50% 屏高，行距按此均分
+    //
+    //  横轴：我方紧凑组(左 16%/38%) | 对战区(~30%) | 敌方组(右 68%/88%)
+    //
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const cardAreaTop = H * 0.20;
+    const playerRowH = H * 0.14;   // 我方行距（人物+宠物同行，紧凑）
+    const enemyRowH  = H * 0.18;   // 敌方行距（双列，稍宽）
+
     const ownerPositions: Record<string, { x: number; y: number }> = {};
     if (isPlayer) {
       let row = 0;
-      // 第一遍：先排非宠物（人物/队友），记录每行位置
+      // 第一遍：非宠物（人物/队友）—— 左侧主列
       for (const c of list) {
         if (!c.isPet) {
           const id = c.sessionId || c.id;
-          ownerPositions[id] = {
-            x: this.scale.width * 0.20,
-            y: 170 + row * 120,
-          };
+          ownerPositions[id] = { x: W * 0.15, y: cardAreaTop + row * playerRowH };
           row++;
         }
       }
-      // 第二遍：宠物紧跟主人右侧（同一行）
+      // 第二遍：宠物紧跟主人右侧同行 —— 紧凑配对
       for (const c of list) {
         if (c.isPet && c.ownerSid) {
           const op = ownerPositions[c.ownerSid];
           if (op) {
-            ownerPositions[c.sessionId] = {
-              x: this.scale.width * 0.48,
-              y: op.y,
-            };
+            ownerPositions[c.sessionId] = { x: W * 0.37, y: op.y };
           } else {
-            // 无主人位置时 fallback 到独立行
-            ownerPositions[c.sessionId] = {
-              x: this.scale.width * 0.20,
-              y: 170 + row * 120,
-            };
+            ownerPositions[c.sessionId] = { x: W * 0.15, y: cardAreaTop + row * playerRowH };
             row++;
           }
         }
@@ -705,16 +709,15 @@ export class MultiBattleScene extends Phaser.Scene {
 
     list.forEach((c: any, i: number) => {
       const id = c.sessionId || c.id;
-      // 站位：我方（人物/灵宠并排同行）；敌方右侧 2 列 × 4 行（最多 8 只）
       let x: number, y: number;
       if (isPlayer) {
         const pos = ownerPositions[id];
-        x = pos?.x ?? this.scale.width * 0.28;
-        y = pos?.y ?? 170 + i * 120;
+        x = pos?.x ?? W * 0.26;
+        y = pos?.y ?? cardAreaTop + i * playerRowH;
       } else {
         const col = i % 2, row = Math.floor(i / 2);
-        x = this.scale.width * (col === 0 ? 0.66 : 0.86);
-        y = 180 + row * 160;
+        x = W * (col === 0 ? 0.67 : 0.87);
+        y = cardAreaTop + row * enemyRowH;
       }
       let card = map.get(id);
       if (!card) {
