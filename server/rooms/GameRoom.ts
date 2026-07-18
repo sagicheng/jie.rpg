@@ -530,7 +530,7 @@ export class GameRoom extends Room<GameRoomState> {
         case 'petGrantDev': {
           const cid = sessionCharMap.get(client.sessionId);
           if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
-          res = world.grantPetTest(pw, data.speciesId ? String(data.speciesId) : undefined);
+          res = world.grantPetTest(pw, data.speciesId ? String(data.speciesId) : undefined, data.level ? Number(data.level) : undefined);
           if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
           break;
         }
@@ -538,6 +538,13 @@ export class GameRoom extends Room<GameRoomState> {
           const cid = sessionCharMap.get(client.sessionId);
           if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
           res = world.recallPet(pw, String(data.petId || ''));
+          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
+          break;
+        }
+        case 'petSetAttr': {
+          const cid = sessionCharMap.get(client.sessionId);
+          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
+          res = world.setPetAttr(pw, String(data.petId || ''), String(data.attr || '') as any, Number(data.delta) || 0);
           if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
           break;
         }

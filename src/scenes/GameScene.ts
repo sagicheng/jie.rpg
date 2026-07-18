@@ -1882,6 +1882,13 @@ export class GameScene extends Phaser.Scene {
         this.chatInputEl!.value = ''; this.chatInputEl!.blur();
       }
     });
+    // 画布缩放/居中变化时重定位 DOM 元素，消除左下角偏移
+    this.relayoutChatDom();
+    if (!this.chatResizeHooked) {
+      this.chatResizeHooked = true;
+      this.scale.on('resize', () => this.relayoutChatDom());
+    }
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.chatInputEl && this.chatInputEl.parentNode) this.chatInputEl.parentNode.removeChild(this.chatInputEl);
       if (this.chatTabBar && this.chatTabBar.parentNode) this.chatTabBar.parentNode.removeChild(this.chatTabBar);
@@ -1891,6 +1898,34 @@ export class GameScene extends Phaser.Scene {
   /** 频道标签 DOM 引用（用于高亮刷新，DOM 实现免疫相机滚动命中偏移）。 */
   private chatTabEls: HTMLElement[] = [];
   private chatTabBar: HTMLElement | null = null;
+  /** scale 'resize' 事件是否已挂接（只挂一次，避免重复监听）。 */
+  private chatResizeHooked = false;
+
+  /**
+   * 重定位聊天 DOM 元素（频道标签栏 + 输入框），使其始终贴合缩放/居中后的画布。
+   * 根因：FIT + CENTER_BOTH 下画布 getBoundingClientRect 随浏览器窗口大小变化，
+   * 而 DOM 元素只在创建时算过一次，窗口改变后便与画布左下角错位。
+   */
+  private relayoutChatDom(): void {
+    if (!this.chatInputEl && !this.chatTabBar) return;
+    const canvas = this.game.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const gw = this.scale.width, gh = this.scale.height;
+    const sx = rect.width / gw, sy = rect.height / gh;
+    if (this.chatTabBar) {
+      const tabStartX = 12 + 10, tabY = (gh - 260) + 28;
+      this.chatTabBar.style.left = (rect.left + tabStartX * sx) + 'px';
+      this.chatTabBar.style.top = (rect.top + tabY * sy) + 'px';
+    }
+    if (this.chatInputEl) {
+      const w = 366, h = 30, lx = 14, ly = gh - 60;
+      this.chatInputEl.style.left = (rect.left + lx * sx) + 'px';
+      this.chatInputEl.style.top = (rect.top + ly * sy) + 'px';
+      this.chatInputEl.style.width = (w * sx) + 'px';
+      this.chatInputEl.style.height = (h * sy) + 'px';
+      this.chatInputEl.style.fontSize = (15 * Math.min(sx, sy)) + 'px';
+    }
+  }
 
   /** 切换聊天频道并刷新标签 UI。 */
   private switchChatChannel(channelId: string): void {

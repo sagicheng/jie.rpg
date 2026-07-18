@@ -565,19 +565,29 @@ export class MultiBattleScene extends Phaser.Scene {
 
   private syncCards(map: Map<string, Card>, src: Map<string, any>, isPlayer: boolean): void {
     const list = [...(src as Map<string, any>).values()];
-    const baseX = isPlayer ? this.scale.width * 0.28 : this.scale.width * 0.72;
     list.forEach((c: any, i: number) => {
       const id = c.sessionId || c.id;
-      const y = 170 + i * 120;
+      // 站位：我方左侧单列（最多 4 行，预留队友/灵宠）；敌方右侧 2 列 × 4 行（最多 8 只）
+      let x: number, y: number;
+      if (isPlayer) {
+        x = this.scale.width * 0.28;
+        y = 170 + i * 120;
+      } else {
+        const col = i % 2, row = Math.floor(i / 2);
+        x = this.scale.width * (col === 0 ? 0.66 : 0.86);
+        y = 180 + row * 160;
+      }
       let card = map.get(id);
       if (!card) {
-        card = this.makeCard(baseX, y, isPlayer);
+        card = this.makeCard(x, y, isPlayer);
         map.set(id, card);
         // 敌人卡片可点击：攻击/技能/鬼道选怪时高亮并接受点击
         if (!isPlayer) {
           card.root.setSize(380, 96).setInteractive({ useHandCursor: true });
           card.root.on('pointerdown', () => this.onEnemyCardClicked(id));
         }
+      } else {
+        card.root.setPosition(x, y);
       }
       // 玩家卡片：道具选目标时可点击
       if (isPlayer && this.pendingAction && this.pendingAction.type === 'item') {

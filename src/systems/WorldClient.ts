@@ -23,8 +23,12 @@ export interface WorldItem {
 export interface Pet {
   id: string; speciesId: string; name: string;
   level: number; exp: number;
+  element: string; quality: string;
   hp: number; maxHp: number;
   atk: number; def: number; matk: number; mdef: number; spd: number;
+  attrStr: number; attrVit: number; attrAgi: number; attrInt: number;
+  attrPoints: number;
+  skills: string[];
   loyalty: number; active: boolean;
 }
 export const PET_SLOT_CAP_CLIENT = 6;
@@ -151,6 +155,7 @@ export function requestPetSetActive(petId: string): boolean { return sendIntent(
 export function requestPetRelease(petId: string): boolean { return sendIntent('petRelease', { petId }); }
 export function requestPetGrantDev(speciesId?: string): boolean { return sendIntent('petGrantDev', { speciesId: speciesId || null }); }
 export function requestPetRecall(petId: string): boolean { return sendIntent('petRecall', { petId }); }
+export function requestPetSetAttr(petId: string, attr: string, delta: number): boolean { return sendIntent('petSetAttr', { petId, attr, delta }); }
 export function requestClaimQuest(questId: string): boolean {
   return sendIntent('claimQuest', { questId });
 }

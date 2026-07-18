@@ -108,14 +108,51 @@ export interface PlayerWorld {
   pets: Pet[];
 }
 
+export type PetElement = 'fire' | 'wind' | 'water' | 'earth';
+export type PetQuality = 'normal' | 'fine' | 'choice' | 'rare' | 'legend';
+
+/** 四元素（火/风/水/土）：标签 + 主题色（与《飘流幻境》一致）。 */
+export const PET_ELEMENTS: Record<PetElement, { label: string; color: number; icon: string }> = {
+  fire:  { label: '火', color: 0xff6633, icon: '🔥' },
+  wind:  { label: '风', color: 0x66ccff, icon: '🌪' },
+  water: { label: '水', color: 0x33ccaa, icon: '💧' },
+  earth: { label: '土', color: 0xcc8844, icon: '⛰' },
+};
+
+/** 宠物品质（5 档）：倍率影响成长与每级属性点。 */
+export const PET_QUALITIES: Record<PetQuality, { label: string; color: number; mult: number; attrPerLevel: number; weight: number }> = {
+  normal: { label: '普通', color: 0xaaaaaa, mult: 1.00, attrPerLevel: 2, weight: 50 },
+  fine:   { label: '优秀', color: 0x88cc66, mult: 1.12, attrPerLevel: 3, weight: 28 },
+  choice: { label: '精良', color: 0x66aaff, mult: 1.25, attrPerLevel: 4, weight: 14 },
+  rare:   { label: '稀有', color: 0xcc66ff, mult: 1.42, attrPerLevel: 5, weight: 6 },
+  legend: { label: '传说', color: 0xffcc33, mult: 1.65, attrPerLevel: 6, weight: 2 },
+};
+
+/** 灵宠技能注册表（id → 名称/描述/元素）。 */
+export const PET_SKILLS: Record<string, { name: string; desc: string; element?: PetElement }> = {
+  flame_breath: { name: '烈焰吐息', desc: '战斗中有几率对敌附加灼烧。', element: 'fire' },
+  rock_bulwark: { name: '岩石壁垒', desc: '开场为玩家附加护盾。', element: 'earth' },
+  gale_edge:    { name: '疾风之刃', desc: '提升出战者的速度。', element: 'wind' },
+  tide_veil:    { name: '碧水纱', desc: '提升出战者的魔防与回复。', element: 'water' },
+  shadow_fang:  { name: '暗影撕咬', desc: '高物攻并概率连击。', element: 'wind' },
+  quake_smash:  { name: '撼地重击', desc: '高血防，开场嘲讽。', element: 'earth' },
+  spirit_grace: { name: '灵兔祝福', desc: '提升出战者魔防与灵敏。', element: 'water' },
+  auspice:      { name: '祥瑞', desc: '提升玩家全属性光环。', element: 'fire' },
+};
+
 export interface Pet {
   id: string;
   speciesId: string;
   name: string;
   level: number;
   exp: number;
+  element: PetElement;
+  quality: PetQuality;
   hp: number; maxHp: number;
   atk: number; def: number; matk: number; mdef: number; spd: number;
+  attrStr: number; attrVit: number; attrAgi: number; attrInt: number; // 已分配属性点
+  attrPoints: number;        // 未分配
+  skills: string[];          // 技能 id
   loyalty: number;
   active: boolean;
 }
@@ -123,34 +160,40 @@ export interface Pet {
 /** 灵宠物种定义（服务端权威；客户端仅镜像展示用字段）。 */
 export interface PetSpecies {
   id: string; name: string; icon: string; color: number; desc: string;
+  element: PetElement;
   base: { hp: number; atk: number; def: number; matk: number; mdef: number; spd: number };
   growth: { hp: number; atk: number; def: number; matk: number; mdef: number; spd: number };
   obtainZone: number;
-  skill?: { name: string; desc: string };
+  skillIds: string[];        // 先天技能
 }
 
 export const PET_SLOT_CAP = 6;
 
 export const PET_SPECIES: Record<string, PetSpecies> = {
-  fox_fire: { id: 'fox_fire', name: '赤焰狐', icon: '🦊', color: 0xff6633, desc: '火属性灵狐，魔攻与速度见长。', obtainZone: 2,
+  fox_fire: { id: 'fox_fire', name: '赤焰狐', icon: '🦊', color: 0xff6633, desc: '火属性灵狐，魔攻与速度见长。', element: 'fire', obtainZone: 2,
     base: { hp: 120, atk: 18, def: 12, matk: 28, mdef: 16, spd: 22 }, growth: { hp: 14, atk: 2, def: 1.5, matk: 3, mdef: 2, spd: 2.5 },
-    skill: { name: '烈焰吐息', desc: '战斗中有几率对敌附加灼烧。' } },
-  tortoise_rock: { id: 'tortoise_rock', name: '玄岩龟', icon: '🐢', color: 0x889977, desc: '土属性灵龟，血厚防高。', obtainZone: 3,
+    skillIds: ['flame_breath'] },
+  tortoise_rock: { id: 'tortoise_rock', name: '玄岩龟', icon: '🐢', color: 0x889977, desc: '土属性灵龟，血厚防高。', element: 'earth', obtainZone: 3,
     base: { hp: 260, atk: 14, def: 30, matk: 8, mdef: 22, spd: 8 }, growth: { hp: 28, atk: 1.5, def: 3, matk: 1, mdef: 2.5, spd: 0.8 },
-    skill: { name: '岩石壁垒', desc: '开场为玩家附加护盾。' } },
-  hawk_wind: { id: 'hawk_wind', name: '青翼鹰', icon: '🦅', color: 0x66ccff, desc: '风属性灵鹰，速度与物攻突出。', obtainZone: 4,
-    base: { hp: 130, atk: 26, def: 12, matk: 14, mdef: 14, spd: 34 }, growth: { hp: 14, atk: 3, def: 1, matk: 1.5, mdef: 1.5, spd: 3 } },
-  serpent_water: { id: 'serpent_water', name: '碧水蟒', icon: '🐍', color: 0x33ccaa, desc: '水属性灵蟒，魔攻与血量兼备。', obtainZone: 5,
-    base: { hp: 200, atk: 16, def: 16, matk: 26, mdef: 20, spd: 16 }, growth: { hp: 22, atk: 1.5, def: 1.5, matk: 3, mdef: 2, spd: 1.5 } },
-  wolf_shadow: { id: 'wolf_shadow', name: '暗影狼', icon: '🐺', color: 0x9966cc, desc: '暗属性灵狼，物攻与速度凶猛。', obtainZone: 6,
-    base: { hp: 160, atk: 30, def: 16, matk: 12, mdef: 14, spd: 26 }, growth: { hp: 18, atk: 3, def: 1.5, matk: 1.2, mdef: 1.5, spd: 2.5 } },
-  bear_earth: { id: 'bear_earth', name: '撼地熊', icon: '🐻', color: 0xcc8844, desc: '土属性灵熊，血防物攻全面。', obtainZone: 7,
-    base: { hp: 300, atk: 28, def: 26, matk: 6, mdef: 14, spd: 10 }, growth: { hp: 32, atk: 3, def: 3, matk: 0.8, mdef: 1.5, spd: 1 } },
-  rabbit_spirit: { id: 'rabbit_spirit', name: '灵兔', icon: '🐇', color: 0xff99cc, desc: '光属性灵兔，魔防与速度灵巧。', obtainZone: 8,
-    base: { hp: 110, atk: 12, def: 10, matk: 22, mdef: 24, spd: 28 }, growth: { hp: 12, atk: 1, def: 1, matk: 2.5, mdef: 2.5, spd: 2.5 } },
-  dragonet: { id: 'dragonet', name: '幼麟', icon: '🐉', color: 0xffcc33, desc: '稀有麒麟幼兽，六维均衡且成长极高。', obtainZone: 9,
+    skillIds: ['rock_bulwark'] },
+  hawk_wind: { id: 'hawk_wind', name: '青翼鹰', icon: '🦅', color: 0x66ccff, desc: '风属性灵鹰，速度与物攻突出。', element: 'wind', obtainZone: 4,
+    base: { hp: 130, atk: 26, def: 12, matk: 14, mdef: 14, spd: 34 }, growth: { hp: 14, atk: 3, def: 1, matk: 1.5, mdef: 1.5, spd: 3 },
+    skillIds: ['gale_edge'] },
+  serpent_water: { id: 'serpent_water', name: '碧水蟒', icon: '🐍', color: 0x33ccaa, desc: '水属性灵蟒，魔攻与血量兼备。', element: 'water', obtainZone: 5,
+    base: { hp: 200, atk: 16, def: 16, matk: 26, mdef: 20, spd: 16 }, growth: { hp: 22, atk: 1.5, def: 1.5, matk: 3, mdef: 2, spd: 1.5 },
+    skillIds: ['tide_veil'] },
+  wolf_shadow: { id: 'wolf_shadow', name: '暗影狼', icon: '🐺', color: 0x9966cc, desc: '风属性灵狼（暗），物攻与速度凶猛。', element: 'wind', obtainZone: 6,
+    base: { hp: 160, atk: 30, def: 16, matk: 12, mdef: 14, spd: 26 }, growth: { hp: 18, atk: 3, def: 1.5, matk: 1.2, mdef: 1.5, spd: 2.5 },
+    skillIds: ['shadow_fang'] },
+  bear_earth: { id: 'bear_earth', name: '撼地熊', icon: '🐻', color: 0xcc8844, desc: '土属性灵熊，血防物攻全面。', element: 'earth', obtainZone: 7,
+    base: { hp: 300, atk: 28, def: 26, matk: 6, mdef: 14, spd: 10 }, growth: { hp: 32, atk: 3, def: 3, matk: 0.8, mdef: 1.5, spd: 1 },
+    skillIds: ['quake_smash'] },
+  rabbit_spirit: { id: 'rabbit_spirit', name: '灵兔', icon: '🐇', color: 0xff99cc, desc: '水属性灵兔，魔防与速度灵巧。', element: 'water', obtainZone: 8,
+    base: { hp: 110, atk: 12, def: 10, matk: 22, mdef: 24, spd: 28 }, growth: { hp: 12, atk: 1, def: 1, matk: 2.5, mdef: 2.5, spd: 2.5 },
+    skillIds: ['spirit_grace'] },
+  dragonet: { id: 'dragonet', name: '幼麟', icon: '🐉', color: 0xffcc33, desc: '稀有麒麟幼兽，六维均衡且成长极高。', element: 'fire', obtainZone: 9,
     base: { hp: 220, atk: 24, def: 22, matk: 24, mdef: 22, spd: 24 }, growth: { hp: 24, atk: 2.5, def: 2.5, matk: 2.5, mdef: 2.5, spd: 2.5 },
-    skill: { name: '祥瑞', desc: '提升玩家全属性光环。' } },
+    skillIds: ['auspice'] },
 };
 
 /** 灵宠升到下一级所需经验。 */
@@ -158,17 +201,43 @@ export function petExpForLevel(level: number): number {
   return 80 * level;
 }
 
-/** 按物种与等级计算灵宠属性快照。 */
-export function computePetStats(sp: PetSpecies, level: number): { hp: number; atk: number; def: number; matk: number; mdef: number; spd: number } {
-  const f = (b: number, g: number) => Math.round(b + g * (level - 1));
+/** 属性点 → 各维加成权重（每点）。 */
+const PET_ATTR_WEIGHT = {
+  str: { atk: 3 },
+  vit: { hp: 12, def: 1 },
+  agi: { spd: 2 },
+  int: { matk: 2, mdef: 1 },
+};
+
+/** 按物种/等级/品质/已分配属性点计算灵宠属性快照。 */
+export function computePetStats(
+  sp: PetSpecies, level: number, quality: PetQuality,
+  attrs: { str: number; vit: number; agi: number; int: number },
+): { hp: number; atk: number; def: number; matk: number; mdef: number; spd: number } {
+  const q = (PET_QUALITIES[quality] || PET_QUALITIES.normal).mult;
+  const f = (b: number, g: number, a: number) => Math.round((b + g * (level - 1) + a) * q);
   return {
-    hp: f(sp.base.hp, sp.growth.hp),
-    atk: f(sp.base.atk, sp.growth.atk),
-    def: f(sp.base.def, sp.growth.def),
-    matk: f(sp.base.matk, sp.growth.matk),
-    mdef: f(sp.base.mdef, sp.growth.mdef),
-    spd: f(sp.base.spd, sp.growth.spd),
+    hp: f(sp.base.hp, sp.growth.hp, attrs.vit * PET_ATTR_WEIGHT.vit.hp),
+    atk: f(sp.base.atk, sp.growth.atk, attrs.str * PET_ATTR_WEIGHT.str.atk),
+    def: f(sp.base.def, sp.growth.def, attrs.vit * PET_ATTR_WEIGHT.vit.def),
+    matk: f(sp.base.matk, sp.growth.matk, attrs.int * PET_ATTR_WEIGHT.int.matk),
+    mdef: f(sp.base.mdef, sp.growth.mdef, attrs.int * PET_ATTR_WEIGHT.int.mdef),
+    spd: f(sp.base.spd, sp.growth.spd, attrs.agi * PET_ATTR_WEIGHT.agi.spd),
   };
+}
+
+/** 随机品质（按权重，区域越高传说概率略升）。 */
+export function rollPetQuality(zone = 1): PetQuality {
+  const boost = Math.min(0.4, Math.max(0, (zone - 1) * 0.03));
+  const entries = (Object.keys(PET_QUALITIES) as PetQuality[]).map(q => {
+    let w = PET_QUALITIES[q].weight;
+    if (q === 'rare' || q === 'legend') w = Math.round(w * (1 + boost * (q === 'legend' ? 2 : 1)));
+    return { q, w };
+  });
+  const total = entries.reduce((s, e) => s + e.w, 0);
+  let r = Math.random() * total;
+  for (const e of entries) { r -= e.w; if (r <= 0) return e.q; }
+  return 'normal';
 }
 
 function genPetId(): string {
@@ -690,17 +759,21 @@ export class WorldService {
   }
 
   // ───────────────── 灵宠系统（服务端权威） ─────────────────
-  /** 获得一只灵宠（按物种生成 Lv1 属性快照）。首只自动出战。 */
+  /** 获得一只灵宠（按物种生成 Lv1 属性快照，随机品质与先天技能）。首只自动出战。 */
   createPet(pw: PlayerWorld, speciesId: string, name?: string): OpResult {
     const sp = PET_SPECIES[speciesId];
     if (!sp) return { ok: false, msg: '未知灵宠物种' };
     if (!Array.isArray(pw.pets)) pw.pets = [];
     if (pw.pets.length >= PET_SLOT_CAP) return { ok: false, msg: `灵宠栏已满（上限 ${PET_SLOT_CAP}）` };
-    const stats = computePetStats(sp, 1);
+    const quality = rollPetQuality(sp.obtainZone);
+    const attrs = { str: 0, vit: 0, agi: 0, int: 0 };
+    const stats = computePetStats(sp, 1, quality, attrs);
     const pet: Pet = {
       id: genPetId(), speciesId, name: name || sp.name, level: 1, exp: 0,
+      element: sp.element, quality,
       hp: stats.hp, maxHp: stats.hp, atk: stats.atk, def: stats.def, matk: stats.matk, mdef: stats.mdef, spd: stats.spd,
-      loyalty: 50, active: pw.pets.length === 0,
+      attrStr: 0, attrVit: 0, attrAgi: 0, attrInt: 0, attrPoints: 0,
+      skills: [...sp.skillIds], loyalty: 50, active: pw.pets.length === 0,
     };
     pw.pets.push(pet);
     return { ok: true, msg: `获得灵宠 ${pet.name}`, data: { pet } };
@@ -715,7 +788,7 @@ export class WorldService {
     return { ok: true, msg: `${pet.name} 已出战` };
   }
 
-  /** 给灵宠加经验并自动升级（重算属性快照，回满血）。 */
+  /** 给灵宠加经验并自动升级（重算属性快照，回满血，按品质发放属性点）。 */
   addPetExp(pw: PlayerWorld, petId: string, amount: number): OpResult {
     if (!Array.isArray(pw.pets)) pw.pets = [];
     const pet = pw.pets.find(p => p.id === petId);
@@ -723,17 +796,41 @@ export class WorldService {
     const sp = PET_SPECIES[pet.speciesId];
     if (!sp) return { ok: false, msg: '灵宠物种缺失' };
     pet.exp += Math.max(0, amount);
-    let leveled = false;
+    let leveled = false, gainedPoints = 0;
     while (pet.level < 70 && pet.exp >= petExpForLevel(pet.level)) {
       pet.exp -= petExpForLevel(pet.level);
       pet.level++;
       leveled = true;
+      gainedPoints += (PET_QUALITIES[pet.quality] || PET_QUALITIES.normal).attrPerLevel;
     }
     if (leveled) {
-      const s = computePetStats(sp, pet.level);
+      pet.attrPoints += gainedPoints;
+      const attrs = { str: pet.attrStr, vit: pet.attrVit, agi: pet.attrAgi, int: pet.attrInt };
+      const s = computePetStats(sp, pet.level, pet.quality, attrs);
       pet.hp = pet.maxHp = s.hp; pet.atk = s.atk; pet.def = s.def; pet.matk = s.matk; pet.mdef = s.mdef; pet.spd = s.spd;
     }
-    return { ok: true, msg: leveled ? `${pet.name} 升至 Lv${pet.level}` : '经验已增加', data: { leveled, level: pet.level } };
+    return { ok: true, msg: leveled ? `${pet.name} 升至 Lv${pet.level}` : '经验已增加', data: { leveled, level: pet.level, gainedPoints } };
+  }
+
+  /** 分配灵宠属性点（attr: str/vit/agi/int，delta: +1/-1）。 */
+  setPetAttr(pw: PlayerWorld, petId: string, attr: 'str' | 'vit' | 'agi' | 'int', delta: number): OpResult {
+    if (!Array.isArray(pw.pets)) pw.pets = [];
+    const pet = pw.pets.find(p => p.id === petId);
+    if (!pet) return { ok: false, msg: '灵宠不存在' };
+    const sp = PET_SPECIES[pet.speciesId];
+    if (!sp) return { ok: false, msg: '灵宠物种缺失' };
+    const fields: Record<string, keyof Pet> = { str: 'attrStr', vit: 'attrVit', agi: 'attrAgi', int: 'attrInt' };
+    const field = fields[attr];
+    if (!field) return { ok: false, msg: '未知属性' };
+    const cur = (pet as any)[field] as number;
+    if (delta > 0 && pet.attrPoints <= 0) return { ok: false, msg: '无可用属性点' };
+    if (delta < 0 && cur <= 0) return { ok: false, msg: '该属性点已为 0' };
+    (pet as any)[field] = cur + delta;
+    pet.attrPoints -= delta;
+    const attrs = { str: pet.attrStr, vit: pet.attrVit, agi: pet.attrAgi, int: pet.attrInt };
+    const s = computePetStats(sp, pet.level, pet.quality, attrs);
+    pet.hp = pet.maxHp = s.hp; pet.atk = s.atk; pet.def = s.def; pet.matk = s.matk; pet.mdef = s.mdef; pet.spd = s.spd;
+    return { ok: true, msg: `${pet.name} 属性已更新` };
   }
 
   /** 放生灵宠（若出战中则改由首只接替出战）。 */
@@ -764,10 +861,18 @@ export class WorldService {
   }
 
   /** Dev 作弊键触发：发放一只灵宠（随机物种或指定）。服务端权威，落库以免重连丢失。 */
-  grantPetTest(pw: PlayerWorld, speciesId?: string): OpResult {
+  grantPetTest(pw: PlayerWorld, speciesId?: string, level?: number): OpResult {
     const keys = Object.keys(PET_SPECIES);
     const id = speciesId && PET_SPECIES[speciesId] ? speciesId : keys[Math.floor(Math.random() * keys.length)];
-    return this.createPet(pw, id);
+    const r = this.createPet(pw, id);
+    if (!r.ok || !level || level <= 1) return r;
+    const pet = (r.data as any)?.pet as Pet | undefined;
+    if (!pet) return r;
+    // 灌经验把宠物拉到指定等级（按品质发放属性点），便于测试 petSetAttr
+    let need = 0;
+    for (let lv = 1; lv < level; lv++) need += petExpForLevel(lv);
+    this.addPetExp(pw, pet.id, need);
+    return r;
   }
 
   // ───────────────── 强化 / 精炼 / 分解 / 重铸 ─────────────────

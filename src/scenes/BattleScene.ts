@@ -247,16 +247,17 @@ export class BattleScene extends Phaser.Scene {
       this.enemyInfoTexts.push(info);
     });
 
-    // 我方
-    this.add.sprite(GAME_WIDTH / 2, 460, 'player').setScale(2.5).setFlipX(true);
+    // 我方（左侧 4 行站位的第一行；其余 3 行预留给队友 / 灵宠）
+    const PX = GAME_WIDTH * 0.24, PY = GAME_HEIGHT * 0.22;
+    this.add.sprite(PX, PY, 'player').setScale(2.5).setFlipX(true);
     const bt = GameState.getActiveTitleDef()?.name;
-    this.add.text(GAME_WIDTH / 2, 530, bt ? `${GameState.playerName} · ${bt}` : GameState.playerName, {
+    this.add.text(PX, PY + 75, bt ? `${GameState.playerName} · ${bt}` : GameState.playerName, {
       fontSize: '14px', color: '#88aacc', padding: { y: 2 },
     }).setOrigin(0.5);
 
     this.playerHpBar = this.add.graphics();
     this.playerMpBar = this.add.graphics();
-    this.playerInfoText = this.add.text(GAME_WIDTH / 2, 575, '', {
+    this.playerInfoText = this.add.text(PX, GAME_HEIGHT * 0.22 + 170 + 24, '', {
       fontSize: '12px', color: '#aaccff', fontFamily: 'monospace', align: 'center',
     }).setOrigin(0.5, 0);
 
@@ -311,34 +312,15 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  /** 飘流幻境式双排站位 */
+  /** 梦幻/飘流式站位：怪物 2 列 × 4 行（最多 8 只），居于画面右侧；左侧留 4 行供我方（人+宠）使用。 */
   private getEnemyPositions(count: number): { x: number; y: number }[] {
-    const cx = GAME_WIDTH / 2;
+    const cols = [GAME_WIDTH * 0.72, GAME_WIDTH * 0.86];                       // 两列，靠右
+    const rows = [GAME_HEIGHT * 0.22, GAME_HEIGHT * 0.40, GAME_HEIGHT * 0.58, GAME_HEIGHT * 0.76]; // 四行
     const positions: { x: number; y: number }[] = [];
-
-    if (count <= 4) {
-      // 单排
-      const spread = Math.min(560, (count - 1) * 160);
-      const startX = cx - spread / 2;
-      const y = 200;
-      for (let i = 0; i < count; i++) {
-        positions.push({ x: startX + i * (spread / Math.max(1, count - 1)), y });
-      }
-    } else {
-      // 双排：前排靠近玩家，后排远离
-      const backCount = Math.ceil(count / 2);
-      const frontCount = count - backCount;
-      const spreadB = Math.min(560, (backCount - 1) * 150);
-      const spreadF = Math.min(560, (frontCount - 1) * 150);
-      const startBX = cx - spreadB / 2;
-      const startFX = cx - spreadF / 2;
-
-      for (let i = 0; i < backCount; i++) {
-        positions.push({ x: startBX + i * (spreadB / Math.max(1, backCount - 1)), y: 150 });
-      }
-      for (let i = 0; i < frontCount; i++) {
-        positions.push({ x: startFX + i * (spreadF / Math.max(1, frontCount - 1)), y: 230 });
-      }
+    for (let i = 0; i < count; i++) {
+      const row = Math.floor(i / 2);
+      const col = i % 2;
+      positions.push({ x: cols[col], y: rows[row] });
     }
     return positions;
   }
@@ -1851,7 +1833,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private drawPlayerBars(): void {
-    const bx = GAME_WIDTH / 2 + 50, by = 540, bw = 180;
+    const bx = GAME_WIDTH * 0.24 - 90, by = GAME_HEIGHT * 0.22 + 170, bw = 180;
     this.playerHpBar.clear();
     const hpRatio = this.playerHp / this.playerMaxHp;
     const hpColor = hpRatio > 0.5 ? 0x44cc44 : hpRatio > 0.25 ? 0xcccc44 : 0xcc4444;

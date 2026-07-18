@@ -1,7 +1,7 @@
 /**
  * 灵宠系统端到端烟测（真机 E2E 替代脚本）。
  *
- * 覆盖（v1 范围：所有权/等级/出战/光环，战斗协同留 v2）：
+ * 覆盖（v1.1 重设计范围：所有权/等级/出战/光环 + 元素/品质/技能/属性点）：
  *  A. 发放灵宠：随机物种 / 指定物种 → 首只自动出战
  *  B. 切换出战：setActive 后同玩家仅一只出战
  *  C. 收回出战：recall 后无出战灵宠
@@ -9,6 +9,8 @@
  *  E. 栏位上限：满 6 后第 7 只被拒
  *  F. 持久化：world_data 落库，刷新/断连仍保留
  *  G. 光环数值：出战灵宠按 10%/20% 比例提升玩家属性（computePetAura 对齐）
+ *  I. 新字段：发放灵宠含 element(4元素)/quality(5档)/skills(非空) 且合法
+ *  J. 属性点分配 petSetAttr：0 点时拒绝 / 升级后分配使 attrPoints 递减、属性与派生属性变化 / 非法属性名拒绝
  *
  * 与真实联机完全一致：起一个真正的 Colyseus 权威服（随机端口，独立临时库），
  * 用 colyseus.js 客户端走生产代码路径；服务端带装饰器故先 tsc 编译再 node 起服。
@@ -143,6 +145,27 @@ async function main(): Promise<void> {
     const secondId = b.pw.pets[1].id;
     assert('B 指定物种已记录', b.pw.pets.some((p: any) => p.speciesId === 'fox_fire'));
 
+    // ── I. 新字段：元素 / 品质 / 技能 ──
+    {
+      const VALID_ELEM = ['fire', 'wind', 'water', 'earth'];
+      const VALID_QUAL = ['normal', 'fine', 'choice', 'rare', 'legend'];
+      const foxPet = b.pw.pets.find((p: any) => p.speciesId === 'fox_fire');
+      if (!foxPet) fail('I 找不到 fox_fire 灵宠');
+      // 指定物种 fox_fire：火属性 + 技能 flame_breath
+      assert('I fox_fire 元素=fire', foxPet.element === 'fire');
+      assert('I fox_fire 品质合法', VALID_QUAL.includes(foxPet.quality));
+      assert('I fox_fire 技能非空', Array.isArray(foxPet.skills) && foxPet.skills.length > 0);
+      assert('I fox_fire 含先天技能 flame_breath', Array.isArray(foxPet.skills) && foxPet.skills.includes('flame_breath'));
+      // 随机物种灵宠：四元素之一 + 五档品质之一 + 技能非空
+      const rndPet = a.pw.pets[0];
+      assert('I 随机宠 元素∈4元素', VALID_ELEM.includes(rndPet.element));
+      assert('I 随机宠 品质∈5档', VALID_QUAL.includes(rndPet.quality));
+      assert('I 随机宠 技能非空', Array.isArray(rndPet.skills) && rndPet.skills.length > 0);
+      // 属性点字段结构完整
+      assert('I 属性点字段齐全', ['attrStr','attrVit','attrAgi','attrInt','attrPoints'].every((k) => typeof (foxPet as any)[k] === 'number'));
+      log(`I fox_fire[${foxPet.name}] 元素=${foxPet.element} 品质=${foxPet.quality} 技能=${foxPet.skills.join(',')}`);
+    }
+
     // ── C. 切换出战（设第二只为出战）──
     const c = await petIntent('petSetActive', { petId: secondId });
     assert('C 切换出战成功', !!c.res && c.res.ok === true);
@@ -161,6 +184,44 @@ async function main(): Promise<void> {
     assert('E 放生成功', !!e2.res && e2.res.ok === true);
     assert('E 放生后长度=1', e2.pw && e2.pw.pets.length === 1);
     assert('E 剩余那只仍出战', e2.pw && e2.pw.pets.length === 1 && e2.pw.pets[0].active === true);
+
+    // ── J. 属性点分配 petSetAttr ──
+    {
+      // J1 守卫：1 级宠 attrPoints=0，正向分配应被拒
+      const g = await petIntent('petSetAttr', { petId: firstId, attr: 'str', delta: 1 });
+      assert('J 0 点正向分配被拒', !!g.res && g.res.ok === false && /无可用属性点/.test(g.res.msg || ''));
+      assert('J 守卫后属性点不变', g.pw && g.pw.pets.find((p: any) => p.id === firstId).attrPoints === 0);
+
+      // J2 成功：发放 5 级宠（必带属性点），分配 1 点力量
+      const j2 = await petIntent('petGrantDev', { speciesId: 'fox_fire', level: 5 });
+      assert('J 发放 5 级宠成功', !!j2.res && j2.res.ok === true);
+      const petJ = j2.pw.pets.find((p: any) => p.level === 5 && p.speciesId === 'fox_fire');
+      if (!petJ) fail('J 找不到 5 级 fox_fire 灵宠');
+      assert('J 5 级宠属性点>0', petJ.attrPoints > 0);
+      const P0 = petJ.attrPoints, S0 = petJ.attrStr, A0 = petJ.atk;
+      const alloc = await petIntent('petSetAttr', { petId: petJ.id, attr: 'str', delta: 1 });
+      assert('J 分配成功', !!alloc.res && alloc.res.ok === true);
+      const petJa = alloc.pw.pets.find((p: any) => p.id === petJ.id);
+      assert('J 未分配点-1', petJa.attrPoints === P0 - 1);
+      assert('J 力量属性+1', petJa.attrStr === S0 + 1);
+      assert('J 攻击力严格增大', petJa.atk > A0); // str.atk=3, 品质倍率≥1 → 必增
+
+      // J3 归还：反向分配 -1，属性点回补、属性归位
+      const back = await petIntent('petSetAttr', { petId: petJ.id, attr: 'str', delta: -1 });
+      assert('J 反向分配成功', !!back.res && back.res.ok === true);
+      const petJb = back.pw.pets.find((p: any) => p.id === petJ.id);
+      assert('J 归还后属性点复原', petJb.attrPoints === P0);
+      assert('J 归还后力量复原', petJb.attrStr === S0);
+      assert('J 归还后攻击复原', petJb.atk === A0);
+
+      // J4 非法属性名
+      const bad = await petIntent('petSetAttr', { petId: petJ.id, attr: 'foo', delta: 1 });
+      assert('J 非法属性名被拒', !!bad.res && bad.res.ok === false && /未知属性/.test(bad.res.msg || ''));
+
+      // 放生测试宠，恢复栏位数量为 1（供 F 段使用）
+      await petIntent('petRelease', { petId: petJ.id });
+      log(`J 5 级 fox_fire 分配验证通过（点 ${P0}→${P0-1}→${P0}，ATK ${A0}→${petJa.atk}→${A0}）`);
+    }
 
     // ── F. 栏位上限（满 6 后第 7 只被拒）──
     // 当前 1 只，再发 5 只到 6
