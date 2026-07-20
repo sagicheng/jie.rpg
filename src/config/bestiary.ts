@@ -1,3 +1,9 @@
+/**
+ * 图鉴系统数据 — 各区具名怪物定义
+ * 定义每个区域的具名敌人（属性 / 抗性 / 技能 / 掉落 / lore 背景），
+ * 供 BestiaryData 汇总、战斗掉落与图鉴阶层奖励统计使用。
+ */
+
 import type { NamedEnemyDef, NamedEquipDrop, BestiaryTier } from '../managers/BestiaryData';
 
 export const ZONE1_ENEMIES: NamedEnemyDef[] = [

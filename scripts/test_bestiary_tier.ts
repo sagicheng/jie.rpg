@@ -1,3 +1,7 @@
+/**
+ * 开发测试：图鉴阶层奖励领取逻辑校验（部分 / 全收集阈值）
+ */
+
 import { world } from '../server/core/world';
 import { NAMED_ENEMIES } from '../src/managers/BestiaryData';
 

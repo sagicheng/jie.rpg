@@ -1,3 +1,9 @@
+/**
+ * 战斗场景（单人 / 普通战斗）
+ * Phaser 场景：渲染战斗界面、回合流程、技能 / 鬼道 / 异常状态结算，
+ * 调用 BattleData / Skills / StatusSystem / BossMechanics 等。
+ */
+
 import Phaser from 'phaser';
 import { QUALITY_COLOR, QUALITY_CN } from '../core/constants';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';

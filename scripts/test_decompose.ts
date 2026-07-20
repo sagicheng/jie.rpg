@@ -1,3 +1,7 @@
+/**
+ * 开发测试：装备分解（背包 / 装备栏）逻辑校验
+ */
+
 import { world } from '../server/core/world';
 
 const pw: any = world.get('decompose_test_sid');

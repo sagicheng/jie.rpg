@@ -1,3 +1,7 @@
+/**
+ * 属性面板 — 角色属性 / 加点 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

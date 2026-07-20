@@ -1,3 +1,9 @@
+/**
+ * 背包 / 物品 / 装备 核心数据模型
+ * 定义 Item / EquipSlot / RefineStat 等类型与物品基础结构，
+ * 是背包、装备、强化、套装系统的数据基座。
+ */
+
 import { enhanceMult } from '../core/constants';
 
 /** 物品类型 */

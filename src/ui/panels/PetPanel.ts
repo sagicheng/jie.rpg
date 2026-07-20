@@ -1,3 +1,7 @@
+/**
+ * 灵宠面板 — 灵宠查看 / 出战 / 养成 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

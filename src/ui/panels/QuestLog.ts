@@ -1,3 +1,7 @@
+/**
+ * 任务日志面板 — 进行中 / 已完成任务 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

@@ -1,3 +1,7 @@
+/**
+ * 开发测试：服务端每日 / 周常任务发放与重复领取校验（Node 端，无需浏览器）
+ */
+
 import { WorldService } from '../server/core/world';
 import { rollDailyPool, rollWeeklyPool } from '../src/managers/QuestData';
 

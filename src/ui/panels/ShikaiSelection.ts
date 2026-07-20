@@ -1,3 +1,7 @@
+/**
+ * 始解 / 卍解 选择面板 — 斩魄刀解放形态选择
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

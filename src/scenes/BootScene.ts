@@ -1,3 +1,8 @@
+/**
+ * 启动 / 预加载场景
+ * 游戏首个场景：显示资源加载进度条，加载完成后进入 TitleScene。
+ */
+
 import Phaser from 'phaser';
 
 export class BootScene extends Phaser.Scene {

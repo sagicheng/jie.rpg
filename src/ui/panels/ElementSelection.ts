@@ -1,3 +1,7 @@
+/**
+ * 元素共鸣选择面板 — 始解 / 卍解 属性倾向选择
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

@@ -1,3 +1,7 @@
+/**
+ * 命名输入面板 — 角色 / 武器 名称输入
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

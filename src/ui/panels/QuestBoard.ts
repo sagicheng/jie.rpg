@@ -1,3 +1,7 @@
+/**
+ * 任务板面板 — 日常 / 周常 / 可接任务 列表的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

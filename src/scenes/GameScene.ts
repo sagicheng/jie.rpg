@@ -1,3 +1,9 @@
+/**
+ * 主游戏场景（大世界）
+ * 玩家移动、NPC 交互、地图怪物、聊天频道、任务 / 商店 / 面板 HUD 编排，
+ * 以及联机 worldSync 同步与断线处理。游戏核心场景。
+ */
+
 import Phaser from 'phaser';
 import { matId, NODE_TO_MATERIAL } from '../config/materials';
 import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES } from '../config/config';

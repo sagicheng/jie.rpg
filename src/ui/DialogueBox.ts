@@ -1,3 +1,8 @@
+/**
+ * 对话 / 剧情文本框组件
+ * 渲染 NPC 对话、任务对白与可选项（choices），支持逐字打字效果。
+ */
+
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
 

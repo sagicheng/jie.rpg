@@ -1,3 +1,7 @@
+/**
+ * 鬼道面板 — 鬼道节点 / 流派加点与释放 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

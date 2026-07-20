@@ -1,3 +1,7 @@
+/**
+ * 竞技场面板 — PVP 匹配 / 历史战绩 / 排行榜 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

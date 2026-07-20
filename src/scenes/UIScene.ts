@@ -1,3 +1,8 @@
+/**
+ * 常驻 UI 覆盖场景
+ * 叠加于其他场景之上的全局 HUD 层：血 / 蓝 / 经验条、金币等级、任务追踪等。
+ */
+
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
 import { GameState } from '../managers/GameState';

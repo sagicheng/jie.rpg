@@ -1,3 +1,7 @@
+/**
+ * 面板 barrel — 统一汇出所有面板函数，供场景按需调用
+ */
+
 export * from './NamingInput';
 export * from './ElementSelection';
 export * from './ShikaiSelection';

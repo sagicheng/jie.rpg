@@ -1,3 +1,7 @@
+/**
+ * 公会面板 — 公会信息 / 成员 / 管理 / 排行 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

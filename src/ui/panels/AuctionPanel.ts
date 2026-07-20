@@ -1,3 +1,7 @@
+/**
+ * 拍卖行面板 — 上架 / 竞拍 / 搜索 / 分页 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

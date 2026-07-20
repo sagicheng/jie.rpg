@@ -1,3 +1,8 @@
+/**
+ * 客户端入口
+ * 创建 Phaser.Game 实例、注册所有场景、启动游戏引导。
+ */
+
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from './config/config';
 import { BootScene } from './scenes/BootScene';

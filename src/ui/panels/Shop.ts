@@ -1,3 +1,7 @@
+/**
+ * 商店面板 — NPC 商店 购买 / 出售 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

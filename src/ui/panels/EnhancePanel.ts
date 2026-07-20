@@ -1,3 +1,7 @@
+/**
+ * 强化 / 精炼 / 分解 面板 — 调用 EnhanceSystem 的 UI 交互
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

@@ -1,3 +1,7 @@
+/**
+ * 好友面板 — 好友列表 / 添加 / 删除 / 私聊 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

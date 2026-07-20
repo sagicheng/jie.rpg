@@ -1,3 +1,7 @@
+/**
+ * 图鉴面板 — 怪物图鉴浏览与阶层奖励领取的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

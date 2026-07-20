@@ -1,3 +1,7 @@
+/**
+ * 开发测试：每日任务确定性日期池与刷新逻辑校验
+ */
+
 import { GameStateQuestMixin } from '../src/managers/GameStateQuest';
 import { rollDailyPool, rollWeeklyPool, todayStr, weekStr, getQuestDef, DAILY_QUESTS, WEEKLY_QUESTS } from '../src/managers/QuestData';
 

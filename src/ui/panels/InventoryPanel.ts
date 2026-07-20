@@ -1,3 +1,7 @@
+/**
+ * 背包面板 — 物品展示 / 装备 / 使用 的打开与渲染
+ */
+
 import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';

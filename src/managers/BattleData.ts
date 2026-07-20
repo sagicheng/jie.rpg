@@ -1,3 +1,9 @@
+/**
+ * 战斗数值与类型定义
+ * 敌人类型 / 品质 / 属性倍率、等级经验曲线 expForLevel、掉落生成等，
+ * 是战斗与养成的基础数值来源。
+ */
+
 import { matId } from '../config/materials';
 import { QUALITY_MULT } from '../core/constants';
 import { ZONE_PL } from '../config/config';
