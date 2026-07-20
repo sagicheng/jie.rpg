@@ -6,7 +6,7 @@
  * 跑法：先 npm run dev:server，另开终端 npm run smoke
  */
 import { Client } from 'colyseus.js';
-import { ZONE_CONFIGS } from '../src/config/Zones';
+import { ZONE_CONFIGS } from '../src/config/zones';
 import { NODE_TO_MATERIAL } from '../src/config/materials';
 
 const ENDPOINT = 'ws://localhost:2567';

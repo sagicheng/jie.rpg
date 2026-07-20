@@ -16,7 +16,7 @@
  */
 import Phaser from 'phaser';
 import { getClient } from '../core/Net';
-import { ZONE_CONFIGS } from '../config/Zones';
+import { ZONE_CONFIGS } from '../config/zones';
 import { GameState } from '../managers/GameState';
 import { Inventory } from '../managers/Inventory';
 import { buildDungeonParty, buildClientBattleLoadout, getDungeonStageVisual } from '../managers/dungeon';

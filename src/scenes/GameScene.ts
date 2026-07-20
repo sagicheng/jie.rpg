@@ -7,7 +7,7 @@ import { EnemyData, createEnemyData, expForLevel, generateLoot } from '../manage
 import { getEnemyData, NAMED_ENEMIES } from '../managers/BestiaryData';
 import { Inventory } from '../managers/Inventory';
 import { SaveManager } from '../core/SaveManager';
-import { ZONE_CONFIGS, getDungeonPortal } from '../config/Zones';
+import { ZONE_CONFIGS, getDungeonPortal } from '../config/zones';
 import { makeSetId } from '../managers/SetSystem';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../managers/QuestData';
 import { Kido, KIDO_NODES, KidoSchool } from '../managers/Kido';

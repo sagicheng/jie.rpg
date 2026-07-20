@@ -4,7 +4,7 @@
  *    整组传给 BattleRoom 权威 spawn（与地图怪同款流程）。
  *  - buildClientBattleLoadout：组装玩家可用技能/鬼道/道具/真实属性，供战斗房间权威校验。
  */
-import { ZONE_CONFIGS } from '../config/Zones';
+import { ZONE_CONFIGS } from '../config/zones';
 import { createEnemyData, EnemyData } from './BattleData';
 import { BOSS_CONFIG } from './BossMechanics';
 import { Inventory } from './Inventory';

@@ -13,7 +13,7 @@
  * import 纯数据模块（Zones / materials / QuestData / BattleData）与类型，
  * 保持服务端独立、可被 tsc -p tsconfig.server.json 干净编译。
  */
-import { ZONE_CONFIGS } from '../../src/config/Zones';
+import { ZONE_CONFIGS } from '../../src/config/zones';
 import { NODE_TO_MATERIAL, matId } from '../../src/config/materials';
 import { MAIN_QUESTS, SIDE_QUESTS, DAILY_QUESTS, WEEKLY_QUESTS, DAILY_CAP, WEEKLY_CAP, todayStr, weekStr } from '../../src/managers/QuestData';
 import { expForLevel } from '../../src/managers/BattleData';
