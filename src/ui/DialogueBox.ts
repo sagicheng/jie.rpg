@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../core/config';
+import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
 
 export interface DialogueLine {
   speaker: string;

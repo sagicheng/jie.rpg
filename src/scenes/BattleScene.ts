@@ -1,11 +1,11 @@
 import Phaser from 'phaser';
 import { QUALITY_COLOR, QUALITY_CN } from '../core/constants';
-import { GAME_WIDTH, GAME_HEIGHT } from '../core/config';
-import { GameState } from '../systems/progression/GameState';
-import { EnemyData, calcDamage, calcMagicDamage, generateLoot } from '../systems/combat/BattleData';
-import { Inventory } from '../systems/items/Inventory';
-import { getAvailableSkills, getSkillTargetType, SkillData } from '../systems/combat/Skills';
-import { Kido, KidoNode } from '../systems/combat/Kido';
+import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
+import { GameState } from '../managers/GameState';
+import { EnemyData, calcDamage, calcMagicDamage, generateLoot } from '../managers/BattleData';
+import { Inventory } from '../managers/Inventory';
+import { getAvailableSkills, getSkillTargetType, SkillData } from '../managers/Skills';
+import { Kido, KidoNode } from '../managers/Kido';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -16,10 +16,10 @@ import {
   isPlayerBlocked, doesPlayerSkipFromFear,
   getEnemyStatusIcons, getPlayerStatusIcons, getStatusTags,
   clearAllPlayerStatus,
-} from '../systems/combat/StatusSystem';
-import { applyConsumable, getConsumableEffect, CONSUMABLES, TempBuff } from '../systems/items/ConsumableSystem';
-import { getStatusHitRate, getEnemyElementInfo, getElementMultiplier, generateNamedLoot, NAMED_ENEMIES } from '../systems/progression/BestiaryData';
-import { setupBoss, runBossMechanics, onBossAddDeath } from '../systems/combat/BossMechanics';
+} from '../managers/StatusSystem';
+import { applyConsumable, getConsumableEffect, CONSUMABLES, TempBuff } from '../managers/ConsumableSystem';
+import { getStatusHitRate, getEnemyElementInfo, getElementMultiplier, generateNamedLoot, NAMED_ENEMIES } from '../managers/BestiaryData';
+import { setupBoss, runBossMechanics, onBossAddDeath } from '../managers/BossMechanics';
 import {
   getSkillMechanics, applyConditionalDamage, hasIgnoreDef, getHpCost,
   getMultiHitCount, getLifestealPct, getMpStealPct, getSpeedScaling,
@@ -27,7 +27,7 @@ import {
   isCleanseSkill, getAoEHealAmount, getReflectInfo, getMarkInfo,
   getAbsorbMagicTurns,
   SkillMechanic, MarkState,
-} from '../systems/combat/SkillMechanics';
+} from '../managers/SkillMechanics';
 
 type BattlePhase = 'intro' | 'playerTurn' | 'targetSelect' | 'enemyTurn' | 'executing' | 'victory' | 'defeat';
 

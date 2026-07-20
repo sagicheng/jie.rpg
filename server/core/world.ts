@@ -13,17 +13,17 @@
  * import 纯数据模块（Zones / materials / QuestData / BattleData）与类型，
  * 保持服务端独立、可被 tsc -p tsconfig.server.json 干净编译。
  */
-import { ZONE_CONFIGS } from '../../src/data/Zones';
-import { NODE_TO_MATERIAL, matId } from '../../src/data/materials';
-import { MAIN_QUESTS, SIDE_QUESTS, DAILY_QUESTS, WEEKLY_QUESTS, DAILY_CAP, WEEKLY_CAP, todayStr, weekStr } from '../../src/systems/quest/QuestData';
-import { expForLevel } from '../../src/systems/combat/BattleData';
-import { makeSetId } from '../../src/systems/items/SetSystem';
-import { POINTS_PER_LEVEL } from '../../src/core/config';
-import type { EquipSlot } from '../../src/systems/items/Inventory';
-import { KIDO_NODES, TIER_LOCK, ALL_KIDO_NODES } from '../../src/systems/combat/Kido';
-import { getBestiaryTierReached, BESTIARY_TIERS, BESTIARY_TITLES, NAMED_ENEMIES } from '../../src/systems/progression/BestiaryData';
+import { ZONE_CONFIGS } from '../../src/config/Zones';
+import { NODE_TO_MATERIAL, matId } from '../../src/config/materials';
+import { MAIN_QUESTS, SIDE_QUESTS, DAILY_QUESTS, WEEKLY_QUESTS, DAILY_CAP, WEEKLY_CAP, todayStr, weekStr } from '../../src/managers/QuestData';
+import { expForLevel } from '../../src/managers/BattleData';
+import { makeSetId } from '../../src/managers/SetSystem';
+import { POINTS_PER_LEVEL } from '../../src/config/config';
+import type { EquipSlot } from '../../src/managers/Inventory';
+import { KIDO_NODES, TIER_LOCK, ALL_KIDO_NODES } from '../../src/managers/Kido';
+import { getBestiaryTierReached, BESTIARY_TIERS, BESTIARY_TITLES, NAMED_ENEMIES } from '../../src/managers/BestiaryData';
 import { saveCharacterWorld } from './db';
-import { newArenaState, ensureArena as arenaEnsure, applyResult as arenaApply, tierName, isArenaOpen, ARENA_WEEKLY_CAP, seasonRewardFor, type ArenaState, type ArenaResult } from '../features/arena';
+import { newArenaState, ensureArena as arenaEnsure, applyResult as arenaApply, tierName, isArenaOpen, ARENA_WEEKLY_CAP, seasonRewardFor, type ArenaState, type ArenaResult } from '../modules/feature/arena';
 
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1080;

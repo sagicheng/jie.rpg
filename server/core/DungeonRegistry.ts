@@ -3,7 +3,7 @@
  * BattleRoom 在副本战斗胜利后，需要通知对应的 DungeonRoom 推进阶进度；
  * 二者是独立的 Colyseus 房间，借此 Map 按 roomId 互相找到对方。
  */
-import type { DungeonRoom } from '../rooms/DungeonRoom';
+import type { DungeonRoom } from '../api/DungeonRoom';
 
 const rooms = new Map<string, DungeonRoom>();
 

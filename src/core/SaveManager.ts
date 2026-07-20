@@ -1,8 +1,8 @@
 /** 存档管理器 — localStorage序列化 */
 
-import { GameState } from '../systems/progression/GameState';
-import { Inventory, Item } from '../systems/items/Inventory';
-import { Kido } from '../systems/combat/Kido';
+import { GameState } from '../managers/GameState';
+import { Inventory, Item } from '../managers/Inventory';
+import { Kido } from '../managers/Kido';
 
 interface SaveData {
   version: number;

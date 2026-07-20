@@ -16,12 +16,12 @@
  */
 import Phaser from 'phaser';
 import { getClient } from '../core/Net';
-import { ZONE_CONFIGS } from '../data/Zones';
-import { GameState } from '../systems/progression/GameState';
-import { Inventory } from '../systems/items/Inventory';
-import { buildDungeonParty, buildClientBattleLoadout, getDungeonStageVisual } from '../systems/quest/dungeon';
-import { EnemyData } from '../systems/combat/BattleData';
-import { GAME_WIDTH, GAME_HEIGHT } from '../core/config';
+import { ZONE_CONFIGS } from '../config/Zones';
+import { GameState } from '../managers/GameState';
+import { Inventory } from '../managers/Inventory';
+import { buildDungeonParty, buildClientBattleLoadout, getDungeonStageVisual } from '../managers/dungeon';
+import { EnemyData } from '../managers/BattleData';
+import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
 // 复用 GameScene 同一套面板系统（背包/属性/鬼道/图鉴/任务/标题），让副本内也能开 C/B 等界面。
 // DungeonMapScene 实现与 GameScene 同款的「面板宿主契约」（公开字段 + pauseForMenu/resumeFromMenu），
 // 调用时以 `this as any` 桥接（不改 panels.ts，零回归风险）。

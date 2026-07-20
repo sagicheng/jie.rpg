@@ -9,7 +9,7 @@
  * 运行：npx tsx scripts/test_dungeon.ts
  */
 import { WorldService } from '../server/core/world';
-import { weekStr } from '../src/systems/quest/QuestData';
+import { weekStr } from '../src/managers/QuestData';
 
 const svc = new WorldService();
 const pw = svc.get('test-dungeon-sid');

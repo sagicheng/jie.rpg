@@ -2,44 +2,44 @@ import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';
 
-import { GAME_WIDTH, GAME_HEIGHT, ZANPAKUTO_GROWTH } from '../../core/config';
+import { GAME_WIDTH, GAME_HEIGHT, ZANPAKUTO_GROWTH } from '../../config/config';
 
-import { GameState } from '../../systems/progression/GameState';
+import { GameState } from '../../managers/GameState';
 
-import { GuildClient } from '../../systems/social/GuildClient';
+import { GuildClient } from '../../api/GuildClient';
 
-import { FriendClient } from '../../systems/social/FriendClient';
+import { FriendClient } from '../../api/FriendClient';
 
-import { GUILD_SKILLS, guildSkillCost } from '../../systems/social/GuildSkills';
+import { GUILD_SKILLS, guildSkillCost } from '../../api/GuildSkills';
 
 import { SaveManager } from '../../core/SaveManager';
 
-import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../../systems/progression/BestiaryData';
+import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../../managers/BestiaryData';
 
-import { expForLevel } from '../../systems/combat/BattleData';
+import { expForLevel } from '../../managers/BattleData';
 
-import { Inventory, EquipSlot, Item } from '../../systems/items/Inventory';
+import { Inventory, EquipSlot, Item } from '../../managers/Inventory';
 
-import { listSetProgress, setShortName } from '../../systems/items/SetSystem';
+import { listSetProgress, setShortName } from '../../managers/SetSystem';
 
-import { PET_SPECIES_CLIENT, petIcon, petColor, computePetAura, petElementInfo, petQualityInfo, petSkillNames } from '../../systems/pet/PetSystem';
+import { PET_SPECIES_CLIENT, petIcon, petColor, computePetAura, petElementInfo, petQualityInfo, petSkillNames } from '../../managers/PetSystem';
 
-import { applyConsumable, getConsumableEffect } from '../../systems/items/ConsumableSystem';
+import { applyConsumable, getConsumableEffect } from '../../managers/ConsumableSystem';
 
-import { createPlayerStatus } from '../../systems/combat/StatusSystem';
+import { createPlayerStatus } from '../../managers/StatusSystem';
 
-import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS, getQuestDef, rollDailyPool, rollWeeklyPool, DAILY_CAP, WEEKLY_CAP } from '../../systems/quest/QuestData';
+import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS, getQuestDef, rollDailyPool, rollWeeklyPool, DAILY_CAP, WEEKLY_CAP } from '../../managers/QuestData';
 
-import { SHIKAI_SKILLS, ZANPAKUTO_ELEMENT } from '../../systems/combat/Skills';
+import { SHIKAI_SKILLS, ZANPAKUTO_ELEMENT } from '../../managers/Skills';
 
-import { Kido, KIDO_NODES, KidoSchool, TIER_LOCK } from '../../systems/combat/Kido';
+import { Kido, KIDO_NODES, KidoSchool, TIER_LOCK } from '../../managers/Kido';
 
 import {
   getEnhanceRate, getEnhanceCost, doEnhance,
   getRefineMaxSlots, getRefineCost, doRefine, doRefineReset, getRefineDisplay,
   getDecompReturn, doDecompose,
   getEnhanceLabel, getEnhanceGlow,
-} from '../../systems/items/EnhanceSystem';
+} from '../../managers/EnhanceSystem';
 
 import {
   requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestAllocateStat, requestMallBuy, requestRespec,
@@ -49,9 +49,9 @@ import {
   requestAuctionList, requestAuctionMine, requestAuctionFavList, requestAuctionHistory,
   requestAuctionFav, requestAuctionCreate, requestAuctionBuy, requestAuctionCancel,
   requestPetSetActive, requestPetRelease, requestPetRecall, requestPetSetAttr, requestUsePetEgg,
-} from '../../systems/social/WorldClient';
+} from '../../api/WorldClient';
 
-import { GUILD_SHOP_ITEMS } from '../../systems/social/GuildShop';
+import { GUILD_SHOP_ITEMS } from '../../api/GuildShop';
 
 
 import { addEnhanceGlow } from './EnhancePanel';

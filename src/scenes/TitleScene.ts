@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../core/config';
-import { AuthClient } from '../systems/social/AuthClient';
+import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
+import { AuthClient } from '../api/AuthClient';
 
 /**
  * 标题/认证界面——注册 / 登录 / 角色选择。

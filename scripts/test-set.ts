@@ -9,8 +9,8 @@
  * 以及 recalcStats 末尾那一段「百分比乘算」的公式（与 src/systems/GameStateStats.ts 第 81-89 行一致）。
  * 真机最终确认请以游戏内「背包面板套装进度 + 属性面板数值」为准。
  */
-import { computeSetBonuses, listSetProgress, makeSetId, setName, setShortName } from '../src/systems/items/SetSystem';
-import type { Equipment, Item, EquipSlot } from '../src/systems/items/Inventory';
+import { computeSetBonuses, listSetProgress, makeSetId, setName, setShortName } from '../src/managers/SetSystem';
+import type { Equipment, Item, EquipSlot } from '../src/managers/Inventory';
 
 let pass = 0;
 let fail = 0;

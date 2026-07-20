@@ -9,10 +9,10 @@
  */
 import Phaser from 'phaser';
 import { getClient } from '../core/Net';
-import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../systems/combat/Skills';
-import { Kido, KidoNode } from '../systems/combat/Kido';
-import { Inventory } from '../systems/items/Inventory';
-import type { Item } from '../systems/items/Inventory';
+import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../managers/Skills';
+import { Kido, KidoNode } from '../managers/Kido';
+import { Inventory } from '../managers/Inventory';
+import type { Item } from '../managers/Inventory';
 
 interface Card {
   root: Phaser.GameObjects.Container;

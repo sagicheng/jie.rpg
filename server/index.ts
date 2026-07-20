@@ -13,14 +13,14 @@ import express from 'express';
 import cors from 'cors';
 import { Server } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
-import { GameRoom } from './rooms/GameRoom';
-import { BattleRoom } from './rooms/BattleRoom';
-import { DungeonRoom } from './rooms/DungeonRoom';
-import { PvpRoom } from './rooms/PvpRoom';
-import { startArenaTicker } from './features/arenaService';
+import { GameRoom } from './api/GameRoom';
+import { BattleRoom } from './api/BattleRoom';
+import { DungeonRoom } from './api/DungeonRoom';
+import { PvpRoom } from './api/PvpRoom';
+import { startArenaTicker } from './modules/feature/arenaService';
 import authRoutes from './core/auth';
-import guildRoutes from './features/guild';
-import friendRoutes from './features/friends';
+import guildRoutes from './modules/feature/guild';
+import friendRoutes from './modules/feature/friends';
 
 const PORT = Number(process.env.PORT) || 2567;
 

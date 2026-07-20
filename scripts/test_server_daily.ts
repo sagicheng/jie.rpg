@@ -1,5 +1,5 @@
 import { WorldService } from '../server/core/world';
-import { rollDailyPool, rollWeeklyPool } from '../src/systems/quest/QuestData';
+import { rollDailyPool, rollWeeklyPool } from '../src/managers/QuestData';
 
 const svc = new WorldService();
 const pw = svc.get('sid1');

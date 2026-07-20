@@ -6,8 +6,8 @@
  * 跑法：先 npm run dev:server，另开终端 npm run smoke
  */
 import { Client } from 'colyseus.js';
-import { ZONE_CONFIGS } from '../src/data/Zones';
-import { NODE_TO_MATERIAL } from '../src/data/materials';
+import { ZONE_CONFIGS } from '../src/config/Zones';
+import { NODE_TO_MATERIAL } from '../src/config/materials';
 
 const ENDPOINT = 'ws://localhost:2567';
 const REST = 'http://localhost:2567/api';
