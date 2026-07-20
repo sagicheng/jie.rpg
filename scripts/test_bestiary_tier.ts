@@ -1,5 +1,5 @@
-import { world } from '../server/world';
-import { NAMED_ENEMIES } from '../src/systems/BestiaryData';
+import { world } from '../server/core/world';
+import { NAMED_ENEMIES } from '../src/systems/progression/BestiaryData';
 
 const pw: any = world.get('tier_test_sid');
 const names = Object.keys(NAMED_ENEMIES);

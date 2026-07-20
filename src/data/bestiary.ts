@@ -1,4 +1,4 @@
-import type { NamedEnemyDef, NamedEquipDrop, BestiaryTier } from '../systems/BestiaryData';
+import type { NamedEnemyDef, NamedEquipDrop, BestiaryTier } from '../systems/progression/BestiaryData';
 
 export const ZONE1_ENEMIES: NamedEnemyDef[] = [
   {

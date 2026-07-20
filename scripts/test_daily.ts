@@ -1,5 +1,5 @@
-import { GameStateQuestMixin } from '../src/systems/GameStateQuest';
-import { rollDailyPool, rollWeeklyPool, todayStr, weekStr, getQuestDef, DAILY_QUESTS, WEEKLY_QUESTS } from '../src/systems/QuestData';
+import { GameStateQuestMixin } from '../src/systems/progression/GameStateQuest';
+import { rollDailyPool, rollWeeklyPool, todayStr, weekStr, getQuestDef, DAILY_QUESTS, WEEKLY_QUESTS } from '../src/systems/quest/QuestData';
 
 class Base {}
 const GS = GameStateQuestMixin(Base);

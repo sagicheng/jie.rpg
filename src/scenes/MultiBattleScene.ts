@@ -15,13 +15,13 @@
  * 触发：GameScene 按 V 进入（两个窗口都按 V → 同房间组队打怪），或地图碰怪进入（map 模式权威战斗）。
  */
 import Phaser from 'phaser';
-import { getClient } from '../net/Net';
-import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../systems/Skills';
-import { Kido, KidoNode } from '../systems/Kido';
-import { Inventory } from '../systems/Inventory';
-import type { Item } from '../systems/Inventory';
-import type { EnemyData } from '../systems/BattleData';
-import { PET_SKILLS_CLIENT } from '../systems/PetSystem';
+import { getClient } from '../core/Net';
+import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../systems/combat/Skills';
+import { Kido, KidoNode } from '../systems/combat/Kido';
+import { Inventory } from '../systems/items/Inventory';
+import type { Item } from '../systems/items/Inventory';
+import type { EnemyData } from '../systems/combat/BattleData';
+import { PET_SKILLS_CLIENT } from '../systems/pet/PetSystem';
 
 interface Card {
   root: Phaser.GameObjects.Container;

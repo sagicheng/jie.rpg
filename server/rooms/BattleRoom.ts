@@ -6,14 +6,14 @@
  */
 
 import { Room, Client } from '@colyseus/core';
-import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage } from '../schema';
-import { createEnemyData, calcDamage, calcMagicDamage, generateLoot } from '../../src/systems/BattleData';
-import { world } from '../world';
-import { PET_SKILLS } from '../world';
+import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage } from '../core/schema';
+import { createEnemyData, calcDamage, calcMagicDamage, generateLoot } from '../../src/systems/combat/BattleData';
+import { world } from '../core/world';
+import { PET_SKILLS } from '../core/world';
 
-import type { EnemyData } from '../../src/systems/BattleData';
-import { SKILL_BY_NAME, getSkillTargetType } from '../../src/systems/Skills';
-import { CONSUMABLES } from '../../src/systems/ConsumableSystem';
+import type { EnemyData } from '../../src/systems/combat/BattleData';
+import { SKILL_BY_NAME, getSkillTargetType } from '../../src/systems/combat/Skills';
+import { CONSUMABLES } from '../../src/systems/items/ConsumableSystem';
 
 interface KidoLoadoutDTO {
   id: string; mp: number; power: number;

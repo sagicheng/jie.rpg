@@ -8,10 +8,10 @@
  * 重连（再次进本副本）时 world.enterDungeon 判定为"续打"不重复计次，进度延续。
  */
 import { Room, Client } from '@colyseus/core';
-import { DungeonRoomState, DungeonPlayer } from '../schema';
-import { world } from '../world';
-import { dungeonStageReward } from '../../src/systems/BattleData';
-import { getMemberGuild, addGuildExp, addMemberContribution } from '../db';
+import { DungeonRoomState, DungeonPlayer } from '../core/schema';
+import { world } from '../core/world';
+import { dungeonStageReward } from '../../src/systems/combat/BattleData';
+import { getMemberGuild, addGuildExp, addMemberContribution } from '../core/db';
 
 export class DungeonRoom extends Room<DungeonRoomState> {
   onCreate(options: { dungeonId?: number }) {

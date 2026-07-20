@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../config';
-import { AuthClient } from '../systems/AuthClient';
+import { GAME_WIDTH, GAME_HEIGHT } from '../core/config';
+import { AuthClient } from '../systems/social/AuthClient';
 
 /**
  * 建角场景：输入角色名 + 选择元素共鸣。

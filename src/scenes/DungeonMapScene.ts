@@ -15,13 +15,13 @@
  * 复用：明雷遇敌 / 进入战斗 / 奖励回写全部走现有 MultiBattleScene + BattleRoom 同源链路。
  */
 import Phaser from 'phaser';
-import { getClient } from '../net/Net';
-import { ZONE_CONFIGS } from '../systems/Zones';
-import { GameState } from '../systems/GameState';
-import { Inventory } from '../systems/Inventory';
-import { buildDungeonParty, buildClientBattleLoadout, getDungeonStageVisual } from '../systems/dungeon';
-import { EnemyData } from '../systems/BattleData';
-import { GAME_WIDTH, GAME_HEIGHT } from '../config';
+import { getClient } from '../core/Net';
+import { ZONE_CONFIGS } from '../data/Zones';
+import { GameState } from '../systems/progression/GameState';
+import { Inventory } from '../systems/items/Inventory';
+import { buildDungeonParty, buildClientBattleLoadout, getDungeonStageVisual } from '../systems/quest/dungeon';
+import { EnemyData } from '../systems/combat/BattleData';
+import { GAME_WIDTH, GAME_HEIGHT } from '../core/config';
 // 复用 GameScene 同一套面板系统（背包/属性/鬼道/图鉴/任务/标题），让副本内也能开 C/B 等界面。
 // DungeonMapScene 实现与 GameScene 同款的「面板宿主契约」（公开字段 + pauseForMenu/resumeFromMenu），
 // 调用时以 `this as any` 桥接（不改 panels.ts，零回归风险）。

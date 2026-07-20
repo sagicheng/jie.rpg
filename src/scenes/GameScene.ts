@@ -1,22 +1,22 @@
 import Phaser from 'phaser';
 import { matId, NODE_TO_MATERIAL } from '../data/materials';
-import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES } from '../config';
+import { GAME_WIDTH, GAME_HEIGHT, ZONE_NAMES } from '../core/config';
 import { DialogueBox, DialogueLine } from '../ui/DialogueBox';
-import { GameState } from '../systems/GameState';
-import { EnemyData, createEnemyData, expForLevel, generateLoot } from '../systems/BattleData';
-import { getEnemyData, NAMED_ENEMIES } from '../systems/BestiaryData';
-import { Inventory } from '../systems/Inventory';
-import { SaveManager } from '../systems/SaveManager';
-import { ZONE_CONFIGS, getDungeonPortal } from '../systems/Zones';
-import { makeSetId } from '../systems/SetSystem';
-import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
-import { Kido, KIDO_NODES, KidoSchool } from '../systems/Kido';
-import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/Skills';
-import { BOSS_CONFIG } from '../systems/BossMechanics';
+import { GameState } from '../systems/progression/GameState';
+import { EnemyData, createEnemyData, expForLevel, generateLoot } from '../systems/combat/BattleData';
+import { getEnemyData, NAMED_ENEMIES } from '../systems/progression/BestiaryData';
+import { Inventory } from '../systems/items/Inventory';
+import { SaveManager } from '../core/SaveManager';
+import { ZONE_CONFIGS, getDungeonPortal } from '../data/Zones';
+import { makeSetId } from '../systems/items/SetSystem';
+import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/quest/QuestData';
+import { Kido, KIDO_NODES, KidoSchool } from '../systems/combat/Kido';
+import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../systems/combat/Skills';
+import { BOSS_CONFIG } from '../systems/combat/BossMechanics';
 import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel, renderFriendPanel, renderAuctionPanel, openAuctionPanel, closeAuctionPanel, toggleAuctionPanel, refreshAuctionPanel, openPetPanel, closePetPanel } from '../ui/panels';
-import { GuildClient } from '../systems/GuildClient';
-import { applyGuildStatBonus } from '../systems/GuildSkills';
-import { getClient } from '../net/Net';
+import { GuildClient } from '../systems/social/GuildClient';
+import { applyGuildStatBonus } from '../systems/social/GuildSkills';
+import { getClient } from '../core/Net';
 
 /** 统一聊天频道配色与前缀 */
 const CHAT_COLORS: Record<string, string> = {
@@ -25,8 +25,8 @@ const CHAT_COLORS: Record<string, string> = {
 const CHAT_PREFIX: Record<string, string> = {
   world: '[世界] ', guild: '[公会] ', team: '[队伍] ', system: '[系统] ', event: '[活动] ',
 };
-import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, requestPetGrantDev, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/WorldClient';
-import { createPetLocal, petElementInfo, petQualityInfo } from '../systems/PetSystem';
+import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, requestPetGrantDev, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../systems/social/WorldClient';
+import { createPetLocal, petElementInfo, petQualityInfo } from '../systems/pet/PetSystem';
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;

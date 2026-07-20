@@ -13,13 +13,13 @@
  *   去 WorldService 取——二者不同，必须分开存。
  */
 import { Room, Client } from '@colyseus/core';
-import { BattleRoomState, CombatPlayer, ChatMessage } from '../schema';
-import { calcDamage, calcMagicDamage } from '../../src/systems/BattleData';
-import { world } from '../world';
-import { findAccountByToken, getCharacter, saveCharacterWorld } from '../db';
-import { SKILL_BY_NAME, getSkillTargetType } from '../../src/systems/Skills';
-import { CONSUMABLES } from '../../src/systems/ConsumableSystem';
-import { computePvpStats, ARENA_JOIN_GRACE_MS, tierName, type ArenaMode } from '../arena';
+import { BattleRoomState, CombatPlayer, ChatMessage } from '../core/schema';
+import { calcDamage, calcMagicDamage } from '../../src/systems/combat/BattleData';
+import { world } from '../core/world';
+import { findAccountByToken, getCharacter, saveCharacterWorld } from '../core/db';
+import { SKILL_BY_NAME, getSkillTargetType } from '../../src/systems/combat/Skills';
+import { CONSUMABLES } from '../../src/systems/items/ConsumableSystem';
+import { computePvpStats, ARENA_JOIN_GRACE_MS, tierName, type ArenaMode } from '../features/arena';
 
 interface KidoLoadoutDTO {
   id: string; mp: number; power: number;

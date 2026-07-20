@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT } from '../config';
-import { GameState } from '../systems/GameState';
-import { expForLevel } from '../systems/BattleData';
-import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/QuestData';
+import { GAME_WIDTH, GAME_HEIGHT } from '../core/config';
+import { GameState } from '../systems/progression/GameState';
+import { expForLevel } from '../systems/combat/BattleData';
+import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../systems/quest/QuestData';
 
 export class UIScene extends Phaser.Scene {
   private hpBar!: Phaser.GameObjects.Graphics;

@@ -6,8 +6,8 @@ import assert from 'node:assert';
 import {
   isArenaOpen, currentSeason, newArenaState, ensureArena, applyResult,
   tierOf, tierName, seasonRewardFor, ARENA_INITIAL_POINTS, ARENA_WIN_DELTA, ARENA_LOSS_DELTA,
-} from '../server/arena';
-import type { PlayerWorld } from '../server/world';
+} from '../server/features/arena';
+import type { PlayerWorld } from '../server/core/world';
 
 let passed = 0;
 let failed = 0;

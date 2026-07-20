@@ -8,11 +8,11 @@
  *  - 结算：服务端下发 arenaResult（胜负 + 积分变动 + 段位），展示后返回地图。
  */
 import Phaser from 'phaser';
-import { getClient } from '../net/Net';
-import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../systems/Skills';
-import { Kido, KidoNode } from '../systems/Kido';
-import { Inventory } from '../systems/Inventory';
-import type { Item } from '../systems/Inventory';
+import { getClient } from '../core/Net';
+import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../systems/combat/Skills';
+import { Kido, KidoNode } from '../systems/combat/Kido';
+import { Inventory } from '../systems/items/Inventory';
+import type { Item } from '../systems/items/Inventory';
 
 interface Card {
   root: Phaser.GameObjects.Container;

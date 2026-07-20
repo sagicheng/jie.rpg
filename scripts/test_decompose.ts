@@ -1,4 +1,4 @@
-import { world } from '../server/world';
+import { world } from '../server/core/world';
 
 const pw: any = world.get('decompose_test_sid');
 

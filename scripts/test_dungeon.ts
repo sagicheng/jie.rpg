@@ -8,8 +8,8 @@
  *  - 跨周（weekStr 不同）自动重置次数
  * 运行：npx tsx scripts/test_dungeon.ts
  */
-import { WorldService } from '../server/world';
-import { weekStr } from '../src/systems/QuestData';
+import { WorldService } from '../server/core/world';
+import { weekStr } from '../src/systems/quest/QuestData';
 
 const svc = new WorldService();
 const pw = svc.get('test-dungeon-sid');

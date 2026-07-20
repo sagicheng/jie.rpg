@@ -6,14 +6,14 @@
  */
 
 import { Room, Client } from '@colyseus/core';
-import { GameRoomState, GamePlayer, MonsterState } from '../schema';
-import { world, type OpResult } from '../world';
-import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld, addGuildExp, addMemberContribution, getFriends, listAuctions, myAuctions, getFavorites, addFavorite, removeFavorite, isFavorited, getHistory } from '../db';
-import { guildShopBuy } from '../guildShop';
-import { createAuction, buyAuction, cancelAuction } from '../auction';
-import { enqueueArena, dequeueArena, queueSize } from '../arenaService';
-import { isArenaOpen, ARENA_WEEKLY_CAP } from '../arena';
-import { zoneName } from '../zoneNames';
+import { GameRoomState, GamePlayer, MonsterState } from '../core/schema';
+import { world, type OpResult } from '../core/world';
+import { findAccountByToken, getCharacter, getMemberGuild, saveCharacterWorld, addGuildExp, addMemberContribution, getFriends, listAuctions, myAuctions, getFavorites, addFavorite, removeFavorite, isFavorited, getHistory } from '../core/db';
+import { guildShopBuy } from '../features/guildShop';
+import { createAuction, buyAuction, cancelAuction } from '../features/auction';
+import { enqueueArena, dequeueArena, queueSize } from '../features/arenaService';
+import { isArenaOpen, ARENA_WEEKLY_CAP } from '../features/arena';
+import { zoneName } from '../core/zoneNames';
 
 const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
 const TEAM_MAX = 4;

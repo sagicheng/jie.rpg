@@ -17,10 +17,10 @@ import { GameRoom } from './rooms/GameRoom';
 import { BattleRoom } from './rooms/BattleRoom';
 import { DungeonRoom } from './rooms/DungeonRoom';
 import { PvpRoom } from './rooms/PvpRoom';
-import { startArenaTicker } from './arenaService';
-import authRoutes from './auth';
-import guildRoutes from './guild';
-import friendRoutes from './friends';
+import { startArenaTicker } from './features/arenaService';
+import authRoutes from './core/auth';
+import guildRoutes from './features/guild';
+import friendRoutes from './features/friends';
 
 const PORT = Number(process.env.PORT) || 2567;
 

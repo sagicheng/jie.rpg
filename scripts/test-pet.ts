@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Client, type Room } from 'colyseus.js';
 import Database from 'better-sqlite3';
-import { computePetAura } from '../src/systems/PetSystem';
+import { computePetAura } from '../src/systems/pet/PetSystem';
 
 const GAME_DIR = path.resolve(__dirname, '..');
 const SERVER_ENTRY = path.resolve(GAME_DIR, 'dist-server/server/index.js');
