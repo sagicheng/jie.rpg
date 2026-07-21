@@ -252,11 +252,11 @@ export class GameManager extends Component {
       `Lv.${pw.level}　金币 ${pw.gold}` + (pw.statPoints > 0 ? `　⚠可分配 ${pw.statPoints}` : '');
   }
 
-  /** 顶栏左侧两个常驻按钮：角色(C) / 背包(B)。 */
+  /** 左上角常驻按钮：角色(C) / 背包(B)。 */
   private buildTopButtons(): void {
     if (!this.canvas) return;
-    makeButton(this.canvas, -440, 300, 100, 36, '角色(C)', new Color(70, 110, 170, 255), () => StatPanel.instance.toggle(this.bridge));
-    makeButton(this.canvas, -320, 300, 100, 36, '背包(B)', new Color(70, 130, 110, 255), () => InventoryPanel.instance.toggle(this.bridge));
+    makeButton(this.canvas, -420, 295, 90, 34, '角色(C)', new Color(70, 110, 170, 255), () => StatPanel.instance.toggle(this.bridge));
+    makeButton(this.canvas, -320, 295, 90, 34, '背包(B)', new Color(70, 130, 110, 255), () => InventoryPanel.instance.toggle(this.bridge));
   }
 
   // ——————————————————— 背景 / 状态 ———————————————————
@@ -275,23 +275,7 @@ export class GameManager extends Component {
   }
 
   private buildStatus(): void {
-    // 顶栏下行：常驻 HUD（等级/金币/可分配点），右对齐
-    const hud = new Node('HUD');
-    GameManager.setUILayer(hud);
-    hud.setParent(this.canvas!);
-    hud.setPosition(465, 300, 1);
-    const hudLabel = hud.addComponent(Label);
-    hudLabel.string = 'Lv.1　金币 0';
-    hudLabel.color = new Color(255, 230, 150, 255);
-    hudLabel.fontSize = 18;
-    hudLabel.lineHeight = 22;
-    hudLabel.horizontalAlign = 2; // RIGHT
-    const hut = hud.getComponent(UITransform) || hud.addComponent(UITransform);
-    hut.setContentSize(420, 30);
-    hut.setAnchorPoint(1, 0.5);
-    this.hudLabel = hudLabel;
-
-    // 顶栏上行：临时状态提示（连接/操作反馈），居中
+    // 顶栏：临时状态提示（连接/操作反馈），居中
     const n = new Node('Status');
     GameManager.setUILayer(n);
     n.setParent(this.canvas!);
@@ -304,6 +288,35 @@ export class GameManager extends Component {
     const ut = n.getComponent(UITransform) || n.addComponent(UITransform);
     ut.setContentSize(600, 26);
     this.statusLabel = label;
+
+    // 右下角常驻 HUD（等级/金币/可分配点）
+    const hud = new Node('HUD');
+    GameManager.setUILayer(hud);
+    hud.setParent(this.canvas!);
+    hud.setPosition(430, -290, 1);
+    const hut = hud.getComponent(UITransform) || hud.addComponent(UITransform);
+    hut.setContentSize(220, 80);
+    hut.setAnchorPoint(1, 0);
+
+    // HUD 背景
+    const bg = hud.addComponent(Graphics);
+    bg.fillColor = new Color(18, 22, 32, 220);
+    bg.roundRect(-220, 0, 220, 80, 10);
+    bg.fill();
+    bg.lineWidth = 1;
+    bg.strokeColor = new Color(120, 160, 220, 150);
+    bg.roundRect(-220, 0, 220, 80, 10);
+    bg.stroke();
+
+    const hudLabel = hud.addComponent(Label);
+    hudLabel.string = 'Lv.1\n金币 0';
+    hudLabel.color = new Color(255, 230, 150, 255);
+    hudLabel.fontSize = 16;
+    hudLabel.lineHeight = 24;
+    hudLabel.horizontalAlign = 2; // RIGHT
+    hudLabel.verticalAlign = 1;   // CENTER
+    hut.setAnchorPoint(1, 0.5);
+    this.hudLabel = hudLabel;
   }
 
   private spawnTestDot(): void {

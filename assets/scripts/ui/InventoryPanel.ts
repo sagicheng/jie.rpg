@@ -1,24 +1,25 @@
 /**
- * 背包面板（L0 地基）。
+ * 背包面板（L0 地基）——按 Phaser3 版式在 Cocos 960×640 下全屏复刻。
  *
  * 单例 toggle。从 LocalPlayerWorld 读真实数据：
- *   - 装备槽位(9)：头部/身体/护腕/靴子/腰带/戒指/项链/护符/挂饰，显示装备名+强化+主属性，可卸下
- *   - 背包物品：名称×数量 + 描述，装备类可一键装备
+ *   - 装备槽位(9)：头部/身体/护腕/靴子/腰带/戒指/项链/护符/挂饰，显示装备名+强化+主属性
+ *   - 背包物品：名称×数量 + 描述，装备类可一键装备，消耗品可一键使用
  *
- * 装备/卸下 发 intent {op:'equip'|'unequip'}。数据随 worldSync 自动刷新。
+ * 装备/卸下/使用 发 intent {op:'equip'|'unequip'|'useConsumable'}。
+ * 数据随 worldSync 自动刷新。
  */
-import { Node, Label, Color } from 'cc';
+import { Node, Label, Color, UITransform } from 'cc';
 import { UIManager } from './UIManager';
-import { makeText, makeButton, makePanel, drawHLine } from './widgets';
+import { makeText, makeColorButton, makeFullScreenPanel, makeCard } from './widgets';
 import { LocalPlayerWorld } from '../model/LocalPlayerWorld';
 import { WorldItem, EquipSlot, getEffectiveStats } from '../model/PlayerWorld';
 
-const W = 660, H = 580;
-const SLOTS: Array<{ slot: EquipSlot; name: string }> = [
-  { slot: 'head', name: '头部' }, { slot: 'body', name: '身体' }, { slot: 'bracer', name: '护腕' },
-  { slot: 'boots', name: '靴子' }, { slot: 'belt', name: '腰带' }, { slot: 'ring', name: '戒指' },
-  { slot: 'necklace', name: '项链' }, { slot: 'charm', name: '护符' }, { slot: 'pendant', name: '挂饰' },
-];
+const W = 920, H = 600;
+const SLOT_NAME: Record<string, string> = {
+  head: '头部', body: '身体', bracer: '护腕', boots: '靴子', belt: '腰带',
+  ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰',
+};
+const SLOTS: EquipSlot[] = ['head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
 const QUALITY_COLOR: Record<string, Color> = {
   white: new Color(220, 220, 220, 255), green: new Color(120, 230, 140, 255),
   blue: new Color(120, 180, 255, 255), purple: new Color(200, 140, 255, 255),
@@ -36,9 +37,14 @@ export class InventoryPanel {
   private bridge: any = null;
   private open_ = false;
 
-  private slotName: Record<string, Label> = {};
-  private slotUnequip: Record<string, Node> = {};
-  private bagList: Node | null = null;
+  private vGold: Label | null = null;
+  private eqSlotName: Record<string, Label> = {};
+  private eqSlotStats: Record<string, Label> = {};
+  private eqSlotRefine: Record<string, Label> = {};
+  private equipList: Node | null = null;
+  private consList: Node | null = null;
+  private matList: Node | null = null;
+  private setList: Node | null = null;
 
   bindBridge(b: any): void { this.bridge = b; }
 
@@ -66,34 +72,91 @@ export class InventoryPanel {
   }
 
   private build(): void {
-    const root = makePanel(UIManager.instance.uiRoot, W, H);
+    const { root, contentW, ox, oy } = makeFullScreenPanel(
+      UIManager.instance.uiRoot, W, H, '◆  背 包  ◆',
+      () => this.close(),
+      'B键 开关  |  ESC 关闭',
+    );
     this.root = root;
-    makeText(root, 0, H / 2 - 28, '背包 / 装备', 24, new Color(255, 230, 150, 255), 400);
 
-    // 装备槽 3×3 网格
-    const cols = [-W / 2 + 110, 0, W / 2 - 110];
-    const rows = [H / 2 - 70, H / 2 - 130, H / 2 - 190];
-    let i = 0;
-    for (let r = 0; r < 3; r++) {
-      for (let c = 0; c < 3; c++) {
-        const s = SLOTS[i++];
-        makeText(root, cols[c], rows[r] + 18, s.name, 13, new Color(180, 200, 220, 255), 160);
-        this.slotName[s.slot] = makeText(root, cols[c], rows[r] - 2, '（空）', 13, new Color(150, 150, 150, 255), 200);
-        this.slotUnequip[s.slot] = makeButton(root, cols[c], rows[r] - 26, 100, 24, '卸下', new Color(150, 90, 90, 255), () => this.unequip(s.slot));
-      }
+    // 金币
+    this.vGold = makeText(root, ox, oy - 6,
+      '金币: 0', 16, new Color(255, 204, 68, 255), 200);
+    this.vGold.isBold = true;
+
+    // ═══ 装备栏 2 行 × 5 列 ═══
+    const eqTitleY = oy - 32;
+    makeText(root, ox, eqTitleY, '装备栏（点击卸下）', 15,
+      new Color(136, 170, 204, 255), 200, Label.HorizontalAlign.LEFT, 0, 1);
+
+    const eqTop = eqTitleY - 18;
+    const eW = 164, eH = 52, eGap = 10;
+    for (let i = 0; i < SLOTS.length; i++) {
+      const s = SLOTS[i];
+      const c = i % 5;
+      const r = Math.floor(i / 5);
+      const sx = ox + eW / 2 + c * (eW + eGap);
+      const sy = eqTop - r * (eH + eGap) - eH / 2;
+      makeCard(root, sx, sy, eW, eH,
+        new Color(13, 13, 29, 180), new Color(51, 68, 102, 100));
+      makeText(root, sx - eW / 2 + 8, sy + eH / 2 - 3,
+        SLOT_NAME[s], 10, new Color(85, 102, 136, 255), 60, Label.HorizontalAlign.LEFT, 0, 1);
+      this.eqSlotName[s] = makeText(root, sx - eW / 2 + 8, sy + 8,
+        '空', 12, new Color(51, 68, 85, 255), eW - 16);
+      this.eqSlotStats[s] = makeText(root, sx - eW / 2 + 8, sy - 8,
+        '', 9, new Color(136, 153, 187, 255), eW - 16);
+      this.eqSlotRefine[s] = makeText(root, sx - eW / 2 + 8, sy - 20,
+        '', 8, new Color(245, 166, 35, 255), eW - 16);
+
+      // 点击热区：卸下
+      const hit = new Node('Hit_' + s);
+      hit.layer = root.layer;
+      hit.setParent(root);
+      hit.setPosition(sx, sy, 0);
+      const ut = hit.addComponent(UITransform);
+      ut.setContentSize(eW, eH);
+      hit.on(Node.EventType.TOUCH_END, () => this.unequip(s), hit);
     }
 
-    drawHLine(root, W - 40, rows[2] - 50);
+    // ═══ 可穿戴装备 ═══
+    const equipTitleY = eqTop - 2 * (eH + eGap) - 16;
+    makeText(root, ox, equipTitleY, '背包装备（点击穿戴）', 14,
+      new Color(136, 170, 204, 255), 200, Label.HorizontalAlign.LEFT, 0, 1);
+    const equipList = new Node('EquipList');
+    equipList.layer = root.layer;
+    equipList.setParent(root);
+    equipList.setPosition(ox, equipTitleY - 18, 0);
+    this.equipList = equipList;
 
-    // 背包标题 + 列表容器
-    makeText(root, -W / 2 + 20, rows[2] - 70, '— 背包物品 —', 15, new Color(200, 200, 220, 255), 400);
-    const list = new Node('BagList');
-    list.layer = root.layer;
-    list.setParent(root);
-    list.setPosition(-W / 2 + 20, rows[2] - 96, 0);
-    this.bagList = list;
+    // ═══ 消耗品 ═══
+    const consTitleY = equipTitleY - 86;
+    makeText(root, ox, consTitleY, '消耗品', 15,
+      new Color(136, 170, 204, 255), 100, Label.HorizontalAlign.LEFT, 0, 1);
+    const consList = new Node('ConsList');
+    consList.layer = root.layer;
+    consList.setParent(root);
+    consList.setPosition(ox, consTitleY - 18, 0);
+    this.consList = consList;
 
-    makeButton(root, 0, -H / 2 + 28, 160, 40, '关闭 (B)', new Color(120, 120, 140, 255), () => this.close());
+    // ═══ 材料 ═══
+    const matTitleY = consTitleY - 86;
+    makeText(root, ox, matTitleY, '材料', 15,
+      new Color(136, 170, 204, 255), 100, Label.HorizontalAlign.LEFT, 0, 1);
+    const matList = new Node('MatList');
+    matList.layer = root.layer;
+    matList.setParent(root);
+    matList.setPosition(ox, matTitleY - 18, 0);
+    this.matList = matList;
+
+    // ═══ 套装进度 ═══
+    const setTitleY = matTitleY - 70;
+    makeText(root, ox, setTitleY, '套装进度', 15,
+      new Color(201, 169, 110, 255), 100, Label.HorizontalAlign.LEFT, 0, 1);
+    const setList = new Node('SetList');
+    setList.layer = root.layer;
+    setList.setParent(root);
+    setList.setPosition(ox, setTitleY - 18, 0);
+    this.setList = setList;
   }
 
   private unequip(slot: EquipSlot): void {
@@ -106,15 +169,19 @@ export class InventoryPanel {
     this.bridge.room?.send('intent', { op: 'equip', itemId });
   }
 
+  // 消耗品使用暂由 L1 战斗/状态系统接入；当前仅作展示。
+
   private itemSummary(it: WorldItem): string {
     const eff = getEffectiveStats(it);
     const parts: string[] = [];
     const order = ['atk', 'def', 'matk', 'mdef', 'hp', 'mp', 'spd'];
     for (const k of order) if (eff[k]) parts.push(`${k}+${eff[k]}`);
-    let s = parts.join(' ');
-    if (it.enhanceLevel) s += ` [+${it.enhanceLevel}]`;
-    if (it.refineStats && it.refineStats.length) s += ` 精炼${it.refineStats.length}`;
-    return s;
+    return parts.join(' ');
+  }
+
+  private refineDisplay(it: WorldItem): string {
+    if (!it.refineStats || !it.refineStats.length) return '';
+    return it.refineStats.map((r) => `${r.key}+${r.value}`).join(' ');
   }
 
   private refresh(): void {
@@ -122,36 +189,103 @@ export class InventoryPanel {
     if (!pw) return;
     const eq = pw.equipment || ({} as Record<EquipSlot, WorldItem | null>);
 
+    this.vGold!.string = `金币: ${pw.gold}`;
+
+    // 装备槽
     for (const s of SLOTS) {
-      const it = eq[s.slot];
-      const lbl = this.slotName[s.slot];
-      const btn = this.slotUnequip[s.slot];
+      const it = eq[s];
+      const nameLbl = this.eqSlotName[s];
+      const statsLbl = this.eqSlotStats[s];
+      const refineLbl = this.eqSlotRefine[s];
       if (it) {
+        const elv = it.enhanceLevel || 0;
+        const lvTxt = elv > 0 ? ` +${elv}` : '';
         const col = QUALITY_COLOR[it.quality || 'white'] || new Color(220, 220, 220, 255);
-        lbl.string = `${it.name}  ${this.itemSummary(it)}`;
-        lbl.color = col;
-        btn.active = true;
+        nameLbl.string = `${it.name}${lvTxt}`;
+        nameLbl.color = col;
+        statsLbl.string = this.itemSummary(it);
+        refineLbl.string = this.refineDisplay(it);
       } else {
-        lbl.string = '（空）';
-        lbl.color = new Color(150, 150, 150, 255);
-        btn.active = false;
+        nameLbl.string = '空';
+        nameLbl.color = new Color(51, 68, 85, 255);
+        statsLbl.string = '';
+        refineLbl.string = '';
       }
     }
 
-    // 重建背包列表
-    if (!this.bagList) return;
-    this.bagList.removeAllChildren(true);
-    const inv = pw.inventory || [];
+    // 背包装备
+    this.equipList!.removeAllChildren(true);
+    const equipItems = (pw.inventory || []).filter((it) => it.type === 'equipment');
+    const ecW = 210, ecH = 48, ecGap = 10, ecCols = 4;
     let y = 0;
-    for (const it of inv) {
-      const col = it.type === 'equipment' ? (QUALITY_COLOR[it.quality || 'white'] || new Color(220, 220, 220, 255)) : new Color(220, 220, 220, 255);
-      makeText(this.bagList, 0, y, `${it.name} ×${it.quantity}`, 14, col, 200);
-      makeText(this.bagList, 210, y, it.desc || '', 12, new Color(170, 170, 170, 255), 260);
-      if (it.type === 'equipment') {
-        makeButton(this.bagList, 430, y, 90, 24, '装备', new Color(70, 130, 200, 255), () => this.equip(it.id));
-      }
-      y -= 26;
+    for (let i = 0; i < equipItems.length; i++) {
+      const it = equipItems[i];
+      const c = i % ecCols;
+      const r = Math.floor(i / ecCols);
+      const x = c * (ecW + ecGap) + ecW / 2;
+      const cy = -r * (ecH + ecGap) - ecH / 2;
+      makeCard(this.equipList!, x, cy, ecW, ecH,
+        new Color(10, 10, 26, 180), QUALITY_COLOR[it.quality || 'white'] || new Color(102, 102, 102, 100), 5);
+      const col = QUALITY_COLOR[it.quality || 'white'] || new Color(220, 220, 220, 255);
+      const elv = it.enhanceLevel || 0;
+      makeText(this.equipList!, x - ecW / 2 + 6, cy + ecH / 2 - 3,
+        `${it.name}${elv > 0 ? ` +${elv}` : ''}`, 11, col, ecW - 12);
+      makeText(this.equipList!, x - ecW / 2 + 6, cy - 3,
+        this.itemSummary(it), 9, new Color(136, 153, 187, 255), ecW - 12);
+      const hit = new Node('Hit');
+      hit.layer = this.equipList!.layer;
+      hit.setParent(this.equipList!);
+      hit.setPosition(x, cy, 0);
+      const ut = hit.addComponent(UITransform);
+      ut.setContentSize(ecW, ecH);
+      hit.on(Node.EventType.TOUCH_END, () => this.equip(it.id), hit);
     }
-    if (inv.length === 0) makeText(this.bagList, 0, 0, '（背包为空）', 14, new Color(150, 150, 150, 255), 200);
+    if (equipItems.length === 0) {
+      makeText(this.equipList!, 0, -10, '（没有可装备物品）', 12, new Color(85, 102, 136, 255), 200);
+    }
+
+    // 消耗品
+    this.consList!.removeAllChildren(true);
+    const cons = (pw.inventory || []).filter((it) => it.type === 'consumable' && it.quantity > 0);
+    const ccW = 166, ccH = 52, ccGap = 10, ccCols = 5;
+    for (let i = 0; i < cons.length; i++) {
+      const it = cons[i];
+      const c = i % ccCols;
+      const r = Math.floor(i / ccCols);
+      const x = c * (ccW + ccGap) + ccW / 2;
+      const cy = -r * (ccH + ccGap) - ccH / 2;
+      makeCard(this.consList!, x, cy, ccW, ccH,
+        new Color(10, 26, 10, 180), new Color(34, 85, 34, 130), 5);
+      makeText(this.consList!, x - ccW / 2 + 6, cy + ccH / 2 - 3,
+        it.name, 11, new Color(136, 204, 136, 255), ccW - 12);
+      makeText(this.consList!, x + ccW / 2 - 6, cy + ccH / 2 - 3,
+        `×${it.quantity}`, 11, new Color(136, 204, 136, 255), 60, Label.HorizontalAlign.RIGHT, 1, 1);
+      makeText(this.consList!, x - ccW / 2 + 6, cy - 5,
+        it.desc || '', 9, new Color(85, 136, 85, 255), ccW - 12);
+    }
+    if (cons.length === 0) {
+      makeText(this.consList!, 0, -10, '（没有消耗品）', 12, new Color(85, 102, 136, 255), 200);
+    }
+
+    // 材料
+    this.matList!.removeAllChildren(true);
+    const mats = (pw.inventory || []).filter((it) => it.type === 'material' && it.quantity > 0);
+    const mc = 6, mGap = 280;
+    for (let i = 0; i < mats.length; i++) {
+      const c = i % mc;
+      const r = Math.floor(i / mc);
+      const x = c * mGap + 80;
+      const cy = -r * 22 - 10;
+      makeText(this.matList!, x, cy,
+        `${mats[i].name} ×${mats[i].quantity}`, 11, new Color(170, 170, 204, 255), 260, Label.HorizontalAlign.LEFT, 0.5, 0.5);
+    }
+    if (mats.length === 0) {
+      makeText(this.matList!, 0, -10, '（没有材料）', 12, new Color(85, 102, 136, 255), 200);
+    }
+
+    // 套装进度（L0 简单显示同区域同品质统计；完整套装加成在 L2 接入）
+    this.setList!.removeAllChildren(true);
+    makeText(this.setList!, 0, -10, '（套装系统将在 L2 装备深化阶段接入）', 12,
+      new Color(85, 102, 136, 255), 400, Label.HorizontalAlign.CENTER, 0.5, 0.5);
   }
 }
