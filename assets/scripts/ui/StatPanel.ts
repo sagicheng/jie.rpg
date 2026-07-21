@@ -15,9 +15,9 @@ import { Node, Label, Color } from 'cc';
 import { UIManager } from './UIManager';
 import { makeText, makeColorButton, makeFullScreenPanel, makeCard } from './widgets';
 import { LocalPlayerWorld } from '../model/LocalPlayerWorld';
-import { UNLOCK_LABELS, expForLevel, STAT_PER_POINT } from '../model/PlayerWorld';
+import { expForLevel, STAT_PER_POINT } from '../model/PlayerWorld';
 
-const W = 920, H = 600;
+const W = 940, H = 620;
 const ALLOC_KEYS: Array<{ k: string; label: string; per: number }> = [
   { k: 'allocatedHP', label: 'HP', per: STAT_PER_POINT.HP },
   { k: 'allocatedMP', label: 'MP', per: STAT_PER_POINT.MP },
@@ -75,9 +75,6 @@ export class StatPanel {
   private allocVal: Record<string, Label> = {};
   private allocDetail: Record<string, Label> = {};
   private addBtns: Node[] = [];
-  private vUnlock: Label | null = null;
-  private vKido: Label | null = null;
-  private vTitle: Label | null = null;
   private derivVal: Record<string, Label> = {};
   private eqSlotName: Record<string, Label> = {};
   private eqSlotStats: Record<string, Label> = {};
@@ -299,26 +296,20 @@ export class StatPanel {
       this.allocDetail[a.k].string = `(加点${al} × ${a.per} = +${al * a.per})`;
     }
 
-    // 力量体系 / 鬼道 / 称号 的文字说明（在属性行下方没有单独 banner，直接显示）
-    const unlocks = (pw.unlocks || []).map((u) => UNLOCK_LABELS[u] || u);
-    this.vUnlock!.string = '力量体系：' + (unlocks.length ? unlocks.join(' / ') : '无');
-
+    // 斩魄刀 + 鬼道 + 称号 整合进斩魄刀卡片副行（避免额外布局层）
     const kn = pw.kidoNodes || {};
     const kidoPts = Object.values(kn).reduce((s: number, v: number) => s + (v || 0), 0);
     const school = pw.kidoSchool || '未修习';
     const equipped = (pw.kidoEquipped || []).length;
-    this.vKido!.string = `鬼道：${school}（已投 ${kidoPts} 点，装备 ${equipped} 技）`;
-    this.vTitle!.string = '称号：' + (pw.activeTitle || '无');
-
-    // 斩魄刀
+    const title = pw.activeTitle || '无';
     if (pw.zanpakuto) {
       this.zkName!.string = pw.zanpakuto;
       this.zkName!.color = new Color(232, 213, 163, 255);
-      this.zkSub!.string = `元素: ${element}  (始解${unlockSet.has('shikai') ? '✓' : '✗'})`;
+      this.zkSub!.string = `元素:${element} 鬼道:${school}(投${kidoPts}/装${equipped}) 称号:${title} 始解${unlockSet.has('shikai') ? '✓' : '✗'}`;
     } else {
       this.zkName!.string = '— 未觉醒 —';
       this.zkName!.color = new Color(51, 68, 85, 255);
-      this.zkSub!.string = '元素: 无  (始解✗)';
+      this.zkSub!.string = `元素:无 鬼道:${school} 称号:${title} 始解✗`;
     }
 
     // 装备槽
