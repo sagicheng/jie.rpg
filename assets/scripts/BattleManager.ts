@@ -35,9 +35,8 @@ interface CardRefs {
   node: Node;
   nameLabel: Label;
   hpLabel: Label;
-  hpG: Graphics;
+  barG: Graphics;        // 单 Graphics：hp 条 + mp 条都画在同一组件（Cocos 不允许同节点挂两个同类组件）
   mpLabel: Label;
-  mpG: Graphics;
   color: Color;
 }
 
@@ -67,6 +66,14 @@ export class BattleManager {
   private finished = false;
   private lastReward: any = null;
 
+  // —— 临时诊断（定位 P2 验证问题用，确认后移除）——
+  private pollCount = 0;
+  private errPlayers = 0;
+  private errEnemies = 0;
+  private errLog = 0;
+  private errPhase = 0;
+  private firstCard = false;
+
   // ——————————————————— 生命周期 ———————————————————
   async start(bridge: ColyseusBridge, canvas: Node, monsterId: string, selfId: string,
               playerName: string, onEnd: (result: string) => void): Promise<void> {
@@ -91,9 +98,13 @@ export class BattleManager {
         pet: {},                                        // 无宠哨兵：绕过服务端 onJoin 调试日志对 undefined.pet.stats 的崩溃
       });
     } catch (e: any) {
+      console.error('[Battle] connectBattle 失败：' + (e?.message || e));
       this.showFatal('进入战斗失败：' + (e?.message || e));
       return;
     }
+
+    console.log('[Battle] room 连接成功 sessionId=' + (this.room?.sessionId) +
+      ' stateExists=' + (!!this.room?.state) + ' phase=' + (this.room?.state?.phase));
 
     this.registerRoom();
     this.startPolling();
@@ -101,7 +112,7 @@ export class BattleManager {
 
   private registerRoom(): void {
     if (!this.room) return;
-    this.room.onMessage('battleReward', (r: any) => { this.lastReward = r; });
+    this.room.onMessage('battleReward', (r: any) => { this.lastReward = r; console.log('[Battle] 收到 battleReward: ' + JSON.stringify(r)); });
     this.room.onMessage('system', () => { /* 系统提示已进 log，无需额外处理 */ });
     this.room.onLeave(() => {
       if (this.finished || !this.root) return;
@@ -112,6 +123,7 @@ export class BattleManager {
 
   private startPolling(): void {
     this.stopPolling();
+    console.log('[Battle] 开始轮询（300ms）');
     this.syncTimer = setInterval(() => this.poll(), 300);
   }
   private stopPolling(): void {
@@ -134,13 +146,25 @@ export class BattleManager {
 
   // ——————————————————— 轮询渲染 ———————————————————
   private poll(): void {
-    if (!this.room || !this.room.state) return;
+    if (!this.room) { if (this.pollCount === 0) console.log('[Battle] poll#0 room 未就绪'); this.pollCount++; return; }
+    if (!this.room.state) { if (this.pollCount === 0) console.log('[Battle] poll#0 state 未就绪'); this.pollCount++; return; }
     const st = this.room.state;
-    try { this.renderRound(st); } catch { /* silent */ }
-    try { this.renderPlayers(st); } catch { /* silent */ }
-    try { this.renderEnemies(st); } catch { /* silent */ }
-    try { this.renderLog(st); } catch { /* silent */ }
-    try { this.handlePhase(st); } catch { /* silent */ }
+    if (this.pollCount < 5 || this.pollCount % 20 === 0) {
+      console.log(`[Battle] poll#${this.pollCount} phase=${st.phase} round=${st.round} ` +
+        `players=${this.probe(st.players)} enemies=${this.probe(st.enemies)} logLen=${st.log ? st.log.length : 'n/a'} curTurn=${st.currentTurn}`);
+    }
+    this.pollCount++;
+    try { this.renderRound(st); } catch (e: any) { if (this.errPhase++ < 1) console.error('[Battle] renderRound 抛错: ' + e.message); }
+    try { this.renderPlayers(st); } catch (e: any) { if (this.errPlayers++ < 1) console.error('[Battle] renderPlayers 抛错: ' + e.message + '\n' + (e.stack || '')); }
+    try { this.renderEnemies(st); } catch (e: any) { if (this.errEnemies++ < 1) console.error('[Battle] renderEnemies 抛错: ' + e.message + '\n' + (e.stack || '')); }
+    try { this.renderLog(st); } catch (e: any) { if (this.errLog++ < 1) console.error('[Battle] renderLog 抛错: ' + e.message); }
+    try { this.handlePhase(st); } catch (e: any) { if (this.errPhase++ < 1) console.error('[Battle] handlePhase 抛错: ' + e.message); }
+  }
+
+  private probe(m: any): string {
+    if (!m) return 'missing';
+    try { return (m.constructor?.name || typeof m) + '(size=' + (m.size ?? '?') + ')'; }
+    catch (e: any) { return 'err:' + e.message; }
   }
 
   private renderRound(st: any): void {
@@ -156,12 +180,13 @@ export class BattleManager {
 
   private renderPlayers(st: any): void {
     const map = st.players;
-    if (!map) return;
+    if (!map) { console.log('[Battle] renderPlayers: players 表缺失'); return; }
+    if (!this.firstCard && map.size === 0) { console.log('[Battle] renderPlayers: players 表为空 size=0'); }
     const seen = new Set<string>();
     map.forEach((p: any, key: string) => {
       seen.add(key);
       let card = this.playerCards.get(key);
-      if (!card) card = this.createPlayerCard(key, p);
+      if (!card) { card = this.createPlayerCard(key, p); if (!this.firstCard) { this.firstCard = true; console.log('[Battle] 首个玩家卡已建 key=' + key + ' name=' + p.name + ' hp=' + p.hp + '/' + p.maxHp); } }
       this.updateCard(card, p.hp, p.maxHp, p.mp, p.maxMp, p.name + (p.isPet ? '（灵宠）' : ''));
     });
     for (const key of Array.from(this.playerCards.keys())) {
@@ -171,12 +196,12 @@ export class BattleManager {
 
   private renderEnemies(st: any): void {
     const map = st.enemies;
-    if (!map) return;
+    if (!map) { console.log('[Battle] renderEnemies: enemies 表缺失'); return; }
     const seen = new Set<string>();
     map.forEach((e: any, key: string) => {
       seen.add(key);
       let card = this.enemyCards.get(key);
-      if (!card) card = this.createEnemyCard(key, e);
+      if (!card) { card = this.createEnemyCard(key, e); console.log('[Battle] 首个敌人卡已建 key=' + key + ' name=' + e.name + ' hp=' + e.hp + '/' + e.maxHp); }
       this.updateCard(card, e.hp, e.maxHp, null, null, e.name);
     });
     for (const key of Array.from(this.enemyCards.keys())) {
@@ -255,6 +280,8 @@ export class BattleManager {
   // ——————————————————— 结果 ———————————————————
   private showResult(st: any): void {
     if (!this.resultLabel) return;
+    console.log('[Battle] 结算 phase=' + st.phase + ' winner=' + st.winner +
+      ' reward=' + JSON.stringify(this.lastReward));
     const win = st.phase === 'victory';
     const r = this.lastReward || {};
     let txt: string;
@@ -269,6 +296,7 @@ export class BattleManager {
     }
     this.resultLabel.string = txt;
     this.resultLabel.node.active = true;
+    if (this.resultLabel.node.parent) this.resultLabel.node.parent.active = true;  // 激活整个结算面板
     if (this.returnBtn) this.returnBtn.active = true;
   }
 
@@ -276,6 +304,7 @@ export class BattleManager {
     if (this.resultLabel) {
       this.resultLabel.string = msg;
       this.resultLabel.node.active = true;
+      if (this.resultLabel.node.parent) this.resultLabel.node.parent.active = true;
     }
     if (this.returnBtn) this.returnBtn.active = true;
     this.finished = true;
@@ -325,13 +354,20 @@ export class BattleManager {
     this.makeButton(menu, 200, 0, 160, 54, '逃跑', new Color(150, 150, 160, 255), () => this.sendAction('escape'));
     this.menuNode = menu;
 
-    // 结算（默认隐藏）
-    const result = this.makeText(root, 0, 70, '', 22, new Color(255, 240, 200, 255), 500);
+    // 结算面板（带背景框，默认隐藏，确保醒目）
+    const resultPanel = new Node('ResultPanel');
+    this.setUILayer(resultPanel); resultPanel.setParent(root); resultPanel.setPosition(0, 60, 1);
+    const rg = resultPanel.addComponent(Graphics);
+    rg.fillColor = new Color(20, 24, 36, 248);
+    rg.roundRect(-230, -120, 460, 240, 16); rg.fill();
+    rg.lineWidth = 2; rg.strokeColor = new Color(120, 200, 160, 230);
+    rg.roundRect(-230, -120, 460, 240, 16); rg.stroke();
+    const result = this.makeText(resultPanel, 0, 50, '', 24, new Color(255, 240, 200, 255), 400);
     result.node.active = false;
     this.resultLabel = result;
 
     // 返回地图按钮（默认隐藏）
-    const back = this.makeButton(root, 0, -60, 220, 56, '返回地图', new Color(90, 200, 140, 255), () => {
+    const back = this.makeButton(resultPanel, 0, -70, 220, 56, '返回地图', new Color(90, 200, 140, 255), () => {
       const res = this.room ? (this.room.state ? this.room.state.phase : 'defeat') : 'defeat';
       this.dispose();
       if (this.onEnd) this.onEnd(res);
@@ -387,11 +423,10 @@ export class BattleManager {
 
     const nameLabel = this.makeText(node, 0, 44, p.name, 16, new Color(255, 255, 255, 255), 220);
     const hpLabel = this.makeText(node, 0, 14, 'HP', 13, new Color(200, 220, 200, 255), 220);
-    const hpG = node.addComponent(Graphics);
+    const barG = node.addComponent(Graphics);
     const mpLabel = this.makeText(node, 0, -14, 'MP', 13, new Color(200, 210, 230, 255), 220);
-    const mpG = node.addComponent(Graphics);
 
-    const refs: CardRefs = { node, nameLabel, hpLabel, hpG, mpLabel, mpG, color: cardColor };
+    const refs: CardRefs = { node, nameLabel, hpLabel, barG, mpLabel, color: cardColor };
     this.playerCards.set(key, refs);
     return refs;
   }
@@ -406,11 +441,10 @@ export class BattleManager {
 
     const nameLabel = this.makeText(node, 0, 44, e.name, 16, new Color(255, 230, 230, 255), 220);
     const hpLabel = this.makeText(node, 0, 14, 'HP', 13, new Color(230, 200, 200, 255), 220);
-    const hpG = node.addComponent(Graphics);
+    const barG = node.addComponent(Graphics);
     const mpLabel = this.makeText(node, 0, -14, '', 13, new Color(0, 0, 0, 0), 220);
-    const mpG = node.addComponent(Graphics);
 
-    const refs: CardRefs = { node, nameLabel, hpLabel, hpG, mpLabel, mpG, color: cardColor };
+    const refs: CardRefs = { node, nameLabel, hpLabel, barG, mpLabel, color: cardColor };
     this.enemyCards.set(key, refs);
     return refs;
   }
@@ -419,16 +453,18 @@ export class BattleManager {
     c.nameLabel.string = name;
     const hpRatio = maxHp > 0 ? hp / maxHp : 0;
     c.hpLabel.string = `HP ${Math.max(0, Math.round(hp))}/${Math.round(maxHp)}`;
-    this.drawBar(c.hpG, -100, -6, 200, 16, hpRatio, new Color(90, 210, 120, 255));
+    // 单 Graphics 先清一次，再画 hp 条 + mp 条（避免同节点双 Graphics 组件冲突）
+    c.barG.clear();
+    this.drawBar(c.barG, -100, -6, 200, 16, hpRatio, new Color(90, 210, 120, 255));
     if (mp !== null && maxMp !== null) {
       const mpRatio = maxMp > 0 ? mp / maxMp : 0;
       c.mpLabel.string = `MP ${Math.max(0, Math.round(mp))}/${Math.round(maxMp)}`;
-      this.drawBar(c.mpG, -100, -34, 200, 12, mpRatio, new Color(90, 160, 230, 255));
+      this.drawBar(c.barG, -100, -34, 200, 12, mpRatio, new Color(90, 160, 230, 255));
     }
   }
 
   private drawBar(g: Graphics, x: number, y: number, w: number, h: number, ratio: number, color: Color): void {
-    g.clear();
+    // 注意：调用方负责 clear（单 Graphics 共用），此处只绘制
     g.fillColor = new Color(40, 44, 56, 255);
     g.roundRect(x, y, w, h, 4); g.fill();
     const fw = Math.max(0, Math.min(1, ratio)) * w;
