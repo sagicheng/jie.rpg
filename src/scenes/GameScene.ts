@@ -215,10 +215,9 @@ export class GameScene extends Phaser.Scene {
 
     this.player = this.physics.add.sprite(GameState.x, GameState.y, 'player')
       .setDepth(10).setCollideWorldBounds(true);
-    // 真实美术 512x768，缩放到约 40x60 显示（数值对应该分辨率，换图需重调）
+    // 显示尺寸固定 40x60；碰撞体按"当前纹理实际尺寸"比例自适应（换透明底 PNG 尺寸变了也不错位）
     this.player.setDisplaySize(40, 60);
-    // 碰撞体与视觉大小一致：40x60，居中。这样"走上去触发战斗"才跟眼睛看到的一致。
-    this.player.body!.setSize(36, 56).setOffset(238, 356);
+    this.fitBody(this.player, 0.7, 0.9, 0.15, 0.04);
 
     // 怪物分组：用物理重叠检测替代中心点距离判定，接触即触发战斗（更稳、更符合直觉）
     this.enemyGroup = this.physics.add.group();
@@ -958,6 +957,17 @@ export class GameScene extends Phaser.Scene {
 
   // ════════════════ Map / World ════════════════
 
+  /**
+   * 让物理碰撞体按"显示尺寸"的比例自适应，不依赖纹理原始分辨率。
+   * 换不同尺寸的透明底 PNG 时，碰撞体始终贴合视觉，不会错位或缩成一点。
+   */
+  private fitBody(sprite: Phaser.Physics.Arcade.Sprite, wFrac: number, hFrac: number, offXFrac = (1 - wFrac) / 2, offYFrac = (1 - hFrac) / 2): void {
+    const dw = sprite.displayWidth, dh = sprite.displayHeight;
+    const sx = sprite.width / dw, sy = sprite.height / dh; // 显示 px → 源 px 比例
+    sprite.body!.setSize(dw * wFrac * sx, dh * hFrac * sy);
+    sprite.body!.setOffset(offXFrac * sprite.width, offYFrac * sprite.height);
+  }
+
   private createMap(): void {
     const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
     const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2;
@@ -965,9 +975,14 @@ export class GameScene extends Phaser.Scene {
 
     // 1) 区域背景图（飘流幻境式：一张大地图/可拼接背景铺底）
     if (cfg.backgroundImage && this.textures.exists(cfg.backgroundImage)) {
-      const bg = this.add.tileSprite(mapW / 2, mapH / 2, mapW, mapH, cfg.backgroundImage).setDepth(0);
-      // 若背景图偏亮或偏暗，可按区域微调 tint（暂时保持原色）
-      bg.setTileScale(1, 1);
+      if (cfg.backgroundMode === 'cover') {
+        // 单张大图拉伸铺满整张地图（不重复）—— 适合你画好的一整张场景大图
+        this.add.image(mapW / 2, mapH / 2, cfg.backgroundImage)
+          .setOrigin(0.5).setDisplaySize(mapW, mapH).setDepth(0);
+      } else {
+        // 默认平铺重复（适合小尺寸可循环纹理）
+        this.add.tileSprite(mapW / 2, mapH / 2, mapW, mapH, cfg.backgroundImage).setDepth(0);
+      }
     } else {
       // 无背景图时：底色 + 中性噪点 tile
       g.fillStyle(cfg.groundColor, 1);
@@ -996,6 +1011,16 @@ export class GameScene extends Phaser.Scene {
     g.fillStyle(0xffffff, 0.12);
     for (let rx = 40; rx < mapW; rx += 80) g.fillRect(rx, mapH * 0.45 + roadH / 2 - 2, 36, 4);
     for (let ry = 40; ry < mapH; ry += 80) g.fillRect(mapW * 0.48 + roadW / 2 - 2, ry, 4, 36);
+
+    // 2.5) 拼接装饰：把不同图片摆在不同坐标，组成场景（飘流幻境式：一大底 + 四处摆物件）。坐标 0..1 归一化。
+    for (const p of cfg.props ?? []) {
+      if (!this.textures.exists(p.image)) continue;
+      const img = this.add.image(p.x * mapW, p.y * mapH, p.image)
+        .setOrigin(p.originX ?? 0.5, p.originY ?? 0.5)
+        .setDepth(p.depth ?? 1);
+      if (p.scale) img.setScale(p.scale);
+      if (p.alpha != null) img.setAlpha(p.alpha);
+    }
 
     // 3) 装饰物（建筑/池塘）：更精致的程序化占位，未来可替换为图片 key
     for (const dec of cfg.decorations) {
@@ -1181,13 +1206,13 @@ export class GameScene extends Phaser.Scene {
       const sprite = this.physics.add.sprite(ex, ey, isBoss ? 'enemy_boss' : 'enemy').setDepth(5);
       this.enemyGroup!.add(sprite);
       if (!isBoss) {
-        // 真实美术 512x512，缩放到约 40x40 显示；碰撞体与视觉一致（36x36 居中）
+        // 显示尺寸固定 40x40；碰撞体按纹理实际尺寸比例自适应（换图不崩、不缩成一点）
         sprite.setDisplaySize(40, 40);
-        sprite.body!.setSize(36, 36).setOffset(238, 238);
+        this.fitBody(sprite, 0.85, 0.85);
       }
       if (isBoss) {
         sprite.setScale(1.6).setTint(0xffcc44);
-        sprite.body!.setSize(90, 110).setOffset(-13, -15);
+        this.fitBody(sprite, 0.9, 0.95);
         this.tweens.add({ targets: sprite, scaleX: 1.65, scaleY: 1.55, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       }
       else { const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30); this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }

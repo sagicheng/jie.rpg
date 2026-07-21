@@ -142,6 +142,20 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture('gather', 24, 24);
     g.clear();
 
+    // 场景拼接占位装饰（真实美术未覆盖时演示 props 系统用）
+    // 树：树干 + 双层树冠
+    g.fillStyle(0x5b3a1e, 1); g.fillRect(28, 50, 8, 18);
+    g.fillStyle(0x2e7d32, 1); g.fillCircle(32, 38, 22);
+    g.fillStyle(0x43a047, 0.7); g.fillCircle(24, 32, 13);
+    g.generateTexture('deco_tree', 64, 72);
+    g.clear();
+    // 岩石：阴影 + 两层岩面
+    g.fillStyle(0x000000, 0.25); g.fillEllipse(34, 56, 56, 16);
+    g.fillStyle(0x8a8a92, 1); g.fillEllipse(32, 44, 52, 34);
+    g.fillStyle(0xa9a9b2, 1); g.fillEllipse(26, 38, 28, 18);
+    g.generateTexture('deco_rock', 64, 64);
+    g.clear();
+
     // 元素图标 (28x28)
     // 火 - 火焰
     g.fillStyle(0xcc2200, 0.6);

@@ -5,12 +5,22 @@ import { shop } from './shop';
     id: 1, name: '浦原商店街',
     groundColor: 0x556688, roadColor: 0x777799, treeColor: 0x334455,
     backgroundImage: 'bg_town',
+    backgroundMode: 'cover',
     decorations: [
       { type: 'house', x: 0.35, y: 0.4, w: 180, h: 120 },
       { type: 'house', x: 0.25, y: 0.2, w: 120, h: 80 },
       { type: 'house', x: 0.65, y: 0.7, w: 100, h: 70 },
       { type: 'house', x: 0.75, y: 0.3, w: 110, h: 75 },
       { type: 'pond', x: 0.15, y: 0.6, w: 100, h: 70 },
+    ],
+    // 拼接装饰：把不同图片摆在不同坐标，组成场景。坐标为 0..1 归一化（×地图宽高 5760×2160）。
+    // 当前用 BootScene 生成的占位纹理演示；你出图后把 image 换成真实美术 key 即可。
+    props: [
+      { image: 'deco_tree', x: 0.18, y: 0.62, scale: 1.6 },
+      { image: 'deco_tree', x: 0.62, y: 0.82, scale: 2.4 },
+      { image: 'deco_tree', x: 0.85, y: 0.62, scale: 1.8 },
+      { image: 'deco_rock', x: 0.34, y: 0.72, scale: 1.3 },
+      { image: 'deco_rock', x: 0.78, y: 0.22, scale: 1.1 },
     ],
     npcs: [
       { x: 0.4, y: 0.45, name: '浦原喜助', role: 'merchant', dialogue: [
