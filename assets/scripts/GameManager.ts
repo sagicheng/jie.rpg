@@ -166,7 +166,9 @@ export class GameManager extends Component {
       cam.priority = 100;
       cam.near = 0.1;
       cam.far = 2000;
-      cam.orthoHeight = 640;
+      // 关键：正交相机 half-height 必须 = 设计分辨率高度/2（960×640 → 320）。
+      // 写死 640 会把视锥拉大一倍，导致整个 UI 缩到约 50% 并向中心内移（错位根因）。
+      cam.orthoHeight = view.getDesignResolutionSize().height / 2;
 
       canvasComp.cameraComponent = cam;
       console.log('[GameManager] UI 相机已创建并绑定到 Canvas');
