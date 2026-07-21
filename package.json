@@ -1,0 +1,10 @@
+{
+  "name": "jie-cocos",
+  "creator_version": "3.8.5",
+  "version": "1.0.0",
+  "description": "《解》Cocos Creator 客户端（P1 联网验证）",
+  "creator": {
+    "version": "3.8.8"
+  },
+  "uuid": "8ca6fd0f-5549-4787-9e24-32d420391a5e"
+}

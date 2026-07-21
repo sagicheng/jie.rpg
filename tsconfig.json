@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "experimentalDecorators": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "lib": ["ES2020", "dom"],
+    "baseUrl": ".",
+    "paths": {
+      "cc": ["../Creator/3.8.8/resources/resources/3d/engine/bin/.declarations/cc"]
+    }
+  },
+  "include": ["assets/**/*.ts"]
+}

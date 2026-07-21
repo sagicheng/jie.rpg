@@ -1,0 +1,22 @@
+# ============ Cocos Creator 自动生成目录（不纳入版本控制） ============
+# 这些是编辑器/构建产物，体积大且机器相关，重建即可，无需提交
+/library/
+/temp/
+/local/
+/profiles/
+/build/
+/native/
+
+# 编辑器本地配置（含本机绝对路径，不跨机器共享）
+/.creator/
+
+# ============ 系统 / 日志 ============
+.DS_Store
+Thumbs.db
+*.log
+
+# ============ 依赖安装产物（保留 package.json / package-lock.json） ============
+/node_modules/
+
+# ============ 打包 / 导出产物 ============
+/export/
