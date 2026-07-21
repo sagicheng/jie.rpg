@@ -125,8 +125,6 @@ export class BattleRoom extends Room<BattleRoomState> {
       this.loadouts.set(petSid, plo);
       this.logMsg('system', `${pet.name}（灵宠）随 ${p.name} 出战`);
       console.log('[BattleRoom.onJoin] ✅ pet combatant created:', petSid, 'name=', pet.name, 'players.size=', this.state.players.size);
-    } else {
-      console.log('[BattleRoom.onJoin] ⚠️ pet option SKIPPED — reason:', !petOpt ? 'no petOpt' : !petOpt.stats ? 'no stats' : 'stats.hp not number, got', typeof petOpt.stats?.hp, petOpt.stats);
     }
 
     if (typeof options?.dungeonId === 'number' && options.dungeonId > 0) {
