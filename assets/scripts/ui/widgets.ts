@@ -10,7 +10,7 @@
  */
 import {
   Node, Label, Graphics, UITransform, Color, Layers,
-  SpriteFrame, Texture2D, Sprite,
+  SpriteFrame, Texture2D, Sprite, BlockInputEvents,
 } from 'cc';
 
 /** 让节点能被 Canvas 的 UI 相机渲染。 */
@@ -131,11 +131,11 @@ export function makePanel(parent: Node, w: number, h: number): Node {
 
   const g = n.addComponent(Graphics);
   g.fillColor = new Color(18, 22, 32, 245);
-  g.roundRect(-w / 2, -h / 2, w, h, 16);
+  g.roundRect(-w / 2, -h / 2, w, h, 12);
   g.fill();
   g.lineWidth = 2;
   g.strokeColor = new Color(120, 160, 220, 200);
-  g.roundRect(-w / 2, -h / 2, w, h, 16);
+  g.roundRect(-w / 2, -h / 2, w, h, 12);
   g.stroke();
 
   const ut = n.getComponent(UITransform) || n.addComponent(UITransform);
@@ -144,59 +144,66 @@ export function makePanel(parent: Node, w: number, h: number): Node {
 }
 
 /**
- * 创建全屏面板（带标题栏、关闭按钮、底栏）。
- * 返回面板根节点，子控件坐标基于面板中心坐标系。
+ * 创建 Phaser3 风格的全屏模态面板外壳（遮罩+面板+标题栏+关闭+底栏）。
+ * 尺寸固定 1860×1040（ox=30,oy=20,ow=1860,oh=1040，圆角 12，与 Phaser 一致），
+ * 因为 Phaser3 的设计分辨率就是 1920×1080，Cocos 现在也切到同分辨率，坐标可 1:1 搬运。
+ *
+ * 返回面板根节点 `root`，子控件直接按 Phaser 坐标系经 helper 转换后挂到 root 下。
  *
  * @param title 标题文字
- * @param closeCb 关闭回调
+ * @param onClose 关闭回调
  * @param footer 底栏文字，可选
  */
-export function makeFullScreenPanel(
-  parent: Node, w: number, h: number, title: string,
-  closeCb: () => void, footer = '',
-): { root: Node; contentW: number; contentH: number; ox: number; oy: number } {
-  const root = makePanel(parent, w, h);
+export function makeModalShell(
+  parent: Node, title: string, onClose: () => void, footer = '',
+): { root: Node } {
+  const W = 1860, H = 1040, th = 54;
 
-  const titleH = 50;
-  const margin = 20;
-  const contentW = w - margin * 2;
-  const contentH = h - titleH - margin * 2 - (footer ? 28 : 0);
-  const ox = -w / 2 + margin;
-  const oy = h / 2 - titleH - margin; // 内容区顶部 y（中心坐标系，向上为正）
+  // 全屏遮罩（黑 0.78），并阻挡穿透点击到下层
+  const ov = new Node('Overlay');
+  setUILayer(ov);
+  ov.setParent(parent);
+  const ovut = ov.addComponent(UITransform);
+  ovut.setContentSize(1920, 1080);
+  const og = ov.addComponent(Graphics);
+  og.fillColor = new Color(0, 0, 0, 199);
+  og.fillRect(-960, -540, 1920, 1080);
+  ov.addComponent(BlockInputEvents);
 
-  // 标题栏背景
+  // 主面板
+  const root = makePanel(parent, W, H);
+
+  // 标题栏
   const tb = new Node('TitleBar');
   setUILayer(tb);
   tb.setParent(root);
-  tb.setPosition(0, h / 2 - titleH / 2, 0);
+  tb.setPosition(0, H / 2 - th / 2, 0);
   const tbg = tb.addComponent(Graphics);
-  tbg.fillColor = new Color(26, 26, 54, 250);
-  tbg.roundRect(-w / 2 + 4, -titleH / 2, w - 8, titleH, 10);
+  tbg.fillColor = new Color(26, 26, 54, 255);
+  tbg.roundRect(-W / 2 + 4, -th / 2, W - 8, th, { tl: 10, tr: 10, bl: 0, br: 0 } as any);
   tbg.fill();
+  makeText(root, 0, H / 2 - th / 2, title, 22, new Color(232, 213, 163, 255),
+    W, Label.HorizontalAlign.CENTER, 0.5, 0.5);
 
-  // 标题
-  makeText(root, 0, h / 2 - 18, title, 22, new Color(232, 213, 163, 255), 400, Label.HorizontalAlign.CENTER, 0.5, 0.5);
-
-  // 关闭按钮（右上角）
-  const closeBtn = makeColorButton(root, w / 2 - 32, h / 2 - 24, 40, 32, '✕',
-    new Color(120, 80, 80, 220), new Color(180, 90, 90, 255), closeCb, 20, 6);
-  closeBtn.setPosition(w / 2 - 32, h / 2 - 24, 0);
+  // 关闭按钮（右上角，与 Phaser ox+ow-40 对齐）
+  makeColorButton(root, W / 2 - 40, H / 2 - th / 2, 44, 44, '✕',
+    new Color(120, 80, 80, 220), new Color(180, 90, 90, 255), onClose, 22, 6);
 
   // 底栏
   if (footer) {
-    const fy = -h / 2 + 16;
+    const fy = -(H / 2 - 28);
     const ft = new Node('Footer');
     setUILayer(ft);
     ft.setParent(root);
     ft.setPosition(0, fy, 0);
     const ftg = ft.addComponent(Graphics);
-    ftg.fillColor = new Color(26, 26, 54, 200);
-    ftg.roundRect(-w / 2 + 4, -12, w - 8, 24, 10);
+    ftg.fillColor = new Color(26, 26, 54, 204);
+    ftg.roundRect(-W / 2 + 4, -12, W - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 } as any);
     ftg.fill();
-    makeText(root, 0, fy, footer, 12, new Color(120, 130, 160, 255), contentW, Label.HorizontalAlign.CENTER, 0.5, 0.5);
+    makeText(root, 0, fy, footer, 11, new Color(85, 102, 136, 255), W - 40, Label.HorizontalAlign.CENTER, 0.5, 0.5);
   }
 
-  return { root, contentW, contentH, ox, oy };
+  return { root };
 }
 
 /** 创建小卡片背景（用于装备槽、属性行等）。 */

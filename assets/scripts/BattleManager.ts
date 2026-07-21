@@ -319,6 +319,7 @@ export class BattleManager {
     this.setUILayer(root);
     root.setParent(canvas);
     root.setPosition(0, 0, 100);   // 盖在地图之上
+    root.setScale(1.5);            // 960×640 坐标系均匀放大到 1920×1080（非均匀会扭曲文字）
     this.root = root;
 
     // 遮罩底（深蓝近黑，盖住地图）

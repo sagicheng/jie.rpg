@@ -255,8 +255,9 @@ export class GameManager extends Component {
   /** 左上角常驻按钮：角色(C) / 背包(B)。 */
   private buildTopButtons(): void {
     if (!this.canvas) return;
-    makeButton(this.canvas, -420, 295, 90, 34, '角色(C)', new Color(70, 110, 170, 255), () => StatPanel.instance.toggle(this.bridge));
-    makeButton(this.canvas, -320, 295, 90, 34, '背包(B)', new Color(70, 130, 110, 255), () => InventoryPanel.instance.toggle(this.bridge));
+    // 1920×1080 坐标（左上角区域），按钮放大匹配分辨率
+    makeButton(this.canvas, -900, 505, 175, 56, '角色(C)', new Color(70, 110, 170, 255), () => StatPanel.instance.toggle(this.bridge));
+    makeButton(this.canvas, -705, 505, 175, 56, '背包(B)', new Color(70, 130, 110, 255), () => InventoryPanel.instance.toggle(this.bridge));
   }
 
   // ——————————————————— 背景 / 状态 ———————————————————
@@ -275,47 +276,46 @@ export class GameManager extends Component {
   }
 
   private buildStatus(): void {
-    // 顶栏：临时状态提示（连接/操作反馈），居中
+    // 顶栏：临时状态提示（连接/操作反馈），居中（1920×1080 坐标）
     const n = new Node('Status');
     GameManager.setUILayer(n);
     n.setParent(this.canvas!);
-    n.setPosition(0, 300, 1);
+    n.setPosition(0, 500, 1);
     const label = n.addComponent(Label);
     label.string = '初始化…';
     label.color = new Color(180, 220, 255, 255);
-    label.fontSize = 16;
-    label.lineHeight = 20;
+    label.fontSize = 18;
+    label.lineHeight = 22;
     const ut = n.getComponent(UITransform) || n.addComponent(UITransform);
-    ut.setContentSize(600, 26);
+    ut.setContentSize(1200, 28);
     this.statusLabel = label;
 
     // 右下角常驻 HUD（等级/金币/可分配点）
     const hud = new Node('HUD');
     GameManager.setUILayer(hud);
     hud.setParent(this.canvas!);
-    hud.setPosition(430, -290, 1);
+    hud.setPosition(900, -490, 1);
     const hut = hud.getComponent(UITransform) || hud.addComponent(UITransform);
-    hut.setContentSize(220, 80);
-    hut.setAnchorPoint(1, 0);
+    hut.setContentSize(360, 110);
+    hut.setAnchorPoint(1, 0.5);
 
     // HUD 背景
     const bg = hud.addComponent(Graphics);
     bg.fillColor = new Color(18, 22, 32, 220);
-    bg.roundRect(-220, 0, 220, 80, 10);
+    bg.roundRect(-360, -55, 360, 110, 12);
     bg.fill();
     bg.lineWidth = 1;
     bg.strokeColor = new Color(120, 160, 220, 150);
-    bg.roundRect(-220, 0, 220, 80, 10);
+    bg.roundRect(-360, -55, 360, 110, 12);
     bg.stroke();
 
     const hudLabel = hud.addComponent(Label);
     hudLabel.string = 'Lv.1\n金币 0';
     hudLabel.color = new Color(255, 230, 150, 255);
-    hudLabel.fontSize = 16;
-    hudLabel.lineHeight = 24;
+    hudLabel.fontSize = 20;
+    hudLabel.lineHeight = 30;
     hudLabel.horizontalAlign = 2; // RIGHT
     hudLabel.verticalAlign = 1;   // CENTER
-    hut.setAnchorPoint(1, 0.5);
     this.hudLabel = hudLabel;
   }
 
@@ -554,8 +554,8 @@ export class GameManager extends Component {
       const speed = 220;
       this.selfPos.x += (dx / len) * speed * dt;
       this.selfPos.y += (dy / len) * speed * dt;
-      this.selfPos.x = Math.max(-460, Math.min(460, this.selfPos.x));
-      this.selfPos.y = Math.max(-300, Math.min(300, this.selfPos.y));
+      this.selfPos.x = Math.max(-920, Math.min(920, this.selfPos.x));
+      this.selfPos.y = Math.max(-540, Math.min(540, this.selfPos.y));
       this.selfNode.setPosition(this.selfPos.x, this.selfPos.y, 0);
       if (this.debugNet) log('[GameManager] 移动 pos=' + Math.round(this.selfPos.x) + ',' + Math.round(this.selfPos.y));
 
