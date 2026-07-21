@@ -215,9 +215,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create(): void {
-    const bg = this.add.graphics();
-    bg.fillGradientStyle(0x0a0a1a, 0x0a0a1a, 0x1a0a0a, 0x1a0a0a, 1);
-    bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    // 战斗背景（真实美术）
+    this.add.image(0, 0, 'bg_battle').setOrigin(0, 0).setDepth(-100).setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
 
     // 根据敌人数量计算位置
     const count = this.enemies.length;
@@ -255,7 +254,7 @@ export class BattleScene extends Phaser.Scene {
 
     // 我方（左侧 4 行站位的第一行；其余 3 行预留给队友 / 灵宠）
     const PX = GAME_WIDTH * 0.24, PY = GAME_HEIGHT * 0.22;
-    this.add.sprite(PX, PY, 'player').setScale(2.5).setFlipX(true);
+    this.add.sprite(PX, PY, 'player').setDisplaySize(90, 135).setFlipX(true);
     const bt = GameState.getActiveTitleDef()?.name;
     this.add.text(PX, PY + 75, bt ? `${GameState.playerName} · ${bt}` : GameState.playerName, {
       fontSize: '14px', color: '#88aacc', padding: { y: 2 },

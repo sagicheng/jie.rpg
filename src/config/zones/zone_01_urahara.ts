@@ -4,6 +4,7 @@ import { shop } from './shop';
   export const zone01: ZoneConfig = {
     id: 1, name: '浦原商店街',
     groundColor: 0x556688, roadColor: 0x777799, treeColor: 0x334455,
+    backgroundImage: 'bg_town',
     decorations: [
       { type: 'house', x: 0.35, y: 0.4, w: 180, h: 120 },
       { type: 'house', x: 0.25, y: 0.2, w: 120, h: 80 },

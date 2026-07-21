@@ -4,6 +4,7 @@
  */
 
 import Phaser from 'phaser';
+import { ASSET_IMAGES } from '../config/assetManifest';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -41,24 +42,32 @@ export class BootScene extends Phaser.Scene {
       text.setText('觉醒完成');
     });
 
-    // 生成程序化图形资源（无需外部图片文件）
-    this.createPlaceholderAssets();
+    // 加载 AI 生成的真实美术（清单见 src/config/assetManifest.ts）
+    // 已生成的 key 会覆盖下方同名程序化占位贴图
+    for (const a of ASSET_IMAGES) {
+      this.load.image(a.key, a.path);
+    }
 
-    // 如果将来有外部资源，在此加载
-    // this.load.image('player', 'assets/player.png');
+    // 生成程序化图形资源（真实美术未覆盖的 key 仍用占位）
+    this.createPlaceholderAssets();
   }
 
   private createPlaceholderAssets(): void {
     const g = this.make.graphics({ x: 0, y: 0 } as any);
 
+    // 已用真实美术的 key 不再生成程序化占位
+    const REAL_KEYS = new Set(ASSET_IMAGES.map(a => a.key));
+
     // 玩家角色 (32x48)
-    g.clear();
-    g.fillStyle(0x4a90d9, 1);
-    g.fillRoundedRect(0, 0, 32, 48, 4);
-    g.fillStyle(0xffcc88, 1);
-    g.fillRoundedRect(8, 4, 16, 16, 4);
-    g.generateTexture('player', 32, 48);
-    g.clear();
+    if (!REAL_KEYS.has('player')) {
+      g.clear();
+      g.fillStyle(0x4a90d9, 1);
+      g.fillRoundedRect(0, 0, 32, 48, 4);
+      g.fillStyle(0xffcc88, 1);
+      g.fillRoundedRect(8, 4, 16, 16, 4);
+      g.generateTexture('player', 32, 48);
+      g.clear();
+    }
 
     // NPC (32x48)
     g.fillStyle(0x88aa66, 1);
@@ -109,6 +118,29 @@ export class BootScene extends Phaser.Scene {
       g.generateTexture(key, 32, 32);
       g.clear();
     }
+
+    // 中性地面纹理 (64x64)，带细微噪点，可按区域 groundColor tint 使用
+    g.fillStyle(0x888888, 1);
+    g.fillRect(0, 0, 64, 64);
+    for (let i = 0; i < 40; i++) {
+      const gx = Phaser.Math.Between(0, 63), gy = Phaser.Math.Between(0, 63);
+      const size = Phaser.Math.Between(1, 3);
+      const alpha = Phaser.Math.FloatBetween(0.08, 0.18);
+      g.fillStyle(0xffffff, alpha);
+      g.fillRect(gx, gy, size, size);
+      g.fillStyle(0x000000, alpha * 0.7);
+      g.fillRect(gx + 1, gy + 1, size, size);
+    }
+    g.generateTexture('tile_ground', 64, 64);
+    g.clear();
+
+    // 采集点占位 (24x24)
+    g.fillStyle(0x66aa66, 1);
+    g.fillCircle(12, 12, 10);
+    g.fillStyle(0x88cc88, 0.6);
+    g.fillCircle(12, 12, 6);
+    g.generateTexture('gather', 24, 24);
+    g.clear();
 
     // 元素图标 (28x28)
     // 火 - 火焰

@@ -30,7 +30,9 @@ export interface ZoneConfig {
   groundColor: number;
   roadColor: number;
   treeColor: number;
-  decorations: Array<{ type: string; x: number; y: number; w?: number; h?: number }>;
+  /** 区域背景图（Phaser 纹理 key）。存在时铺满整个地图，替代纯色底；缺省用 groundColor。 */
+  backgroundImage?: string;
+  decorations: Array<{ type: string; x: number; y: number; w?: number; h?: number; key?: string; scale?: number }>;
   npcs: ZoneNPC[];
   enemies: ZoneEnemy[];
   gathering: ZoneGather[];

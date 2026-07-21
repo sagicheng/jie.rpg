@@ -113,6 +113,7 @@ export class GameScene extends Phaser.Scene {
   // Worlds
   private npcList: NPCData[] = [];
   private enemies: Array<{ sprite: Phaser.Physics.Arcade.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; id: string; dead?: boolean; respawnTimer?: Phaser.Time.TimerEvent }> = [];
+  private enemyGroup: Phaser.Physics.Arcade.Group | null = null;
   private gatherPoints: Array<{ sprite: Phaser.Physics.Arcade.Sprite; type: string; label: Phaser.GameObjects.Text }> = [];
 
   // Panels
@@ -214,15 +215,22 @@ export class GameScene extends Phaser.Scene {
 
     this.player = this.physics.add.sprite(GameState.x, GameState.y, 'player')
       .setDepth(10).setCollideWorldBounds(true);
-    this.player.body!.setSize(24, 32);
-    this.player.body!.setOffset(4, 0);
+    // 真实美术 512x768，缩放到约 40x60 显示（数值对应该分辨率，换图需重调）
+    this.player.setDisplaySize(40, 60);
+    // 碰撞体与视觉大小一致：40x60，居中。这样"走上去触发战斗"才跟眼睛看到的一致。
+    this.player.body!.setSize(36, 56).setOffset(238, 356);
 
-    // 玩家头顶：角色名 + 称号（跟随人物移动）
-    this.nameTag = this.add.text(this.player.x, this.player.y - this.player.height / 2 - 22, GameState.playerName, {
+    // 怪物分组：用物理重叠检测替代中心点距离判定，接触即触发战斗（更稳、更符合直觉）
+    this.enemyGroup = this.physics.add.group();
+    this.physics.add.overlap(this.player, this.enemyGroup, this.onEnemyOverlap, undefined, this);
+
+    // 玩家头顶：角色名 + 称号（跟随人物移动）。用 displayHeight 而不是 height，避免 512x768 纹理导致标签飞到头顶上方 300+ 像素
+    const ph = this.player.displayHeight / 2;
+    this.nameTag = this.add.text(this.player.x, this.player.y - ph - 22, GameState.playerName, {
       fontSize: '12px', color: '#bfe8ff', fontStyle: 'bold',
       backgroundColor: '#00000066', padding: { x: 4, y: 1 },
     }).setOrigin(0.5, 1).setDepth(11);
-    this.titleTag = this.add.text(this.player.x, this.player.y - this.player.height / 2 - 8, '', {
+    this.titleTag = this.add.text(this.player.x, this.player.y - ph - 8, '', {
       fontSize: '11px', color: '#ffd9a0', fontStyle: 'bold',
       backgroundColor: '#00000066', padding: { x: 4, y: 1 },
     }).setOrigin(0.5, 1).setDepth(11);
@@ -538,7 +546,10 @@ export class GameScene extends Phaser.Scene {
   // ════════════════ Update Loop ════════════════
 
   update(): void {
-    this.enemies.forEach(e => { e.label.setPosition(e.sprite.x, e.sprite.y - e.sprite.height / 2 - 10); });
+    // 怪物名字：像素对齐，并用 displayHeight 锚定视觉头顶，避免 512x512 纹理把标签甩到头顶上方
+    this.enemies.forEach(e => {
+      e.label.setPosition(Math.round(e.sprite.x), Math.round(e.sprite.y - e.sprite.displayHeight / 2 - 10));
+    });
     if (this.isInDialogue) { this.player.setVelocity(0, 0); return; }
     if (this.chatInputFocused) { this.player.setVelocity(0, 0); return; }
     const speed = this.ctrlKey.isDown ? 500 : 160;
@@ -571,7 +582,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (vx < 0) this.player.setFlipX(true); else if (vx > 0) this.player.setFlipX(false);
     this.checkNPCProximity(); this.checkZoneExit(); this.checkDungeonPortal();
-    this.updateMiniMap(); this.checkEnemyCollision();
+    this.updateMiniMap();
+    // 物理重叠是主要战斗触发，但为防偶发漏检，保留一帧一次的距离兜底
+    this.checkEnemyCollision();
     GameState.x = this.player.x; GameState.y = this.player.y;
     if (this.battleCooldown > 0) this.battleCooldown--;
     this.coordText.setText(`X:${Math.round(this.player.x)}  Y:${Math.round(this.player.y)}`);
@@ -582,7 +595,7 @@ export class GameScene extends Phaser.Scene {
     this.remotePlayers.forEach(rp => {
       rp.sprite.x = Phaser.Math.Linear(rp.sprite.x, rp.tx, 0.2);
       rp.sprite.y = Phaser.Math.Linear(rp.sprite.y, rp.ty, 0.2);
-      rp.tag.setPosition(rp.sprite.x, rp.sprite.y - 46);
+      rp.tag.setPosition(Math.round(rp.sprite.x), Math.round(rp.sprite.y - rp.sprite.displayHeight / 2 - 10));
     });
     // 联机：每帧按服务端怪物状态机同步显示（防重入战斗）
     this.pruneSharedMonsters();
@@ -590,10 +603,10 @@ export class GameScene extends Phaser.Scene {
 
   /** 玩家头顶：角色名 + 称号，跟随移动，文本变化时才重绘 */
   private syncPlayerTags(): void {
-    const ph = this.player.height / 2;
+    const ph = this.player.displayHeight / 2;
     if (this.nameTag) {
       if (this.nameTag.text !== GameState.playerName) this.nameTag.setText(GameState.playerName);
-      this.nameTag.setPosition(this.player.x, this.player.y - ph - 22);
+      this.nameTag.setPosition(Math.round(this.player.x), Math.round(this.player.y - ph - 22));
     }
     if (this.titleTag) {
       const tn = GameState.getActiveTitleDef()?.name ?? '';
@@ -601,7 +614,7 @@ export class GameScene extends Phaser.Scene {
         this.titleTag.setText(tn);
         this.titleTag.setVisible(tn.length > 0);
       }
-      this.titleTag.setPosition(this.player.x, this.player.y - ph - 8);
+      this.titleTag.setPosition(Math.round(this.player.x), Math.round(this.player.y - ph - 8));
     }
   }
 
@@ -728,7 +741,12 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.once('camerafadeoutcomplete', () => {
       this.enemies.forEach(e => { e.sprite.destroy(); e.label.destroy(); }); this.enemies = [];
       this.npcList.forEach(n => { n.sprite.destroy(); n.nameTag.destroy(); }); this.npcList = [];
-      const stale = this.children.list.filter((c2: any) => (c2.type === 'Graphics' && [0,3,4].includes(c2.depth||-1)) || (c2.type === 'Text' && [4,6].includes(c2.depth||-1)));
+      this.gatherPoints.forEach(gp => { gp.sprite.destroy(); gp.label.destroy(); }); this.gatherPoints = [];
+      const stale = this.children.list.filter((c2: any) =>
+        (c2.type === 'Graphics' && [0,1,3,4].includes(c2.depth||-1)) ||
+        (c2.type === 'Text' && [4,6].includes(c2.depth||-1)) ||
+        (c2.type === 'TileSprite' && [0,1].includes(c2.depth||-1))
+      );
       stale.forEach((c2: any) => c2.destroy());
       this.createMap(); this.createNPCs(); this.createEnemies(); this.createGatheringPoints();
       this.zoneText.setText(`${ZONE_NAMES[GameState.zone]}`);
@@ -739,27 +757,39 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ═══ Enemies ═══
+  /** 玩家与怪物物理体重叠时触发战斗（比中心点距离判定更稳，贴合"走上去就打"的直觉）。 */
+  private onEnemyOverlap(_player: Phaser.GameObjects.GameObject, enemySprite: Phaser.GameObjects.GameObject): void {
+    const en = this.enemies.find(e => e.sprite === enemySprite);
+    this.enterBattle(en);
+  }
+
+  /** 距离兜底：即使物理重叠漏检，走到怪物身边也会触发。 */
   private checkEnemyCollision(): void {
     if (this.battleCooldown > 0 || this.isInDialogue) return;
-    for (const en of this.enemies) {
-      if (en.dead) continue;
-      if (en.data.hp <= 0) continue;
-      // 联机：怪物被他人锁定/已死→跳过（不可抢怪、不可打已死的）
-      if (this.gameRoom && !this.isMonsterAvailable(en.id)) continue;
-      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y) < 31) {
-        // 联机：进入战斗即锁定该怪，对其余玩家消失（防抢怪/卡刷新时间）
-        if (this.gameRoom) { this.gameRoom.send('enterBattle', { id: en.id }); this.setBattling(true); }
-        this.battleCooldown = 180;
-        this.scene.pause();
-        if (this.gameRoom) {
-          // 联机：进权威战斗房间（单人独占该怪，根除双杀双掉落）；真实怪数据传给服务端结算
-          this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, enemyParty: this.buildEncounterParty(en.data), monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), ownerSessionId: this.mySessionId });
-        } else {
-          // 离线兜底：本地战斗
-          this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
-        }
-        return;
-      }
+    const px = this.player.x, py = this.player.y;
+    const en = this.enemies.find(e => {
+      if (e.dead || e.data.hp <= 0) return false;
+      if (this.gameRoom && !this.isMonsterAvailable(e.id)) return false;
+      return Phaser.Math.Distance.Between(px, py, e.sprite.x, e.sprite.y) < 42;
+    });
+    if (en) this.enterBattle(en);
+  }
+
+  private enterBattle(en?: { sprite: Phaser.Physics.Arcade.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; id: string; dead?: boolean }): void {
+    if (!en) return;
+    if (this.battleCooldown > 0 || this.isInDialogue) return;
+    if (en.dead || en.data.hp <= 0) return;
+    if (this.gameRoom && !this.isMonsterAvailable(en.id)) return;
+    // 联机：进入战斗即锁定该怪，对其余玩家消失（防抢怪/卡刷新时间）
+    if (this.gameRoom) { this.gameRoom.send('enterBattle', { id: en.id }); this.setBattling(true); }
+    this.battleCooldown = 180;
+    this.scene.pause();
+    if (this.gameRoom) {
+      // 联机：进权威战斗房间（单人独占该怪，根除双杀双掉落）；真实怪数据传给服务端结算
+      this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, enemyParty: this.buildEncounterParty(en.data), monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), ownerSessionId: this.mySessionId });
+    } else {
+      // 离线兜底：本地战斗
+      this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
     }
   }
 
@@ -932,39 +962,101 @@ export class GameScene extends Phaser.Scene {
     const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
     const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2;
     const g = this.add.graphics().setDepth(0);
-    g.fillStyle(cfg.groundColor, 1);
-    g.fillRect(0, 0, mapW, mapH);
 
-    // Roads
-    g.fillStyle(cfg.roadColor, 1);
-    g.fillRect(0, mapH * 0.45, mapW, 60);
-    g.fillRect(mapW * 0.48, 0, 60, mapH);
-
-    // Decorations
-    for (const dec of cfg.decorations) {
-      const dx = dec.x * mapW, dy = dec.y * mapH;
-      if (dec.type === 'house') {
-        g.fillStyle(0x665544, 1);
-        g.fillRect(dx - (dec.w || 100) / 2, dy - 40, dec.w || 100, dec.h || 80);
-        g.fillStyle(0x554433, 1);
-        g.fillRect(dx - (dec.w || 100) / 4, dy - 40, (dec.w || 100) / 2, 50);
-      } else if (dec.type === 'pond') {
-        g.fillStyle(0x335577, 0.7);
-        g.fillEllipse(dx, dy, dec.w || 100, dec.h || 70);
+    // 1) 区域背景图（飘流幻境式：一张大地图/可拼接背景铺底）
+    if (cfg.backgroundImage && this.textures.exists(cfg.backgroundImage)) {
+      const bg = this.add.tileSprite(mapW / 2, mapH / 2, mapW, mapH, cfg.backgroundImage).setDepth(0);
+      // 若背景图偏亮或偏暗，可按区域微调 tint（暂时保持原色）
+      bg.setTileScale(1, 1);
+    } else {
+      // 无背景图时：底色 + 中性噪点 tile
+      g.fillStyle(cfg.groundColor, 1);
+      g.fillRect(0, 0, mapW, mapH);
+      if (this.textures.exists('tile_ground')) {
+        const ground = this.add.tileSprite(mapW / 2, mapH / 2, mapW, mapH, 'tile_ground').setDepth(0);
+        ground.setTint(cfg.groundColor);
+        ground.setAlpha(0.35);
       }
     }
 
-    // Trees
-    g.fillStyle(cfg.treeColor, 1);
-    for (let i = 0; i < 40; i++) {
-      const tx = Phaser.Math.Between(50, mapW - 50), ty = Phaser.Math.Between(50, mapH - 50);
-      g.fillCircle(tx, ty, 16);
-      g.fillStyle(0x553311, 1);
-      g.fillRect(tx - 2, ty + 12, 4, 16);
-      g.fillStyle(cfg.treeColor, 1);
+    // 2) 道路：用 tile_road 铺，半透明融合背景；无图时 fallback 纯色
+    const roadH = 60, roadW = 60;
+    const hasRoadTex = this.textures.exists('tile_road');
+    if (hasRoadTex) {
+      const hr = this.add.tileSprite(mapW / 2, mapH * 0.45 + roadH / 2, mapW, roadH, 'tile_road').setDepth(1);
+      hr.setTint(cfg.roadColor).setAlpha(0.9);
+      const vr = this.add.tileSprite(mapW * 0.48 + roadW / 2, mapH / 2, roadW, mapH, 'tile_road').setDepth(1);
+      vr.setTint(cfg.roadColor).setAlpha(0.9);
+    } else {
+      g.fillStyle(cfg.roadColor, 1);
+      g.fillRect(0, mapH * 0.45, mapW, roadH);
+      g.fillRect(mapW * 0.48, 0, roadW, mapH);
+    }
+    // 道路中线（虚线）
+    g.fillStyle(0xffffff, 0.12);
+    for (let rx = 40; rx < mapW; rx += 80) g.fillRect(rx, mapH * 0.45 + roadH / 2 - 2, 36, 4);
+    for (let ry = 40; ry < mapH; ry += 80) g.fillRect(mapW * 0.48 + roadW / 2 - 2, ry, 4, 36);
+
+    // 3) 装饰物（建筑/池塘）：更精致的程序化占位，未来可替换为图片 key
+    for (const dec of cfg.decorations) {
+      const dx = dec.x * mapW, dy = dec.y * mapH;
+      if (dec.type === 'house') {
+        const w = dec.w || 100, h = dec.h || 80;
+        // 阴影
+        g.fillStyle(0x000000, 0.25);
+        g.fillRoundedRect(dx - w / 2 + 8, dy - 32, w, h, 6);
+        // 主墙
+        g.fillStyle(0x8b7355, 1);
+        g.fillRoundedRect(dx - w / 2, dy - 40, w, h, 4);
+        // 木框/门
+        g.fillStyle(0x5c4a35, 1);
+        g.fillRoundedRect(dx - w / 6, dy - 8, w / 3, h - 32, 2);
+        // 窗
+        g.fillStyle(0x4a5a6a, 1);
+        g.fillRoundedRect(dx - w / 3 + 4, dy - 30, w / 5, h / 3, 2);
+        g.fillRoundedRect(dx + w / 12, dy - 30, w / 5, h / 3, 2);
+        // 屋顶（三角）
+        g.fillStyle(0x6d4c41, 1);
+        g.fillTriangle(dx - w / 2 - 10, dy - 40, dx + w / 2 + 10, dy - 40, dx, dy - 40 - h * 0.45);
+        // 屋顶高光
+        g.fillStyle(0x8d6c5f, 1);
+        g.fillTriangle(dx - w / 4, dy - 40 - h * 0.1, dx + w / 4, dy - 40 - h * 0.1, dx, dy - 40 - h * 0.4);
+      } else if (dec.type === 'pond') {
+        const pw = dec.w || 100, ph = dec.h || 70;
+        // 水影
+        g.fillStyle(0x000000, 0.2);
+        g.fillEllipse(dx + 4, dy + 4, pw, ph);
+        // 水面
+        g.fillStyle(0x4a7a9a, 0.9);
+        g.fillEllipse(dx, dy, pw, ph);
+        // 水波高光
+        g.fillStyle(0x8fcce8, 0.35);
+        g.fillEllipse(dx - pw * 0.15, dy - ph * 0.12, pw * 0.45, ph * 0.35);
+        g.fillStyle(0xaaddff, 0.2);
+        g.fillEllipse(dx + pw * 0.2, dy + ph * 0.1, pw * 0.25, ph * 0.2);
+      }
     }
 
-    // Zone exit portals
+    // 4) 树木：成群分布，有树干+多层树冠
+    for (let c = 0; c < 12; c++) {
+      const cx = Phaser.Math.Between(80, mapW - 80);
+      const cy = Phaser.Math.Between(80, mapH - 80);
+      for (let t = 0; t < Phaser.Math.Between(3, 7); t++) {
+        const tx = Phaser.Math.Clamp(cx + Phaser.Math.Between(-70, 70), 40, mapW - 40);
+        const ty = Phaser.Math.Clamp(cy + Phaser.Math.Between(-60, 60), 40, mapH - 40);
+        // 树干
+        g.fillStyle(0x553311, 1);
+        g.fillRect(tx - 3, ty + 6, 6, 18);
+        // 树冠（两层，深浅）
+        const r = Phaser.Math.Between(12, 18);
+        g.fillStyle(cfg.treeColor, 1);
+        g.fillCircle(tx, ty, r);
+        g.fillStyle(Phaser.Display.Color.ValueToColor(cfg.treeColor).lighten(20).color, 0.6);
+        g.fillCircle(tx - r * 0.25, ty - r * 0.2, r * 0.65);
+      }
+    }
+
+    // 5) Zone exit portals
     for (const exit of cfg.exits) {
       const ex = exit.x * mapW, ey = exit.y * mapH;
       const arrowMap: Record<string, string> = { east: '\u2192', west: '\u2190', north: '\u2191', south: '\u2193', northwest: '\u2196', northeast: '\u2197', southwest: '\u2199', southeast: '\u2198' };
@@ -978,7 +1070,7 @@ export class GameScene extends Phaser.Scene {
       this.tweens.add({ targets: arrow, alpha: 0.4, duration: 1000, yoyo: true, repeat: -1 });
     }
 
-    // 副本传送阵（每区域一个入口，进入独立副本实例）
+    // 6) 副本传送阵（每区域一个入口，进入独立副本实例）
     const dp = getDungeonPortal(GameState.zone);
     const dx = dp.x * mapW, dy = dp.y * mapH;
     this.dungeonPortalPos = { x: dx, y: dy };
@@ -1087,9 +1179,19 @@ export class GameScene extends Phaser.Scene {
       const data = getEnemyData(e.name, e.type, e.element, GameState.zone);
       const isBoss = e.isBoss === true || e.type === '\u5996\u5c06' || e.type === '\u5996\u738b';
       const sprite = this.physics.add.sprite(ex, ey, isBoss ? 'enemy_boss' : 'enemy').setDepth(5);
-      if (isBoss) { sprite.setScale(1.6).setTint(0xffcc44); this.tweens.add({ targets: sprite, scaleX: 1.65, scaleY: 1.55, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
+      this.enemyGroup!.add(sprite);
+      if (!isBoss) {
+        // 真实美术 512x512，缩放到约 40x40 显示；碰撞体与视觉一致（36x36 居中）
+        sprite.setDisplaySize(40, 40);
+        sprite.body!.setSize(36, 36).setOffset(238, 238);
+      }
+      if (isBoss) {
+        sprite.setScale(1.6).setTint(0xffcc44);
+        sprite.body!.setSize(90, 110).setOffset(-13, -15);
+        this.tweens.add({ targets: sprite, scaleX: 1.65, scaleY: 1.55, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      }
       else { const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30); this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
-      const label = this.add.text(ex, ey - sprite.height / 2 - 10, isBoss ? '\u3010BOSS\u3011' + e.name : e.name, { fontSize: '11px', color: isBoss ? '#ffcc44' : e.type === '\u6076\u5996' ? '#ff8866' : '#aaaabb', fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(6);
+      const label = this.add.text(ex, ey - sprite.displayHeight / 2 - 10, isBoss ? '\u3010BOSS\u3011' + e.name : e.name, { fontSize: '11px', color: isBoss ? '#ffcc44' : e.type === '\u6076\u5996' ? '#ff8866' : '#aaaabb', fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(6);
       const id = `${GameState.zone}:${idx}`;
       this.enemies.push({ sprite, data, label, id });
     });
@@ -1545,9 +1647,9 @@ export class GameScene extends Phaser.Scene {
       if (sid === this.mySessionId) return;
       let rp = this.remotePlayers.get(sid);
       if (!rp) {
-        const sprite = this.add.sprite(p.x, p.y, 'player').setDepth(8).setAlpha(0.9);
+        const sprite = this.add.sprite(p.x, p.y, 'player').setDepth(8).setAlpha(0.9).setDisplaySize(40, 60);
         sprite.setTint(Phaser.Display.Color.HexStringToColor(p.color || '#ffffff').color);
-        const tag = this.add.text(p.x, p.y - 46, '', {
+        const tag = this.add.text(p.x, p.y - sprite.displayHeight / 2 - 10, '', {
           fontSize: '13px', color: '#ffffff', fontStyle: 'bold',
           stroke: '#000000', strokeThickness: 3,
           backgroundColor: '#00000066', padding: { x: 5, y: 2 },
