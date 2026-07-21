@@ -19,6 +19,11 @@ const { ccclass, property } = _decorator;
 import { AuthService } from './network/AuthService';
 import { ColyseusBridge, PlayerView, MonsterView } from './network/ColyseusBridge';
 import { BattleManager } from './BattleManager';
+import { LocalPlayerWorld } from './model/LocalPlayerWorld';
+import { UIManager } from './ui/UIManager';
+import { StatPanel } from './ui/StatPanel';
+import { InventoryPanel } from './ui/InventoryPanel';
+import { makeButton } from './ui/widgets';
 
 /** P1 演示用的本地怪物摆位（id 与服务器怪物状态机 key 对应；状态由服务器权威下发）。 */
 const DEMO_MONSTERS = [
@@ -43,6 +48,7 @@ export class GameManager extends Component {
   private keys = new Set<number>();
   private sendAccum = 0;
   private statusLabel: Label | null = null;
+  private hudLabel: Label | null = null;
   private updateReturnCount = 0;
   private battle: BattleManager | null = null;
   private inBattle = false;
@@ -64,6 +70,10 @@ export class GameManager extends Component {
   private onWindowKeyUp = (ev: KeyboardEvent): void => this.onWindowKey(ev, false);
   private onWindowKey = (ev: KeyboardEvent, isDown: boolean): void => {
     if (!ev) return;
+    if (isDown) {
+      if (ev.code === 'KeyC') { StatPanel.instance.toggle(this.bridge); return; }
+      if (ev.code === 'KeyB') { InventoryPanel.instance.toggle(this.bridge); return; }
+    }
     const map: Record<string, number> = {
       KeyW: KeyCode.KEY_W, ArrowUp: KeyCode.ARROW_UP,
       KeyS: KeyCode.KEY_S, ArrowDown: KeyCode.ARROW_DOWN,
@@ -94,6 +104,8 @@ export class GameManager extends Component {
 
       this.buildBackground();
       this.buildStatus();
+      UIManager.instance.init(this.canvas!);
+      this.buildTopButtons();
       this.setStatus('初始化完成，准备连接…');
       console.log('[GameManager] 背景和状态节点已创建');
 
@@ -208,11 +220,41 @@ export class GameManager extends Component {
     b.onPlayerChange = (p, key) => this.updatePlayer(p, key);
     b.onPlayerRemove = (key) => this.removePlayer(key);
     b.onMonsterChange = (m) => this.updateMonster(m);
-    b.onWorldSync = (pw) => { if (this.debugNet) log('[sync] level=' + (pw?.level ?? '?')); };
+    b.onWorldSync = (pw) => {
+      LocalPlayerWorld.instance.update(pw);
+      if (this.debugNet) log('[sync] worldSync level=' + (pw?.level ?? '?') + ' gold=' + (pw?.gold ?? '?') + ' inv=' + (pw?.inventory?.length ?? 0));
+      this.onWorldSync(pw);
+    };
+    // 面板需要 bridge 才能发 intent（加点/装备/卸下）
+    StatPanel.instance.bindBridge(this.bridge);
+    InventoryPanel.instance.bindBridge(this.bridge);
     b.onChat = (msg) => { if (this.debugNet) log('[chat]', msg?.name || '', msg?.text || ''); };
     b.onAuthError = (msg) => this.setStatus('鉴权失败：' + msg);
     b.onError = (msg) => this.setStatus('房间错误：' + msg);
     b.onLeave = (code) => this.setStatus('已断开 code=' + code);
+  }
+
+  // ——————————————————— 本地世界同步 ———————————————————
+  /** worldSync 到达：本地镜像已更新，刷新顶栏 HUD 与已开面板。 */
+  private onWorldSync(_pw: any): void {
+    this.updateHud();
+    StatPanel.instance.refreshIfOpen();
+    InventoryPanel.instance.refreshIfOpen();
+  }
+
+  /** 刷新顶栏 HUD 的 等级/金币/属性点（HUD 节点在 buildStatus 中创建）。 */
+  private updateHud(): void {
+    if (!this.hudLabel) return;
+    const pw = LocalPlayerWorld.instance;
+    this.hudLabel.string =
+      `Lv.${pw.level}　金币 ${pw.gold}` + (pw.statPoints > 0 ? `　⚠可分配 ${pw.statPoints}` : '');
+  }
+
+  /** 顶栏左侧两个常驻按钮：角色(C) / 背包(B)。 */
+  private buildTopButtons(): void {
+    if (!this.canvas) return;
+    makeButton(this.canvas, -440, 300, 100, 36, '角色(C)', new Color(70, 110, 170, 255), () => StatPanel.instance.toggle(this.bridge));
+    makeButton(this.canvas, -320, 300, 100, 36, '背包(B)', new Color(70, 130, 110, 255), () => InventoryPanel.instance.toggle(this.bridge));
   }
 
   // ——————————————————— 背景 / 状态 ———————————————————
@@ -231,19 +273,34 @@ export class GameManager extends Component {
   }
 
   private buildStatus(): void {
+    // 顶栏下行：常驻 HUD（等级/金币/可分配点），右对齐
+    const hud = new Node('HUD');
+    GameManager.setUILayer(hud);
+    hud.setParent(this.canvas!);
+    hud.setPosition(465, 300, 1);
+    const hudLabel = hud.addComponent(Label);
+    hudLabel.string = 'Lv.1　金币 0';
+    hudLabel.color = new Color(255, 230, 150, 255);
+    hudLabel.fontSize = 18;
+    hudLabel.lineHeight = 22;
+    hudLabel.horizontalAlign = 2; // RIGHT
+    const hut = hud.getComponent(UITransform) || hud.addComponent(UITransform);
+    hut.setContentSize(420, 30);
+    hut.setAnchorPoint(1, 0.5);
+    this.hudLabel = hudLabel;
+
+    // 顶栏上行：临时状态提示（连接/操作反馈），居中
     const n = new Node('Status');
     GameManager.setUILayer(n);
     n.setParent(this.canvas!);
-    // 960x640 设计分辨率，屏幕范围 x:[-480,480], y:[-320,320]
-    // 把状态条放在顶部居中，contentSize 920 才能完整显示
-    n.setPosition(0, 290, 1);
+    n.setPosition(0, 300, 1);
     const label = n.addComponent(Label);
     label.string = '初始化…';
     label.color = new Color(180, 220, 255, 255);
-    label.fontSize = 18;
-    label.lineHeight = 22;
+    label.fontSize = 16;
+    label.lineHeight = 20;
     const ut = n.getComponent(UITransform) || n.addComponent(UITransform);
-    ut.setContentSize(920, 30);
+    ut.setContentSize(600, 26);
     this.statusLabel = label;
   }
 
@@ -377,6 +434,9 @@ export class GameManager extends Component {
   /** 进入权威战斗：拉起 BattleManager，冻结地图移动，战斗结束后回调 endBattle。 */
   private enterBattle(id: string): void {
     this.inBattle = true;
+    // 进战前关闭所有面板，避免战斗 UI 与其重叠
+    StatPanel.instance.close();
+    InventoryPanel.instance.close();
     this.setStatus('进入战斗：' + id);
     this.battle = new BattleManager();
     void this.battle.start(this.bridge, this.canvas!, id, this.selfId, '勇者',
@@ -440,8 +500,14 @@ export class GameManager extends Component {
   }
 
   private onKey(e: EventKeyboard): void {
-    if (e.type === Input.EventType.KEY_DOWN) this.keys.add(e.keyCode);
-    else this.keys.delete(e.keyCode);
+    // C/B 打开/关闭面板（不进入移动 keys）
+    if (e.type === Input.EventType.KEY_DOWN) {
+      if (e.keyCode === KeyCode.KEY_C) { StatPanel.instance.toggle(this.bridge); return; }
+      if (e.keyCode === KeyCode.KEY_B) { InventoryPanel.instance.toggle(this.bridge); return; }
+      this.keys.add(e.keyCode);
+    } else {
+      this.keys.delete(e.keyCode);
+    }
   }
 
   update(dt: number): void {
@@ -459,6 +525,8 @@ export class GameManager extends Component {
 
     // 战斗中冻结整个地图更新（移动 + 上报），避免与战斗逻辑互相干扰
     if (this.inBattle) return;
+    // 面板打开时冻结移动（避免开着属性面板还能用 WASD 乱跑）
+    if (StatPanel.instance.isOpen() || InventoryPanel.instance.isOpen()) return;
 
     let dx = 0, dy = 0;
     if (this.keys.has(KeyCode.KEY_W) || this.keys.has(KeyCode.ARROW_UP)) dy += 1;
