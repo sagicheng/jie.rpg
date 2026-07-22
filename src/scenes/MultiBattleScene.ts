@@ -919,21 +919,27 @@ export class MultiBattleScene extends Phaser.Scene {
       }
     }
 
-    // 背板：半透明圆角矩形，让状态"不可能不被看到"（即使所有纹理都丢失也能看到色块）
+    // 图标排在怪物名字右侧（多个依次往后），与名字垂直居中
     const ICON = 22, GAP = 3, PAD = 6;
     const totalW = active.length * (ICON + GAP) - GAP + PAD * 2;
-    const plateX = -totalW / 2, plateY = -54 - 4;
+    const nameRight = card.name.x + (card.name.width || 0);
+    const iconY = card.name.y + (card.name.height || 16) / 2;   // 与名字垂直居中
+    let contentStartX = nameRight + 8;                            // 名字后留 8px 间隙
+    // 防溢出：若超出卡片右边界(380/2-6=184)，整体左移到不溢出（但不与名字重叠）
+    const maxRight = 184;
+    if (contentStartX + totalW > maxRight) contentStartX = Math.max(nameRight + 4, maxRight - totalW);
+    const plateX = contentStartX, plateY = iconY - (ICON + 8) / 2;
     const plateW = totalW, plateH = ICON + 8;
     const plate = this.add.graphics();
-    plate.fillStyle(0x000000, 0.65);
+    plate.fillStyle(0x000000, 0.55);
     plate.fillRoundedRect(plateX, plateY, plateW, plateH, 4);
-    plate.lineStyle(1, 0x7799cc, 0.6);
+    plate.lineStyle(1, 0x7799cc, 0.5);
     plate.strokeRoundedRect(plateX, plateY, plateW, plateH, 4);
     card.root.add(plate);
     card.statusIcons.push(plate);
 
-    const startX = -totalW / 2 + PAD + ICON / 2;
-    const y = -54;
+    const startX = contentStartX + PAD + ICON / 2;
+    const y = iconY;
     active.forEach((k, i) => {
       const x = startX + i * (ICON + GAP);
       if (this.textures.exists(k.key)) {
