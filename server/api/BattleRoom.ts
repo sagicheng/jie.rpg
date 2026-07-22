@@ -16,6 +16,10 @@ import type { EnemyData } from '../../src/managers/BattleData';
 import { SKILL_BY_NAME, getSkillTargetType } from '../../src/managers/Skills';
 import { CONSUMABLES } from '../../src/managers/ConsumableSystem';
 
+/** 服务端构建时间戳（模块加载即固定）——onJoin 时推送给客户端，
+ *  便于在浏览器 console 确认服务端是否为最新构建（状态系统生效与否的关键判据）。 */
+const SERVER_BUILD_TIME = new Date().toISOString();
+
 interface KidoLoadoutDTO {
   id: string; mp: number; power: number;
   effectType: string; target?: string; reviveHpPercent?: number;
@@ -141,6 +145,8 @@ export class BattleRoom extends Room<BattleRoomState> {
       if (Array.isArray(l.items)) for (const i of l.items) if (typeof i === 'string') lo.items.add(i);
     }
     this.loadouts.set(client.sessionId, lo);
+    // 推送服务端构建信息到客户端浏览器 console，便于确认服务端是否为最新构建
+    client.send('serverInfo', { buildTime: SERVER_BUILD_TIME, statusSystem: true });
     this.logMsg('system', `${p.name} 加入了战斗`);
 
     if (options?.enemyParty && Array.isArray(options.enemyParty) && options.enemyParty.length) {
@@ -372,6 +378,13 @@ export class BattleRoom extends Room<BattleRoomState> {
     }
     const p = this.state.players.get(sid)!;
     const lo = this.loadouts.get(sid) || EMPTY_LOADOUT;
+
+    // 诊断：技能/鬼道/宠技执行时打印（到服务端终端），便于确认 action 是否真正进入执行
+    if (action.type === 'skill' || action.type === 'kido' || action.type === 'petSkill') {
+      const sid2 = action.skillId || action.kidoId || '';
+      const hasStatus = !!(action.type === 'skill' && SKILL_BY_NAME[sid2]?.statusEffect);
+      console.log(`[BattleRoom.exec] ${p.name} action=${action.type} id=${sid2} hasStatusEffect=${hasStatus}`);
+    }
 
     this.defending.delete(sid);
 

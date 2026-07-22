@@ -309,6 +309,11 @@ export class MultiBattleScene extends Phaser.Scene {
         });
         // 服务端 BattleRoom.logMsg('system', ...) 的系统提示，客户端暂无需处理，注册空处理器消除告警。
         room.onMessage('system', () => {});
+        // 服务端构建信息：在浏览器 console 显示服务端启动时间，确认是否为最新构建
+        room.onMessage('serverInfo', (data: any) => {
+          console.log('[ServerInfo] buildTime=', data?.buildTime, 'statusSystem=', data?.statusSystem,
+            '（若 buildTime 不是你最近一次 npm run dev 的时间 → 服务端是旧进程，状态系统不生效）');
+        });
         // 服务端权威战斗奖励（gold/exp/loot），供结算报告使用；若胜利已回写后再到，则刷新报告真实数值
         room.onMessage('battleReward', (r: any) => {
           this.lastReward = { exp: r?.exp ?? 0, gold: r?.gold ?? 0, loot: Array.isArray(r?.loot) ? r.loot : [], leveled: !!r?.leveled };
@@ -353,6 +358,10 @@ export class MultiBattleScene extends Phaser.Scene {
     const aid = actorSid || this.mySessionId;
     if (this.submittedActors.has(aid)) return;
     this.submittedActors.add(aid);
+    // 诊断：技能/鬼道/宠技派发时打印（浏览器 console），确认指令是否真正发出
+    if (action.type === 'skill' || action.type === 'kido' || action.type === 'petSkill') {
+      console.log(`[Skill.dispatch] type=${action.type} id=${action.id || ''} targetId=${action.targetId || ''}`);
+    }
     this.room.send('action', { ...action, actorSid: aid });
     // 立即刷新 UI：显示"已选择，等待执行…"（Colyseus 消息不触发 onStateChange）
     this.renderState();
