@@ -35,6 +35,11 @@ const CHAT_PREFIX: Record<string, string> = {
 import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, requestDevGrantSet, requestPetGrantDev, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../api/WorldClient';
 import { createPetLocal, petElementInfo, petQualityInfo } from '../managers/PetSystem';
 
+/** Phaser physics.add.overlap 回调参数的联合类型，与 ArcadePhysicsCallback 对齐。
+ *  历史上写成 GameObject 会在 strictFunctionTypes 下因逆变不兼容报 TS2345
+ *  （GameObject 不是 Body/StaticBody/Tile 的超类型）。 */
+type ArcadeOverlapTarget = Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile;
+
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
   name: string;
@@ -767,7 +772,7 @@ export class GameScene extends Phaser.Scene {
 
   // ═══ Enemies ═══
   /** 玩家与怪物物理体重叠时触发战斗（比中心点距离判定更稳，贴合"走上去就打"的直觉）。 */
-  private onEnemyOverlap(_player: Phaser.GameObjects.GameObject, enemySprite: Phaser.GameObjects.GameObject): void {
+  private onEnemyOverlap(_player: ArcadeOverlapTarget, enemySprite: ArcadeOverlapTarget): void {
     const en = this.enemies.find(e => e.sprite === enemySprite);
     this.enterBattle(en);
   }
