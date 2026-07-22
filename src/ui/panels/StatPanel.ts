@@ -257,32 +257,43 @@ export function renderStatPanel(scene: GameScene): void {
         p.add(scene.add.text(rx + 10, eqY + 28, '— 未觉醒 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
       }
     }
+    const ICON = 58;   // 槽位 PNG 显示尺寸（以 PNG 形状为主）
     eqs.forEach((s, i) => {
       const c2 = i % 2, r2 = Math.floor(i / 2);
       const sx = rx + c2 * (eqColW + 10), sy = eqY + eqRowH + r2 * eqRowH;
-      const er = scene.add.graphics(); er.fillStyle(0x0d0d1d, 0.6); er.fillRoundedRect(sx, sy, eqColW, 66, 6);
-      er.lineStyle(1, 0x334466, 0.4); er.strokeRoundedRect(sx, sy, eqColW, 66, 6); p.add(er);
-      if (eq[s]) addEnhanceGlow(scene, p, er, sx, sy, eqColW, 66, eq[s]!, 6);
-      // Slot name label
-      p.add(scene.add.text(sx + 10, sy + 6, sn[s], { fontSize: '11px', color: '#667799', fontStyle: 'bold', padding: { y: 1 } }));
       const it = eq[s];
+      const q = it?.quality || 'white';
+      // 品质色（代码描边，不使用 PNG 边框——沿用旧版观感，用户偏好代码实现）
+      const QC: Record<string, string> = { white: '#cccccc', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
+      const qCol = parseInt((QC[q] || '#cccccc').replace('#', ''), 16);
+      // 背板 + 品质描边（代码实现）
+      const er = scene.add.graphics(); er.fillStyle(0x0d0d1d, 0.6); er.fillRoundedRect(sx, sy, eqColW, 66, 6);
+      er.lineStyle(it ? 2 : 1, it ? qCol : 0x334466, it ? 0.95 : 0.4); er.strokeRoundedRect(sx, sy, eqColW, 66, 6); p.add(er);
+      if (it) addEnhanceGlow(scene, p, er, sx, sy, eqColW, 66, it, 6);
+      // 槽位 PNG（以图片形状为主，铺在左侧）
+      const slotKey = `slot_${s}`;
+      const cx = sx + ICON / 2 + 4, cyc = sy + 33;
+      if (scene.textures.exists(slotKey)) {
+        p.add(scene.add.image(cx, cyc, slotKey).setOrigin(0.5).setDisplaySize(ICON, ICON));
+      }
+      // 文本信息（整体右移给槽位图标让位）
+      const tx = sx + ICON + 12;
+      p.add(scene.add.text(tx, sy + 6, sn[s], { fontSize: '11px', color: '#667799', fontStyle: 'bold', padding: { y: 1 } }));
       if (it) {
         const elv = it.enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
-        const qc: Record<string, string> = { white: '#cccccc', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
-        const q = it.quality || 'white';
-        const itemTxt = scene.add.text(sx + 10, sy + 24, `${it.name}${lvTxt}`, {
-          fontSize: '13px', color: qc[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 }
+        const itemTxt = scene.add.text(tx, sy + 24, `${it.name}${lvTxt}`, {
+          fontSize: '13px', color: QC[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 }
         });
         // Truncate long names
-        if (itemTxt.width > eqColW - 20) { itemTxt.setText(it.name.slice(0, 8) + '…' + lvTxt); }
+        if (itemTxt.width > eqColW - (ICON + 16)) { itemTxt.setText(it.name.slice(0, 8) + '…' + lvTxt); }
         p.add(itemTxt);
         const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join('  ');
-        p.add(scene.add.text(sx + 10, sy + 46, sts, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
+        p.add(scene.add.text(tx, sy + 46, sts, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
         const refineStr = getRefineDisplay(it);
-        if (refineStr) p.add(scene.add.text(sx + 10, sy + 58, `精炼: ${refineStr}`, { fontSize: '9px', color: '#F5A623', padding: { y: 1 } }));
+        if (refineStr) p.add(scene.add.text(tx, sy + 58, `精炼: ${refineStr}`, { fontSize: '9px', color: '#F5A623', padding: { y: 1 } }));
         // 属性面板(C)仅查看装备，不允许点击卸下（卸下请在背包(B)面板操作）
       } else {
-        p.add(scene.add.text(sx + 10, sy + 28, '— 空 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
+        p.add(scene.add.text(sx + ICON + 12, sy + 30, '— 空 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
       }
     });
 

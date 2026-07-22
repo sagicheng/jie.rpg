@@ -341,3 +341,36 @@ export function getStatusTags(status: EnemyStatus | PlayerStatus): string {
   if (ps.playerShield > 0) tags.push(`盾${ps.playerShieldTurns > 0 ? ps.playerShieldTurns : ''}`);
   return tags.join(' ');
 }
+
+// ═══════════════════════════════════════════
+// 战斗界面 PNG 图标渲染支持
+// ═══════════════════════════════════════════
+
+/** 单个激活状态的图标渲染数据 */
+export interface ActiveStatusEntry {
+  /** 状态 key（StatusType 或 'seal'） */
+  key: string;
+  /** 中文状态名 */
+  name: string;
+  /** Phaser 纹理 key（icon_<key>，封印为 icon_seal） */
+  texture: string;
+  /** 剩余回合 */
+  turns: number;
+}
+
+const SEALED_STATUS: { name: string; texture: string } = { name: '封印', texture: 'icon_seal' };
+
+/**
+ * 获取当前激活的状态列表（含纹理 key 与剩余回合），供 BattleScene 渲染 PNG 图标。
+ * 纹理 key 与 assetManifest 中注册的 icon_* 完全一致。
+ */
+export function getActiveStatusList(status: EnemyStatus | PlayerStatus): ActiveStatusEntry[] {
+  const out: ActiveStatusEntry[] = [];
+  for (const key of Object.keys(STATUS_INFO) as StatusType[]) {
+    const turns = (status as any)[key] as number;
+    if (turns > 0) out.push({ key, name: STATUS_INFO[key].name, texture: `icon_${key}`, turns });
+  }
+  const ks = status as EnemyStatus;
+  if (ks.sealed > 0) out.push({ key: 'seal', name: SEALED_STATUS.name, texture: SEALED_STATUS.texture, turns: ks.sealed });
+  return out;
+}

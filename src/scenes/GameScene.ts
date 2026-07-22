@@ -19,6 +19,7 @@ import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../managers/QuestDat
 import { Kido, KIDO_NODES, KidoSchool } from '../managers/Kido';
 import { getAvailableSkills, ZANPAKUTO_ELEMENT } from '../managers/Skills';
 import { BOSS_CONFIG } from '../managers/BossMechanics';
+import { CONSUMABLES_BY_NAME } from '../managers/ConsumableSystem';
 import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel, renderFriendPanel, renderAuctionPanel, openAuctionPanel, closeAuctionPanel, toggleAuctionPanel, refreshAuctionPanel, openPetPanel, closePetPanel } from '../ui/panels';
 import { GuildClient } from '../api/GuildClient';
 import { applyGuildStatBonus } from '../api/GuildSkills';
@@ -689,7 +690,16 @@ export class GameScene extends Phaser.Scene {
     // 单机：本地采集
     this.isInDialogue = true;
     const matName = NODE_TO_MATERIAL[pt.type] || pt.type;
-    Inventory.addItem({ id: matId(matName), name: matName, type: 'material', desc: '野外采集获得', quantity: 1 });
+    // 止血草等同时是消耗品的采集产物，按 consumable 入库（避免出现在材料类）
+    // 判定：若 CONSUMABLES 里有同名物品，则用 consumable 类型 + 原 consumable.id（保持库存合并）
+    const conEntry = CONSUMABLES_BY_NAME[matName];
+    Inventory.addItem({
+      id: conEntry ? conEntry.id : matId(matName),
+      name: matName,
+      type: conEntry ? 'consumable' : 'material',
+      desc: conEntry ? conEntry.desc : '野外采集获得',
+      quantity: 1,
+    });
     pt.sprite.setVisible(false); pt.label.setVisible(false);
     this.time.delayedCall(30000, () => { pt.sprite.setVisible(true); pt.label.setVisible(true); });
     const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, `获得：${matName}`, { fontSize: '18px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 16, y: 8 } }).setOrigin(0.5).setScrollFactor(0).setDepth(300);

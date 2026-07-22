@@ -21,6 +21,8 @@ import {
   getPlayerAtkMod, getPlayerMatkMod,
   isPlayerBlocked, doesPlayerSkipFromFear,
   getEnemyStatusIcons, getPlayerStatusIcons, getStatusTags,
+  getActiveStatusList,
+  ActiveStatusEntry,
   clearAllPlayerStatus,
 } from '../managers/StatusSystem';
 import { applyConsumable, getConsumableEffect, CONSUMABLES, TempBuff } from '../managers/ConsumableSystem';
@@ -36,6 +38,12 @@ import {
 } from '../managers/SkillMechanics';
 
 type BattlePhase = 'intro' | 'playerTurn' | 'targetSelect' | 'enemyTurn' | 'executing' | 'victory' | 'defeat';
+
+/** 单个状态图标槽：PNG 图标 + 右下角剩余回合数文本 */
+interface StatusSlot {
+  img: Phaser.GameObjects.Image;
+  txt: Phaser.GameObjects.Text;
+}
 
 /** 鬼道subtype → 图鉴抗性表key (中文状态名) */
 const SUBTYPE_TO_STATUS_NAME: Record<string, string> = {
@@ -92,6 +100,8 @@ export class BattleScene extends Phaser.Scene {
   private playerHpBar!: Phaser.GameObjects.Graphics;
   private playerMpBar!: Phaser.GameObjects.Graphics;
   private playerInfoText!: Phaser.GameObjects.Text;          // 玩家 HP/MP数值+状态标签
+  private enemyStatusSlots: StatusSlot[][] = [];            // 每怪的状态图标槽池（PNG + 回合数）
+  private playerStatusSlots: StatusSlot[] = [];             // 玩家状态图标槽池
   private commandContainer!: Phaser.GameObjects.Container | null;
   private subMenuContainer!: Phaser.GameObjects.Container | null;
   private enemyRefs: any[] = [];
@@ -251,6 +261,10 @@ export class BattleScene extends Phaser.Scene {
       }).setOrigin(0.5, 0).setVisible(false);
       this.enemyInfoTexts.push(info);
     });
+
+    // 初始化状态图标槽池（每怪一排 + 玩家一排）
+    this.enemyStatusSlots = this.enemies.map(() => this.makeStatusSlotRow());
+    this.playerStatusSlots = this.makeStatusSlotRow();
 
     // 我方（左侧 4 行站位的第一行；其余 3 行预留给队友 / 灵宠）
     const PX = GAME_WIDTH * 0.24, PY = GAME_HEIGHT * 0.22;
@@ -640,6 +654,7 @@ export class BattleScene extends Phaser.Scene {
     this.enemyTypeTexts.push(this.add.text(pos.x, pos.y + (big ? -54 : -36), enemy.type, { fontSize: '8px', color: '#994444', padding: { y: 1 } }).setOrigin(0.5).setVisible(true));
     this.enemyHpBars.push(this.add.graphics());
     this.enemyInfoTexts.push(this.add.text(pos.x, pos.y + 47, '', { fontSize: '11px', color: '#ffbbbb', fontFamily: 'monospace', align: 'center' }).setOrigin(0.5, 0).setVisible(true));
+    this.enemyStatusSlots.push(this.makeStatusSlotRow());
     this.tweens.add({ targets: sprite, alpha: 1, duration: 400 });
   }
 
@@ -1814,14 +1829,64 @@ export class BattleScene extends Phaser.Scene {
     this.drawPlayerBars();
   }
 
+  /** 创建一个状态图标槽（PNG 图标 + 右下角回合数） */
+  private makeStatusSlot(): StatusSlot {
+    return {
+      img: this.add.image(0, 0, 'icon_burn').setVisible(false).setDepth(300),
+      txt: this.add.text(0, 0, '', {
+        fontSize: '11px', color: '#ffffff', fontStyle: 'bold',
+        stroke: '#000000', strokeThickness: 3,
+      }).setOrigin(1, 1).setVisible(false).setDepth(301),
+    };
+  }
+
+  /** 创建一排状态图标槽（容量 = 同时可能出现的最大状态数） */
+  private makeStatusSlotRow(): StatusSlot[] {
+    return Array.from({ length: 13 }, () => this.makeStatusSlot());
+  }
+
+  /**
+   * 将激活状态列表布局为一行居中图标，超出部分自动隐藏。
+   * 图标尺寸 slot，间距 2px；右下角显示剩余回合数。
+   */
+  private layoutStatusIcons(slots: StatusSlot[], active: ActiveStatusEntry[], centerX: number, centerY: number, slot: number): void {
+    const gap = 2;
+    const n = active.length;
+    const totalW = n * slot + Math.max(0, n - 1) * gap;
+    let x = centerX - totalW / 2 + slot / 2;
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      if (i < n) {
+        const a = active[i];
+        if (this.textures.exists(a.texture)) {
+          s.img.setTexture(a.texture).setVisible(true).setPosition(x, centerY).setDisplaySize(slot, slot);
+          s.txt.setOrigin(0).setVisible(true).setPosition(x + slot / 2 - 1, centerY + slot / 2 - 1).setText(String(a.turns));
+        } else {
+          // 纹理缺失兜底：显示中文名，保证状态可见（对齐 MultiBattleScene.drawStatusIcons）
+          s.img.setVisible(false);
+          s.txt.setOrigin(0.5).setVisible(true).setPosition(x, centerY).setText(a.name);
+        }
+        x += slot + gap;
+      } else {
+        s.img.setVisible(false);
+        s.txt.setVisible(false);
+      }
+    }
+  }
+
   private drawAllEnemyHp(): void {
     const positions = this.getEnemyPositions(this.enemies.length);
     const count = this.enemies.length;
     this.enemyHpBars.forEach((bar, i) => {
       bar.clear();
       const info = this.enemyInfoTexts[i];
+      const slots = this.enemyStatusSlots[i];
       const enemy = this.enemies[i];
-      if (!enemy || enemy.hp <= 0) { if (info) info.setText(''); return; }
+      if (!enemy || enemy.hp <= 0) {
+        if (info) info.setText('');
+        if (slots) slots.forEach(s => { s.img.setVisible(false); s.txt.setVisible(false); });
+        return;
+      }
       const pos = positions[i];
       const bw = count <= 4 ? 100 : 70, bh = 7;
       const bx = pos.x - bw / 2, by = pos.y + 40;   // 血条置于精灵下方，避免遮挡
@@ -1830,9 +1895,10 @@ export class BattleScene extends Phaser.Scene {
       const color = ratio > 0.5 ? 0xcc4444 : ratio > 0.25 ? 0xcc8844 : 0xcc2222;
       bar.fillStyle(color, 1); bar.fillRect(bx, by, bw * ratio, bh);
       if (info) {
-        const tags = getStatusTags(this.enemyStatuses[i]);
+        const active = getActiveStatusList(this.enemyStatuses[i]);
         info.setPosition(pos.x, by + bh + 3);
-        info.setText(`${enemy.hp}/${enemy.maxHp}${tags ? '\n' + tags : ''}`);
+        info.setText(`${enemy.hp}/${enemy.maxHp}`);
+        this.layoutStatusIcons(slots, active, pos.x, pos.y + 80, 22);
       }
     });
   }
@@ -1849,11 +1915,11 @@ export class BattleScene extends Phaser.Scene {
     this.playerMpBar.fillStyle(0x111133, 1); this.playerMpBar.fillRect(bx, by + 14, bw, 6);
     this.playerMpBar.fillStyle(0x4444cc, 1); this.playerMpBar.fillRect(bx, by + 14, bw * mpRatio, 6);
 
-    const tags = getStatusTags(this.playerStatus);
+    const active = getActiveStatusList(this.playerStatus);
     this.playerInfoText.setText(
-      `HP ${Math.ceil(this.playerHp)}/${this.playerMaxHp}   MP ${Math.ceil(this.playerMp)}/${this.playerMaxMp}` +
-      (tags ? '\n' + tags : '')
+      `HP ${Math.ceil(this.playerHp)}/${this.playerMaxHp}   MP ${Math.ceil(this.playerMp)}/${this.playerMaxMp}`
     );
+    this.layoutStatusIcons(this.playerStatusSlots, active, GAME_WIDTH * 0.24, by + 56, 22);
   }
 
 }

@@ -7,6 +7,7 @@
 import { matId } from '../config/materials';
 import { Item } from './Inventory';
 import { EnemyData, EnemyType, createEnemyData } from './BattleData';
+import { CONSUMABLES_BY_NAME } from './ConsumableSystem';
 import { ZONE1_ENEMIES, ZONE2_ENEMIES, ZONE3_ENEMIES, ZONE4_ENEMIES,
   ZONE5_ENEMIES, ZONE6_ENEMIES, ZONE7_ENEMIES, ZONE8_ENEMIES,
   ZONE9_ENEMIES, ZONE10_11_ENEMIES, ZONE12_13_ENEMIES,
@@ -263,6 +264,19 @@ export function generateNamedLoot(_enemyName: string, enemyDrops: { item: string
         name: drop.item,
         type: 'material',
         desc: matDef.desc,
+        quantity: 1,
+      });
+      continue;
+    }
+
+    // 消耗品（如止血草等既是采集/掉落物又是药品的物品）：按 consumable 入库，避免与材料类重复
+    const conDef = CONSUMABLES_BY_NAME[drop.item];
+    if (conDef) {
+      loot.push({
+        id: conDef.id,
+        name: conDef.name,
+        type: 'consumable',
+        desc: conDef.desc,
         quantity: 1,
       });
       continue;

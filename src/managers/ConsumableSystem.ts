@@ -36,6 +36,8 @@ export interface ConsumableDef {
   effect: ConsumableEffect;
   buyPrice: number;
   sellPrice: number;
+  /** 背包/商店渲染用的图标纹理 key（对应 public/assets/consumables/item_<名>.png） */
+  icon?: string;
 }
 
 /** 全部消耗品定义 */
@@ -44,109 +46,143 @@ export const CONSUMABLES: Record<string, ConsumableDef> = {
   stop_blood_grass: {
     id: 'stop_blood_grass', name: '止血草', desc: '回复50HP',
     effect: { type: 'heal_hp', hpAmount: 50 },
-    buyPrice: 10, sellPrice: 2,
+    buyPrice: 10, sellPrice: 2, icon: 'item_止血草',
   },
   medicine_pill_s: {
     id: 'medicine_pill_s', name: '伤药丸(小)', desc: '回复150HP',
     effect: { type: 'heal_hp', hpAmount: 150 },
-    buyPrice: 30, sellPrice: 6,
+    buyPrice: 30, sellPrice: 6, icon: 'item_伤药丸(小)',
   },
   medicine_pill_m: {
     id: 'medicine_pill_m', name: '伤药丸(中)', desc: '回复400HP',
     effect: { type: 'heal_hp', hpAmount: 400 },
-    buyPrice: 80, sellPrice: 16,
+    buyPrice: 80, sellPrice: 16, icon: 'item_伤药丸(中)',
   },
   medicine_pill_l: {
     id: 'medicine_pill_l', name: '伤药丸(大)', desc: '回复1000HP',
     effect: { type: 'heal_hp', hpAmount: 1000 },
-    buyPrice: 200, sellPrice: 40,
+    buyPrice: 200, sellPrice: 40, icon: 'item_伤药丸(大)',
   },
   medicine_pill_xl: {
     id: 'medicine_pill_xl', name: '伤药丸(特)', desc: '回复2500HP',
     effect: { type: 'heal_hp', hpAmount: 2500 },
-    buyPrice: 500, sellPrice: 100,
+    buyPrice: 500, sellPrice: 100, icon: 'item_伤药丸(特)',
   },
 
   // ── MP回复 ──
   spirit_water_s: {
     id: 'spirit_water_s', name: '灵力水(小)', desc: '回复30MP',
     effect: { type: 'heal_mp', mpAmount: 30 },
-    buyPrice: 15, sellPrice: 3,
+    buyPrice: 15, sellPrice: 3, icon: 'item_灵力水(小)',
   },
   spirit_water_m: {
     id: 'spirit_water_m', name: '灵力水(中)', desc: '回复80MP',
     effect: { type: 'heal_mp', mpAmount: 80 },
-    buyPrice: 40, sellPrice: 8,
+    buyPrice: 40, sellPrice: 8, icon: 'item_灵力水(中)',
   },
   spirit_water_l: {
     id: 'spirit_water_l', name: '灵力水(大)', desc: '回复200MP',
     effect: { type: 'heal_mp', mpAmount: 200 },
-    buyPrice: 100, sellPrice: 20,
+    buyPrice: 100, sellPrice: 20, icon: 'item_灵力水(大)',
   },
 
   // ── HP+MP ──
   recovery_pill: {
     id: 'recovery_pill', name: '回复丹', desc: '回复300HP + 50MP',
     effect: { type: 'heal_both', hpAmount: 300, mpAmount: 50 },
-    buyPrice: 60, sellPrice: 12,
+    buyPrice: 60, sellPrice: 12, icon: 'item_回复丹',
   },
   full_recovery_pill: {
     id: 'full_recovery_pill', name: '全回复丹', desc: '完全回复HP和MP',
     effect: { type: 'full_heal' },
-    buyPrice: 1000, sellPrice: 200,
+    buyPrice: 1000, sellPrice: 200, icon: 'item_全回复丹',
   },
 
   // ── 状态解除 ──
   antidote: {
     id: 'antidote', name: '解毒药', desc: '解除中毒·寄生·灼烧',
     effect: { type: 'cure_status', cureTypes: ['poison', 'parasite', 'burn'] },
-    buyPrice: 25, sellPrice: 5,
+    buyPrice: 25, sellPrice: 5, icon: 'item_解毒药',
   },
   unseal_charm: {
     id: 'unseal_charm', name: '解缚符', desc: '解除束缚·冻结·眩晕·封印',
     effect: { type: 'cure_status', cureTypes: ['bind', 'freeze', 'stun', 'sealed'] },
-    buyPrice: 35, sellPrice: 7,
+    buyPrice: 35, sellPrice: 7, icon: 'item_解缚符',
   },
   purify_talisman: {
     id: 'purify_talisman', name: '净化符', desc: '解除全部异常状态',
     effect: { type: 'cure_status', cureTypes: [] },
-    buyPrice: 80, sellPrice: 16,
+    buyPrice: 80, sellPrice: 16, icon: 'item_净化符',
   },
 
   // ── 复活 ──
   soul_revive: {
     id: 'soul_revive', name: '还魂符', desc: '战斗不能时以50%HP复活',
     effect: { type: 'revive', reviveHpPercent: 50 },
-    buyPrice: 300, sellPrice: 60,
+    buyPrice: 300, sellPrice: 60, icon: 'item_还魂符',
   },
   soul_revive_full: {
     id: 'soul_revive_full', name: '真·还魂符', desc: '战斗不能时以100%HP复活',
     effect: { type: 'revive', reviveHpPercent: 100 },
-    buyPrice: 800, sellPrice: 160,
+    buyPrice: 800, sellPrice: 160, icon: 'item_真·还魂符',
   },
 
   // ── 临时buff ──
   atk_elixir: {
     id: 'atk_elixir', name: '力量药剂', desc: '攻击力+20%(3回合)',
     effect: { type: 'buff_temp', buffStat: 'atk', buffValue: 0.20, buffTurns: 3 },
-    buyPrice: 100, sellPrice: 20,
+    buyPrice: 100, sellPrice: 20, icon: 'item_力量药剂',
   },
   def_elixir: {
     id: 'def_elixir', name: '护壁药剂', desc: '防御力+20%(3回合)',
     effect: { type: 'buff_temp', buffStat: 'def', buffValue: 0.20, buffTurns: 3 },
-    buyPrice: 100, sellPrice: 20,
+    buyPrice: 100, sellPrice: 20, icon: 'item_护壁药剂',
   },
   spd_elixir: {
     id: 'spd_elixir', name: '迅捷药剂', desc: '速度+25%(3回合)',
     effect: { type: 'buff_temp', buffStat: 'spd', buffValue: 0.25, buffTurns: 3 },
-    buyPrice: 120, sellPrice: 24,
+    buyPrice: 120, sellPrice: 24, icon: 'item_迅捷药剂',
   },
   matk_elixir: {
     id: 'matk_elixir', name: '灵击药剂', desc: '魔攻+20%(3回合)',
     effect: { type: 'buff_temp', buffStat: 'matk', buffValue: 0.20, buffTurns: 3 },
-    buyPrice: 100, sellPrice: 20,
+    buyPrice: 100, sellPrice: 20, icon: 'item_灵击药剂',
+  },
+
+  // ── 商店专属药水（图标取自「药品图标」表，名字不带“(商店)”以保持背包显示一致）──
+  potion_shop_s: {
+    id: 'potion_shop_s', name: '回复药', desc: '回复100HP',
+    effect: { type: 'heal_hp', hpAmount: 100 },
+    buyPrice: 80, sellPrice: 16, icon: 'item_回复药(商店)',
+  },
+  potion_shop_m: {
+    id: 'potion_shop_m', name: '强效回复药', desc: '回复300HP',
+    effect: { type: 'heal_hp', hpAmount: 300 },
+    buyPrice: 180, sellPrice: 36, icon: 'item_强效回复药(商店)',
+  },
+  potion_shop_l: {
+    id: 'potion_shop_l', name: '高级回复药', desc: '回复600HP',
+    effect: { type: 'heal_hp', hpAmount: 600 },
+    buyPrice: 350, sellPrice: 70, icon: 'item_高级回复药(商店)',
+  },
+  potion_shop_xl: {
+    id: 'potion_shop_xl', name: '终极回复药', desc: '回复1000HP',
+    effect: { type: 'heal_hp', hpAmount: 1000 },
+    buyPrice: 600, sellPrice: 120, icon: 'item_终极回复药(商店)',
+  },
+  spirit_water_shop: {
+    id: 'spirit_water_shop', name: '灵水', desc: '回复200MP',
+    effect: { type: 'heal_mp', mpAmount: 200 },
+    buyPrice: 400, sellPrice: 80, icon: 'item_灵水(商店)',
   },
 };
+
+/** 按中文名索引的消耗品映射（采集节点产物名 → 消耗品定义），用于采集入库时识别"既当材料又当消耗品"的物品。 */
+export const CONSUMABLES_BY_NAME: Record<string, ConsumableDef> = (() => {
+  const m: Record<string, ConsumableDef> = {};
+  for (const def of Object.values(CONSUMABLES)) m[def.name] = def;
+  return m;
+})();
 
 /** 临时buff状态 (战斗内) */
 export interface TempBuff {

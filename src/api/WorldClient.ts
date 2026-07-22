@@ -205,6 +205,19 @@ function mapItem(w: WorldItem): any {
 export function applyWorldSync(scene: any, pw: PlayerWorld): void {
   // 背包 / 装备（全量覆盖——服务端是唯一真相源）
   Inventory.items = pw.inventory.map(mapItem);
+  // 迁移安全网：止血草仅作消耗品，清除残留的材料类止血草（数量并入消耗品 stop_blood_grass）
+  {
+    const matEntries = Inventory.items.filter(i => i.type === 'material' && (i.name === '止血草' || i.id === 'mat_止血草'));
+    if (matEntries.length) {
+      const extra = matEntries.reduce((s, i) => s + (i.quantity || 0), 0);
+      Inventory.items = Inventory.items.filter(i => !(i.type === 'material' && (i.name === '止血草' || i.id === 'mat_止血草')));
+      if (extra > 0) {
+        const con = Inventory.items.find(i => i.id === 'stop_blood_grass');
+        if (con) con.quantity = (con.quantity || 0) + extra;
+        else Inventory.items.push({ id: 'stop_blood_grass', name: '止血草', type: 'consumable' as any, desc: '回复50HP', quantity: extra });
+      }
+    }
+  }
   const eq: any = {};
   for (const slot of Object.keys(pw.equipment)) {
     eq[slot] = pw.equipment[slot] ? mapItem(pw.equipment[slot]!) : null;

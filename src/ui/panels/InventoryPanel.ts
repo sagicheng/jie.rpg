@@ -28,9 +28,11 @@ import { listSetProgress, setShortName } from '../../managers/SetSystem';
 
 import { PET_SPECIES_CLIENT, petIcon, petColor, computePetAura, petElementInfo, petQualityInfo, petSkillNames } from '../../managers/PetSystem';
 
-import { applyConsumable, getConsumableEffect } from '../../managers/ConsumableSystem';
+import { applyConsumable, getConsumableEffect, CONSUMABLES } from '../../managers/ConsumableSystem';
 
 import { createPlayerStatus } from '../../managers/StatusSystem';
+
+import { getMaterialInfo } from '../../config/materials';
 
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS, getQuestDef, rollDailyPool, rollWeeklyPool, DAILY_CAP, WEEKLY_CAP } from '../../managers/QuestData';
 
@@ -156,8 +158,16 @@ export function renderInventoryPanel(scene: GameScene): void {
     cons.forEach((item, i) => {
       const col = i % cc, row = Math.floor(i / cc); const cx = ox + 20 + col * (cW + 8), cy = consY + 30 + row * 68;
       const cd = scene.add.graphics(); cd.fillStyle(0x0a1a0a, 0.7); cd.fillRoundedRect(cx, cy, cW, 58, 5); cd.lineStyle(1, 0x225522, 0.5); cd.strokeRoundedRect(cx, cy, cW, 58, 5); p.add(cd);
-      p.add(scene.add.text(cx + 6, cy + 4, item.name, { fontSize: '11px', color: '#88cc88', fontStyle: 'bold', padding: { y: 1 } }));
-      p.add(scene.add.text(cx + 6, cy + 22, item.desc || '', { fontSize: '9px', color: '#558855', padding: { y: 1 } }));
+      // 消耗品图标（纹理缺失时回退纯文字，与材料行一致）
+      const texKey = CONSUMABLES[item.id]?.icon || '';
+      const hasIcon = !!texKey && scene.textures.exists(texKey);
+      const iconSize = 30;
+      if (hasIcon) {
+        p.add(scene.add.image(cx + iconSize / 2 + 6, cy + 29, texKey).setOrigin(0.5).setDisplaySize(iconSize, iconSize));
+      }
+      const labelX = hasIcon ? cx + iconSize + 14 : cx + 6;
+      p.add(scene.add.text(labelX, cy + 4, item.name, { fontSize: '11px', color: '#88cc88', fontStyle: 'bold', padding: { y: 1 } }));
+      p.add(scene.add.text(labelX, cy + 22, item.desc || '', { fontSize: '9px', color: '#558855', padding: { y: 1 } }));
       p.add(scene.add.text(cx + cW - 25, cy + 4, `×${item.quantity}`, { fontSize: '11px', color: '#88cc88', fontStyle: 'bold', padding: { y: 1 } }));
       const ub = scene.add.text(cx + cW / 2, cy + 38, '[使用]', { fontSize: '10px', color: '#44cc44', fontStyle: 'bold', padding: { x: 4, y: 2 }, backgroundColor: '#11221188' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
       ub.on('pointerover', () => { ub.setColor('#88ff88'); ub.setBackgroundColor('#224422aa'); }); ub.on('pointerout', () => { ub.setColor('#44cc44'); ub.setBackgroundColor('#11221188'); });
@@ -198,8 +208,19 @@ export function renderInventoryPanel(scene: GameScene): void {
     const matY = consY + 30 + Math.ceil(cons.length / cc) * 68 + 14;
     p.add(scene.add.text(ox + 20, matY, '材料', { fontSize: '15px', color: '#88aacc', fontStyle: 'bold', padding: { y: 2 } }));
     const mats = Inventory.items.filter(it => it.type === 'material' && it.quantity > 0);
-    mats.forEach((item, i) => { const col = i % 6, row = Math.floor(i / 6); const mx = ox + 20 + col * 280, my = matY + 30 + row * 24; p.add(scene.add.text(mx, my, `${item.name} ×${item.quantity}`, { fontSize: '11px', color: '#aaaacc', padding: { y: 2 } })); });
-    const matEndY = matY + 30 + Math.ceil(mats.length / 6) * 24;
+    const matCols = 6, matColW = 200, matRowH = 34;
+    mats.forEach((item, i) => {
+      const col = i % matCols, row = Math.floor(i / matCols);
+      const mx = ox + 20 + col * matColW, my = matY + 30 + row * matRowH;
+      const texKey = getMaterialInfo(item.name)?.icon || `mat_${item.name}`;
+      if (scene.textures.exists(texKey)) {
+        p.add(scene.add.image(mx, my, texKey).setOrigin(0, 0).setDisplaySize(30, 30));
+        p.add(scene.add.text(mx + 34, my + 9, `${item.name} ×${item.quantity}`, { fontSize: '12px', color: '#cfcfe6', padding: { y: 1 } }));
+      } else {
+        p.add(scene.add.text(mx, my + 4, `${item.name} ×${item.quantity}`, { fontSize: '12px', color: '#aaaacc', padding: { y: 1 } }));
+      }
+    });
+    const matEndY = matY + 30 + Math.ceil(mats.length / matCols) * matRowH;
 
     // 灵宠蛋（双击开启 → 随机孵化一只灵宠；元素/技能/品质全部随机，品质按掉落区域）
     const eggY = matEndY + 14;

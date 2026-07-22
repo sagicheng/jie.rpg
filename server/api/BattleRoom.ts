@@ -6,7 +6,8 @@
  */
 
 import { Room, Client } from '@colyseus/core';
-import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage } from '../core/schema';
+import { BattleRoomState, CombatPlayer, CombatEnemy, ChatMessage, CombatStatus } from '../core/schema';
+import { STATUS_INFO } from '../../src/managers/StatusSystem';
 import { createEnemyData, calcDamage, calcMagicDamage, generateLoot } from '../../src/managers/BattleData';
 import { world } from '../core/world';
 import { PET_SKILLS } from '../core/world';
@@ -18,6 +19,8 @@ import { CONSUMABLES } from '../../src/managers/ConsumableSystem';
 interface KidoLoadoutDTO {
   id: string; mp: number; power: number;
   effectType: string; target?: string; reviveHpPercent?: number;
+  /** 控制型鬼道（缚道）附带的异常状态 */
+  statusEffect?: { subtype: string; turns: number; rate: number };
 }
 interface PlayerLoadout {
   skills: Set<string>; kidos: Map<string, KidoLoadoutDTO>; items: Set<string>;
@@ -49,7 +52,7 @@ export class BattleRoom extends Room<BattleRoomState> {
   private defending: Set<string> = new Set();
   private loadouts: Map<string, PlayerLoadout> = new Map();
   private enemyParty: EnemyData[] = [];
-  private enemySkills: Map<string, { name: string; power: number; damageType: 'physical' | 'magical' }[]> = new Map();
+  private enemySkills: Map<string, { name: string; power: number; damageType: 'physical' | 'magical'; statusEffect?: { subtype: string; rate: number; turns: number } }[]> = new Map();
   private ownerSids: Map<string, string> = new Map();
   private commandTimer: ReturnType<typeof setTimeout> | null = null;
   private commandCheckInterval: ReturnType<typeof setInterval> | null = null;
@@ -294,7 +297,7 @@ export class BattleRoom extends Room<BattleRoomState> {
       e.maxHp = maxHp; e.hp = maxHp; e.atk = ed.atk; e.def = ed.def;
       e.matk = ed.matk; e.mdef = ed.mdef; e.spd = ed.spd; e.alive = true;
       this.state.enemies.set(e.id, e);
-      this.enemySkills.set(e.id, (ed.skills || []).map((s) => ({ name: s.name, power: s.power, damageType: s.damageType })));
+      this.enemySkills.set(e.id, (ed.skills || []).map((s) => ({ name: s.name, power: s.power, damageType: s.damageType, statusEffect: s.statusEffect })));
       if (i === 0 || ed.type === '妖将' || ed.type === '妖王') this.enemyDef = ed;
     });
 
@@ -339,7 +342,8 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.state.turnExpiresAt = 0;
 
     if (this.execQueue.length === 0) {
-      // 本回合所有实体行动完毕 → 下一回合
+      // 本回合所有实体行动完毕 → 结算异常状态 DoT/衰减 → 判胜负 → 下一回合
+      this.tickStatuses();
       if (this.checkVictory() || this.checkDefeat()) return;
       this.state.round += 1;
       this.defending.clear();
@@ -370,6 +374,19 @@ export class BattleRoom extends Room<BattleRoomState> {
     const lo = this.loadouts.get(sid) || EMPTY_LOADOUT;
 
     this.defending.delete(sid);
+
+    // 控制状态：冻结/眩晕/禁锢/封印 → 跳过本回合行动
+    if (this.isBlocked(p)) {
+      this.logMsg(p.name, `${p.name} 被控制，无法行动`);
+      this.scheduleExecuteNext();
+      return;
+    }
+    // 恐惧：50% 概率失去行动
+    if (p.status.fear > 0 && Math.random() < 0.5) {
+      this.logMsg(p.name, `${p.name} 被恐惧笼罩，不敢行动`);
+      this.scheduleExecuteNext();
+      return;
+    }
 
     switch (action.type) {
       case 'attack': {
@@ -415,7 +432,7 @@ export class BattleRoom extends Room<BattleRoomState> {
         const tid = this.resolveTarget(action.targetId);
         if (!tid) { this.scheduleExecuteNext(); return; }
         const e = this.state.enemies.get(tid)!;
-        const r = magic ? calcMagicDamage(p.matk, e.mdef, sk.power) : calcDamage(p.atk, e.def, sk.power);
+        const r = magic ? calcMagicDamage(this.effMatk(p), this.effMdef(e), sk.power) : calcDamage(this.effAtk(p), this.effDef(e), sk.power);
         e.hp = Math.max(0, e.hp - r.damage);
         const skName = PET_SKILLS[action.skillId!]?.name || action.skillId!;
         this.logMsg(p.name, `${p.name}「${skName}」→ ${e.name} -${r.damage}${r.crit ? '（暴击！）' : ''}`);
@@ -454,13 +471,160 @@ export class BattleRoom extends Room<BattleRoomState> {
   }
 
   // ══════════════════════════════════════════════════
+  //  异常状态系统（权威结算，对齐 buff_manager.lua：
+  //  施加(OnBuffStart) → 每回合触发DoT/衰减(OnBuffTriggered) → 到期回滚(OnBuffExpired)）
+  // ══════════════════════════════════════════════════
+
+  /** 属性修正后攻击力（攻降×0.75 / 减速×0.7） */
+  private effAtk(c: CombatPlayer | CombatEnemy): number {
+    const s = c.status;
+    let m = 1.0;
+    if (s.atkDown > 0) m *= 0.75;
+    if (s.slow > 0) m *= 0.7;
+    return Math.round(c.atk * m);
+  }
+  /** 属性修正后魔法攻击力（降灵压×0.85） */
+  private effMatk(c: CombatPlayer | CombatEnemy): number {
+    return Math.round(c.matk * (c.status.matkDown > 0 ? 0.85 : 1.0));
+  }
+  /** 属性修正后防御（防降×0.75，防御与魔防同受影响） */
+  private effDef(c: CombatPlayer | CombatEnemy): number {
+    return Math.round(c.def * (c.status.defDown > 0 ? 0.75 : 1.0));
+  }
+  private effMdef(c: CombatPlayer | CombatEnemy): number {
+    return Math.round(c.mdef * (c.status.defDown > 0 ? 0.75 : 1.0));
+  }
+
+  /** 是否被控制（冻结/眩晕/禁锢/封印）→ 跳过本回合行动 */
+  private isBlocked(c: CombatPlayer | CombatEnemy): boolean {
+    const s = c.status;
+    return s.freeze > 0 || s.stun > 0 || s.bind > 0 || s.sealed > 0;
+  }
+
+  /** 施加异常状态到敌人（按 subtype 写入 schema.status，取较大剩余回合） */
+  private applyStatusToEnemy(e: CombatEnemy, subtype: string, turns: number, maxHp: number): void {
+    const s = e.status;
+    switch (subtype) {
+      case 'burn': s.burn = Math.max(s.burn, turns); break;
+      case 'freeze': s.freeze = Math.max(s.freeze, turns); break;
+      case 'poison': s.poison = Math.max(s.poison, turns); s.poisonDmg = Math.max(s.poisonDmg, Math.round(maxHp * 0.05)); break;
+      case 'parasite': s.parasite = Math.max(s.parasite, turns); break;
+      case 'slow': s.slow = Math.max(s.slow, turns); break;
+      case 'stun': s.stun = Math.max(s.stun, turns); break;
+      case 'bind': s.bind = Math.max(s.bind, turns); break;
+      case 'seal': s.sealed = Math.max(s.sealed, turns); break;
+      case 'taunt': s.taunt = Math.max(s.taunt, turns); break;
+      case 'fear': s.fear = Math.max(s.fear, turns); break;
+      case 'atkDown': s.atkDown = Math.max(s.atkDown, turns); break;
+      case 'defDown': s.defDown = Math.max(s.defDown, turns); break;
+      case 'matkDown': s.matkDown = Math.max(s.matkDown, turns); break;
+    }
+  }
+  /** 施加异常状态到玩家（玩家中毒按 maxHp*dotPct 结算，无需缓存固定值） */
+  private applyStatusToPlayer(p: CombatPlayer, subtype: string, turns: number): void {
+    const s = p.status;
+    switch (subtype) {
+      case 'burn': s.burn = Math.max(s.burn, turns); break;
+      case 'freeze': s.freeze = Math.max(s.freeze, turns); break;
+      case 'poison': s.poison = Math.max(s.poison, turns); break;
+      case 'parasite': s.parasite = Math.max(s.parasite, turns); break;
+      case 'slow': s.slow = Math.max(s.slow, turns); break;
+      case 'stun': s.stun = Math.max(s.stun, turns); break;
+      case 'bind': s.bind = Math.max(s.bind, turns); break;
+      case 'seal': s.sealed = Math.max(s.sealed, turns); break;
+      case 'taunt': s.taunt = Math.max(s.taunt, turns); break;
+      case 'fear': s.fear = Math.max(s.fear, turns); break;
+      case 'atkDown': s.atkDown = Math.max(s.atkDown, turns); break;
+      case 'defDown': s.defDown = Math.max(s.defDown, turns); break;
+      case 'matkDown': s.matkDown = Math.max(s.matkDown, turns); break;
+    }
+  }
+
+  /** 按 rate 概率施加状态到敌人（用于技能/鬼道/敌人攻击） */
+  private rollApplyStatusToEnemy(e: CombatEnemy, se: { subtype: string; turns: number; rate: number }, maxHp: number): void {
+    if (Math.random() >= (se.rate ?? 1)) {
+      console.log(`[BattleRoom.status] 敌人 ${e.name} ${se.subtype} 未命中 (rate=${se.rate})`);
+      return;
+    }
+    this.applyStatusToEnemy(e, se.subtype, se.turns, maxHp);
+    const info = STATUS_INFO[se.subtype as keyof typeof STATUS_INFO];
+    const name = info?.name ?? (se.subtype === 'seal' ? '封印' : se.subtype);
+    console.log(`[BattleRoom.status] 敌人 ${e.name} +${name} ${se.turns}回合 (rate=${se.rate})`);
+    this.logMsg('system', `${e.name} 陷入${name}(${se.turns}回合)`);
+  }
+  /** 按 rate 概率施加状态到玩家 */
+  private rollApplyStatusToPlayer(p: CombatPlayer, se: { subtype: string; turns: number; rate: number }): void {
+    if (Math.random() >= (se.rate ?? 1)) {
+      console.log(`[BattleRoom.status] 玩家 ${p.name} ${se.subtype} 未命中 (rate=${se.rate})`);
+      return;
+    }
+    this.applyStatusToPlayer(p, se.subtype, se.turns);
+    const info = STATUS_INFO[se.subtype as keyof typeof STATUS_INFO];
+    const name = info?.name ?? (se.subtype === 'seal' ? '封印' : se.subtype);
+    console.log(`[BattleRoom.status] 玩家 ${p.name} +${name} ${se.turns}回合 (rate=${se.rate})`);
+    this.logMsg('system', `${p.name} 陷入${name}(${se.turns}回合)`);
+  }
+
+  /** 每回合结束：对所有存活战斗员结算 DoT 并衰减状态（OnBuffTriggered / OnBuffExpired）。先结算，再判胜负。 */
+  private tickStatuses(): void {
+    this.state.players.forEach((p) => {
+      if (!p.alive) return;
+      const dot = this.computeDot(p, true);
+      if (dot > 0) {
+        p.hp = Math.max(0, p.hp - dot);
+        this.logMsg('system', `${p.name} 持续伤害 -${dot}`);
+        if (p.hp <= 0) { p.alive = false; this.logMsg('system', `${p.name} 倒下了！`); }
+      }
+      this.decrementStatus(p.status);
+    });
+    this.state.enemies.forEach((e) => {
+      if (!e.alive) return;
+      const dot = this.computeDot(e, false);
+      if (dot > 0) {
+        e.hp = Math.max(0, e.hp - dot);
+        this.logMsg('system', `${e.name} 持续伤害 -${dot}`);
+        if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+      }
+      this.decrementStatus(e.status);
+    });
+  }
+
+  /** 计算本回合 DoT 总伤害 */
+  private computeDot(c: CombatPlayer | CombatEnemy, isPlayer: boolean): number {
+    const s = c.status;
+    let dot = 0;
+    const maxHp = c.maxHp;
+    if (s.burn > 0) dot += Math.max(1, Math.round(maxHp * 0.05));
+    if (s.poison > 0) dot += isPlayer ? Math.max(1, Math.round(maxHp * 0.03)) : s.poisonDmg;
+    if (s.parasite > 0) dot += Math.max(1, Math.round(maxHp * 0.05));
+    return dot;
+  }
+
+  /** 衰减所有状态 1 回合（到期归零，回滚） */
+  private decrementStatus(s: CombatStatus): void {
+    if (s.burn > 0) s.burn--;
+    if (s.freeze > 0) s.freeze--;
+    if (s.poison > 0) { s.poison--; if (s.poison <= 0) s.poisonDmg = 0; }
+    if (s.parasite > 0) s.parasite--;
+    if (s.slow > 0) s.slow--;
+    if (s.stun > 0) s.stun--;
+    if (s.bind > 0) s.bind--;
+    if (s.taunt > 0) s.taunt--;
+    if (s.fear > 0) s.fear--;
+    if (s.atkDown > 0) s.atkDown--;
+    if (s.defDown > 0) s.defDown--;
+    if (s.matkDown > 0) s.matkDown--;
+    if (s.sealed > 0) s.sealed--;
+  }
+
+  // ══════════════════════════════════════════════════
   //  具体行动执行（从旧 handleAction 移植）
   // ══════════════════════════════════════════════════
 
   private executeAttack(sid: string, targetId: string): void {
     const p = this.state.players.get(sid)!;
     const e = this.state.enemies.get(targetId)!;
-    const r = calcDamage(p.atk, e.def, 1.0);
+    const r = calcDamage(this.effAtk(p), this.effDef(e), 1.0);
     e.hp = Math.max(0, e.hp - r.damage);
     this.logMsg(p.name, `${p.name} 斩击 ${e.name} 造成 ${r.damage} 伤害${r.crit ? '（暴击！）' : ''}`);
     if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
@@ -469,19 +633,22 @@ export class BattleRoom extends Room<BattleRoomState> {
   private executeSkill(p: CombatPlayer, sk: { name: string; damageType: string; power: number; mp: number; statusEffect?: any }, targetId?: string): void {
     const tt = getSkillTargetType(sk as any);
     const magic = sk.damageType === 'magical';
+    const se = sk.statusEffect as { subtype: string; turns: number; rate: number } | undefined;
     if (tt === 'enemy') {
       const tid = this.resolveTarget(targetId); if (!tid) return;
       const e = this.state.enemies.get(tid)!;
-      const r = magic ? calcMagicDamage(p.matk, e.mdef, sk.power) : calcDamage(p.atk, e.def, sk.power);
+      const r = magic ? calcMagicDamage(this.effMatk(p), this.effMdef(e), sk.power) : calcDamage(this.effAtk(p), this.effDef(e), sk.power);
       e.hp = Math.max(0, e.hp - r.damage);
       this.logMsg(p.name, `${p.name}「${sk.name}」→ ${e.name} -${r.damage}${r.crit ? '（暴击！）' : ''}`);
       if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+      if (se && e.hp > 0) this.rollApplyStatusToEnemy(e, se, e.maxHp);
     } else if (tt === 'enemy-all') {
       for (const e of this.state.enemies.values()) {
         if (!e.alive) continue;
-        const r = magic ? calcMagicDamage(p.matk, e.mdef, sk.power) : calcDamage(p.atk, e.def, sk.power);
+        const r = magic ? calcMagicDamage(this.effMatk(p), this.effMdef(e), sk.power) : calcDamage(this.effAtk(p), this.effDef(e), sk.power);
         e.hp = Math.max(0, e.hp - r.damage);
         if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+        if (se && e.hp > 0) this.rollApplyStatusToEnemy(e, se, e.maxHp);
       }
       this.logMsg(p.name, `${p.name}「${sk.name}」横扫全场！`);
     } else if (tt === 'self' || tt === 'ally') {
@@ -503,10 +670,26 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (k.effectType === 'damage') {
       const tid = this.resolveTarget(targetId); if (!tid) return;
       const e = this.state.enemies.get(tid)!;
-      const r = calcMagicDamage(p.matk, e.mdef, k.power);
+      const r = calcMagicDamage(this.effMatk(p), this.effMdef(e), k.power);
       e.hp = Math.max(0, e.hp - r.damage);
       this.logMsg(p.name, `${p.name} 鬼道 → ${e.name} -${r.damage}${r.crit ? '（暴击！）' : ''}`);
       if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+      // 破道(damage)也可附带异常状态（缚道 control 必带，破道按需配置）
+      if (k.statusEffect && e.hp > 0) this.rollApplyStatusToEnemy(e, k.statusEffect, e.maxHp);
+    } else if (k.effectType === 'control') {
+      // 缚道：施加异常状态（单体/全体）
+      const se = k.statusEffect;
+      if (!se) { this.logMsg(p.name, `${p.name} 鬼道（控制）`); return; }
+      if (k.target === 'all') {
+        for (const e of this.state.enemies.values()) {
+          if (!e.alive) continue;
+          this.rollApplyStatusToEnemy(e, se, e.maxHp);
+        }
+      } else {
+        const tid = this.resolveTarget(targetId); if (!tid) return;
+        const e = this.state.enemies.get(tid)!;
+        this.rollApplyStatusToEnemy(e, se, e.maxHp);
+      }
     } else if (k.effectType === 'heal') {
       const target = this.lowestHpAlly(p.sessionId);
       const heal = Math.round(k.power);
@@ -569,6 +752,19 @@ export class BattleRoom extends Room<BattleRoomState> {
     const e = this.state.enemies.get(eid);
     if (!e || !e.alive) { this.scheduleExecuteNext(); return; }
 
+    // 控制状态：被冻结/眩晕/禁锢/封印 → 跳过行动
+    if (this.isBlocked(e)) {
+      this.logMsg(e.name, `${e.name} 被控制，无法行动`);
+      this.scheduleExecuteNext();
+      return;
+    }
+    // 恐惧：30% 概率错失行动
+    if (e.status.fear > 0 && Math.random() < 0.30) {
+      this.logMsg(e.name, `${e.name} 陷入恐惧，错失行动`);
+      this.scheduleExecuteNext();
+      return;
+    }
+
     const alivePlayers = [...this.state.players.values()].filter((p) => p.alive);
     if (alivePlayers.length === 0) { this.checkDefeat(); return; }
     const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
@@ -577,7 +773,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     const sk = skills.length ? (Math.random() < 0.4 ? skills[Math.floor(Math.random() * skills.length)] : skills[0]) : null;
     const power = sk?.power ?? 1.0;
     const magical = sk?.damageType === 'magical';
-    const r = magical ? calcMagicDamage(e.matk, target.mdef, power) : calcDamage(e.atk, target.def, power);
+    const r = magical ? calcMagicDamage(this.effMatk(e), this.effMdef(target), power) : calcDamage(this.effAtk(e), this.effDef(target), power);
     let dmg = r.damage;
     const isDefending = this.defending.has(target.sessionId);
     if (isDefending) dmg = Math.round(dmg * 0.2);
@@ -586,6 +782,8 @@ export class BattleRoom extends Room<BattleRoomState> {
     this.logMsg(e.name, `${e.name}${skName} → ${target.name} -${dmg}${r.crit ? '（暴击！）' : ''}${isDefending ? '（防御）' : ''}`);
 
     if (target.hp <= 0) { target.alive = false; this.logMsg('system', `${target.name} 倒下了！`); }
+    // 敌人攻击附带异常状态（按 rate 概率）
+    if (sk?.statusEffect && target.hp > 0) this.rollApplyStatusToPlayer(target, sk.statusEffect);
     this.scheduleExecuteNext();
   }
 

@@ -287,6 +287,20 @@ export class WorldService {
     const w = seedWorld();
     // 覆盖种子值
     if (data.inventory) w.inventory = data.inventory;
+    // 迁移：止血草曾因采集/掉落误入材料类（id=mat_止血草），与消耗品 stop_blood_grass 二义。
+    // 现仅作消耗品：把材料类止血草数量并入消耗品 stop_blood_grass，删除材料条目（不丢物品）。
+    {
+      const matEntries = w.inventory.filter(i => i.type === 'material' && (i.name === '止血草' || i.id === 'mat_止血草'));
+      if (matEntries.length) {
+        const extra = matEntries.reduce((s, i) => s + (i.quantity || 0), 0);
+        w.inventory = w.inventory.filter(i => !(i.type === 'material' && (i.name === '止血草' || i.id === 'mat_止血草')));
+        if (extra > 0) {
+          const con = w.inventory.find(i => i.id === 'stop_blood_grass');
+          if (con) con.quantity = (con.quantity || 0) + extra;
+          else w.inventory.push({ id: 'stop_blood_grass', name: '止血草', type: 'consumable', desc: '回复50HP', quantity: extra });
+        }
+      }
+    }
     if (data.equipment) w.equipment = data.equipment;
     if (typeof data.gold === 'number') w.gold = data.gold;
     if (typeof data.level === 'number') w.level = data.level;

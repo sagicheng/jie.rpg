@@ -36,6 +36,28 @@ export class GameRoomState extends Schema {
   @type({ map: MonsterState }) monsters = new MapSchema<MonsterState>();
 }
 
+/**
+ * 战斗房间：权威异常状态（回合制 DoT / 控制 / 减益）。
+ * 服务端按回合结算并写入，客户端仅按字段名只读渲染（icon_<key> 纹理）。
+ * 字段对齐 client 端 StatusSystem：burn/freeze/poison(+poisonDmg)/parasite/slow/stun/bind/taunt/fear/atkDown/defDown/matkDown/sealed。
+ */
+export class CombatStatus extends Schema {
+  @type('number') burn = 0;
+  @type('number') freeze = 0;
+  @type('number') poison = 0;
+  @type('number') poisonDmg = 0;   // 敌方中毒每回合固定伤害值（玩家中毒用 maxHp*dotPct）
+  @type('number') parasite = 0;
+  @type('number') slow = 0;
+  @type('number') stun = 0;
+  @type('number') bind = 0;
+  @type('number') taunt = 0;
+  @type('number') fear = 0;
+  @type('number') atkDown = 0;
+  @type('number') defDown = 0;
+  @type('number') matkDown = 0;
+  @type('number') sealed = 0;
+}
+
 /** 战斗房间：战斗员（玩家 / 出战灵宠） */
 export class CombatPlayer extends Schema {
   @type('string') sessionId = '';
@@ -57,6 +79,8 @@ export class CombatPlayer extends Schema {
   @type('boolean') alive = true;
   @type('number') mp = 0;
   @type('number') maxMp = 0;
+  /** 权威异常状态（DoT / 控制 / 减益） */
+  @type(CombatStatus) status = new CombatStatus();
 }
 
 /** 战斗房间：敌人 */
@@ -72,6 +96,8 @@ export class CombatEnemy extends Schema {
   @type('number') mdef = 0;
   @type('number') spd = 0;
   @type('boolean') alive = true;
+  /** 权威异常状态（DoT / 控制 / 减益） */
+  @type(CombatStatus) status = new CombatStatus();
 }
 
 export class BattleRoomState extends Schema {

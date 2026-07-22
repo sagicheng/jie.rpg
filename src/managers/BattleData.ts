@@ -9,6 +9,7 @@ import { QUALITY_MULT } from '../core/constants';
 import { ZONE_PL } from '../config/config';
 import { Item, EquipSlot } from './Inventory';
 import { makeSetId } from './SetSystem';
+import { CONSUMABLES_BY_NAME } from './ConsumableSystem';
 
 /** 敌人类型 */
 export type EnemyType = '杂妖' | '恶妖' | '妖将' | '妖王';
@@ -192,9 +193,13 @@ export function generateLoot(type: EnemyType, zone: number): Item[] {
 
   for (const mat of matRates[type]) {
     if (Math.random() < mat.rate) {
+      const conEntry = CONSUMABLES_BY_NAME[mat.name];
       loot.push({
-        id: matId(mat.name), name: mat.name, type: 'material',
-        desc: '制造材料', quantity: 1,
+        id: conEntry ? conEntry.id : matId(mat.name),
+        name: mat.name,
+        type: conEntry ? 'consumable' : 'material',
+        desc: conEntry ? conEntry.desc : '制造材料',
+        quantity: 1,
       });
     }
   }

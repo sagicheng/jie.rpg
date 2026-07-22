@@ -28,9 +28,13 @@ export function shop(tier: number, prefix: string, ids: string[]): Array<{ name:
     // 商店装备按「区域(=tier) + 品质」纳套装：与同区同品质掉落/制造装备共享套装标识。
     set: slot ? makeSetId(tier, 'white') : undefined,
   }));
+  const ptIdx = Math.min(3, Math.floor((tier - 1) / 3));
+  const potionId = ['potion_shop_s', 'potion_shop_m', 'potion_shop_l', 'potion_shop_xl'][ptIdx];
+  const potionHeal = [100, 300, 600, 1000][ptIdx];
+  const potionName = tier <= 3 ? '回复药' : tier <= 6 ? '强效回复药' : tier <= 9 ? '高级回复药' : '终极回复药';
   const potions = [
-    { name: tier <= 3 ? '回复药' : tier <= 6 ? '强效回复药' : tier <= 9 ? '高级回复药' : '终极回复药', price: [80, 180, 350, 600][Math.min(3, Math.floor((tier - 1) / 3))], id: `potion_z${tier}`, slot: '', stats: {}, desc: `回复${[100, 300, 600, 1000][Math.min(3, Math.floor((tier - 1) / 3))]}HP` },
+    { name: potionName, price: [80, 180, 350, 600][ptIdx], id: potionId, slot: '', stats: {}, desc: `回复${potionHeal}HP` },
   ];
-  if (tier >= 4) potions.push({ name: '灵水', price: 400, id: `spirit_z${tier}`, slot: '', stats: {}, desc: '回复200MP' });
+  if (tier >= 4) potions.push({ name: '灵水', price: 400, id: 'spirit_water_shop', slot: '', stats: {}, desc: '回复200MP' });
   return [...items, ...potions];
 }

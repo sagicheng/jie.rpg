@@ -30,6 +30,7 @@ interface Card {
   hpBar: Phaser.GameObjects.Graphics;
   hpText: Phaser.GameObjects.Text;
   hl: Phaser.GameObjects.Graphics; // 待选目标高亮边框
+  statusIcons: Phaser.GameObjects.GameObject[]; // 异常状态 PNG 图标 + 回合数（每帧重绘）
 }
 
 interface Button {
@@ -164,9 +165,14 @@ export class MultiBattleScene extends Phaser.Scene {
     this.add.text(w / 2, 36, '联机权威战斗', { fontSize: '28px', color: '#c9a96e', fontStyle: 'bold' }).setOrigin(0.5).setDepth(10);
     this.turnText = this.add.text(w / 2, 80, '连接中…', { fontSize: '18px', color: '#ffe8b0' }).setOrigin(0.5).setDepth(10);
 
-    this.logText = this.add.text(60, h - 360, '', {
-      fontSize: '14px', color: '#cccccc', wordWrap: { width: w - 120 }, lineSpacing: 4,
+    // 战斗信息播报：移到右下角，避免与 GameScene chatHud（左下）+ 血蓝UI（顶部中央）冲突
+    const logW = 420, logH = 240;
+    this.logText = this.add.text(w - logW - 20, h - logH - 100, '', {
+      fontSize: '13px', color: '#cccccc', wordWrap: { width: logW }, lineSpacing: 3,
+      backgroundColor: '#0a0a1acc', padding: { x: 8, y: 6 },
     }).setDepth(10);
+
+    // 战斗信息播报已移至右下角，与左下角 chatHud 不重叠，故保留聊天 HUD 可见（用户要求）。
 
     // ——— 两步固定选择指令栏（梦幻/飘流式：先人物 6 项，后灵宠 3 项）———
     const by = h - 70;
@@ -242,6 +248,10 @@ export class MultiBattleScene extends Phaser.Scene {
         effectType: k.effect.type,
         target: (k.effect as any).target || 'single',
         reviveHpPercent: (k.effect as any).hpPercent,
+        // 缚道(control)必带 statusEffect；破道(damage)按配置可选携带
+        statusEffect: (k.effect as any).subtype
+          ? { subtype: (k.effect as any).subtype, turns: (k.effect as any).turns, rate: (k.effect as any).rate }
+          : undefined,
       })),
       items: this.loadout.items.map((i) => i.id),
     };
@@ -819,6 +829,7 @@ export class MultiBattleScene extends Phaser.Scene {
         card.bg.strokeRoundedRect(-190, -48, 380, 96, 8);
       }
       this.drawHpBar(card, c.hp, c.maxHp);
+      this.drawStatusIcons(card, c);
       card.root.setAlpha(c.alive ? 1 : 0.4);
       // 高亮：多怪且有待选目标时，存活敌人边框发光提示「点我释放」
       const highlight = !isPlayer && !!this.pendingTarget && c.alive;
@@ -850,7 +861,7 @@ export class MultiBattleScene extends Phaser.Scene {
     const hpText = this.add.text(-w / 2 + 16, barY + 4, '', { fontSize: '12px', color: '#dddddd' });
     const hl = this.add.graphics(); // 待选目标高亮（默认隐藏）
     root.add([bg, name, hpBar, hpText, hl]);
-    return { root, bg, name, hpBar, hpText, hl };
+    return { root, bg, name, hpBar, hpText, hl, statusIcons: [] };
   }
 
   private drawHpBar(card: Card, hp: number, maxHp: number): void {
@@ -864,6 +875,74 @@ export class MultiBattleScene extends Phaser.Scene {
     card.hpBar.lineStyle(1, 0xffffff, 0.3);
     card.hpBar.strokeRect(x, y, w, 14);
     card.hpText.setText(`HP ${Math.max(0, Math.round(hp))} / ${Math.round(maxHp)}`);
+  }
+
+  /** 渲染异常状态 PNG 图标（依据服务端 schema.status 字段），含剩余回合数 + 背板 + 文字兜底 */
+  private drawStatusIcons(card: Card, c: any): void {
+    for (const obj of card.statusIcons) obj.destroy();
+    card.statusIcons = [];
+    const st = c.status;
+    if (!st) return;
+    const list: { key: string; name: string; turns: number }[] = [
+      { key: 'icon_burn', name: '灼烧', turns: st.burn },
+      { key: 'icon_freeze', name: '冻结', turns: st.freeze },
+      { key: 'icon_poison', name: '中毒', turns: st.poison },
+      { key: 'icon_parasite', name: '寄生', turns: st.parasite },
+      { key: 'icon_slow', name: '减速', turns: st.slow },
+      { key: 'icon_stun', name: '眩晕', turns: st.stun },
+      { key: 'icon_bind', name: '禁锢', turns: st.bind },
+      { key: 'icon_taunt', name: '嘲讽', turns: st.taunt },
+      { key: 'icon_fear', name: '恐惧', turns: st.fear },
+      { key: 'icon_atkDown', name: '攻降', turns: st.atkDown },
+      { key: 'icon_defDown', name: '防降', turns: st.defDown },
+      { key: 'icon_matkDown', name: '降灵压', turns: st.matkDown },
+      { key: 'icon_seal', name: '封印', turns: st.sealed },
+    ];
+    const active = list.filter((k) => k.turns > 0);
+    if (active.length === 0) return;
+
+    // 诊断：状态到达客户端时打印一次（去重防刷屏），用于确认服务端状态同步是否生效。
+    {
+      const sig = `${c.name || '敌方'}:${active.map(k => `${k.name}×${k.turns}`).join(',')}`;
+      if ((this as any)._lastStatusSig !== sig) {
+        (this as any)._lastStatusSig = sig;
+        console.log(`[Status.render] ${sig}`);
+      }
+    }
+
+    // 背板：半透明圆角矩形，让状态"不可能不被看到"（即使所有纹理都丢失也能看到色块）
+    const ICON = 22, GAP = 3, PAD = 6;
+    const totalW = active.length * (ICON + GAP) - GAP + PAD * 2;
+    const plateX = -totalW / 2, plateY = -54 - 4;
+    const plateW = totalW, plateH = ICON + 8;
+    const plate = this.add.graphics();
+    plate.fillStyle(0x000000, 0.65);
+    plate.fillRoundedRect(plateX, plateY, plateW, plateH, 4);
+    plate.lineStyle(1, 0x7799cc, 0.6);
+    plate.strokeRoundedRect(plateX, plateY, plateW, plateH, 4);
+    card.root.add(plate);
+    card.statusIcons.push(plate);
+
+    const startX = -totalW / 2 + PAD + ICON / 2;
+    const y = -54;
+    active.forEach((k, i) => {
+      const x = startX + i * (ICON + GAP);
+      if (this.textures.exists(k.key)) {
+        const img = this.add.image(x, y, k.key).setDisplaySize(ICON, ICON).setDepth(12);
+        card.root.add(img);
+        card.statusIcons.push(img);
+      } else {
+        // 纹理缺失兜底：中文名（深色底+亮色字）
+        const t = this.add.text(x, y, k.name, { fontSize: '10px', color: '#ffcc66', backgroundColor: '#00000088', padding: { x: 2, y: 1 } }).setOrigin(0.5).setDepth(12);
+        card.root.add(t);
+        card.statusIcons.push(t);
+      }
+      const tn = this.add.text(x, y + ICON / 2 - 1, String(k.turns), {
+        fontSize: '10px', color: '#ffffff', backgroundColor: '#000000aa', padding: { x: 1, y: 0 },
+      }).setOrigin(0.5).setDepth(13);
+      card.root.add(tn);
+      card.statusIcons.push(tn);
+    });
   }
 
   private makeButton(x: number, y: number, label: string, color: number, cb: () => void, w = 200, h = 56): Button {
