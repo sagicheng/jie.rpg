@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone13: ZoneConfig = {
     id: 13, name: '战迹',
-    groundColor: 0x445566, roadColor: 0x667788, treeColor: 0x334455,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 160, h: 110 },
-      { type: 'house', x: 0.6, y: 0.55, w: 140, h: 100 },
-      { type: 'pond', x: 0.5, y: 0.15, w: 90, h: 65 },
-    ],
+    backgroundImage: 'bg_zone_13',
+    backgroundMode: 'cover',
+    groundColor: 0x445566,
     npcs: [
       { x: 0.55, y: 0.35, name: '银城空吾', role: 'merchant', dialogue: [
         { speaker: '银城空吾', text: '完现术者的装备——利用身边的一切物质强化战斗。', choices: [{ text: '交易', callback: 'openShop' }] },

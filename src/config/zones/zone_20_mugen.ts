@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone20: ZoneConfig = {
     id: 20, name: '无间',
-    groundColor: 0x2a1118, roadColor: 0x442230, treeColor: 0x1a0810,
-    decorations: [
-      { type: 'pond', x: 0.3, y: 0.3, w: 140, h: 100 },
-      { type: 'house', x: 0.6, y: 0.55, w: 110, h: 80 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 85, h: 60 },
-    ],
+    backgroundImage: 'bg_zone_20',
+    backgroundMode: 'cover',
+    groundColor: 0x2a1118,
     npcs: [
       { x: 0.45, y: 0.35, name: '地狱狱卒', role: 'merchant', dialogue: [
         { speaker: '地狱狱卒', text: '无间——地狱最深处。这里的装备连咎人都害怕。', choices: [{ text: '交易', callback: 'openShop' }] },

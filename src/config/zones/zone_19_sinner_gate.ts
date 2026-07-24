@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone19: ZoneConfig = {
     id: 19, name: '咎人之门',
-    groundColor: 0x1a1118, roadColor: 0x332228, treeColor: 0x0a0810,
-    decorations: [
-      { type: 'pond', x: 0.3, y: 0.3, w: 160, h: 100 },
-      { type: 'house', x: 0.15, y: 0.5, w: 100, h: 70 },
-      { type: 'house', x: 0.8, y: 0.35, w: 90, h: 65 },
-    ],
+    backgroundImage: 'bg_zone_19',
+    backgroundMode: 'cover',
+    groundColor: 0x1a1118,
     npcs: [
       { x: 0.4, y: 0.3, name: '地狱看守', role: 'merchant', dialogue: [
         { speaker: '地狱看守', text: '这里是灵魂的终点。用尽了生命和力量的残骸……都是上好的材料。', choices: [{ text: '交易', callback: 'openShop' }] },

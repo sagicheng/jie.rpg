@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone03: ZoneConfig = {
     id: 3, name: '河川敷',
-    groundColor: 0x556688, roadColor: 0x7788aa, treeColor: 0x445577,
-    decorations: [
-      { type: 'pond', x: 0.4, y: 0.5, w: 200, h: 120 },
-      { type: 'house', x: 0.2, y: 0.3, w: 100, h: 70 },
-      { type: 'house', x: 0.75, y: 0.7, w: 90, h: 65 },
-    ],
+    backgroundImage: 'bg_zone_03',
+    backgroundMode: 'cover',
+    groundColor: 0x556688,
     npcs: [
       { x: 0.45, y: 0.35, name: '浦原テッサイ', role: 'merchant', dialogue: [
         { speaker: '浦原テッサイ', text: '店长让我在这里设摊。河川敷的虚比镇子里强，装备也得跟上。', choices: [{ text: '交易', callback: 'openShop' }] },

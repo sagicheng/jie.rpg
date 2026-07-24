@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone09: ZoneConfig = {
     id: 9, name: '真央灵术院',
-    groundColor: 0xaaaabb, roadColor: 0xccccdd, treeColor: 0x888899,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 140, h: 100 },
-      { type: 'house', x: 0.6, y: 0.55, w: 130, h: 90 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 90, h: 65 },
-    ],
+    backgroundImage: 'bg_zone_09',
+    backgroundMode: 'cover',
+    groundColor: 0xaaaabb,
     npcs: [
       { x: 0.45, y: 0.35, name: '朽木露琪亚', role: 'merchant', dialogue: [
         { speaker: '朽木露琪亚', text: '灵术院的装备都是毕业生留下的。你也要毕业了吧？', choices: [{ text: '交易', callback: 'openShop' }] },

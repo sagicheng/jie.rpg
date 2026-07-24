@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone06: ZoneConfig = {
     id: 6, name: '草鹿',
-    groundColor: 0x776644, roadColor: 0x998866, treeColor: 0x554422,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 120, h: 90 },
-      { type: 'house', x: 0.6, y: 0.55, w: 110, h: 85 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 80, h: 60 },
-    ],
+    backgroundImage: 'bg_zone_06',
+    backgroundMode: 'cover',
+    groundColor: 0x776644,
     npcs: [
       { x: 0.45, y: 0.35, name: '草鹿八千流', role: 'merchant', dialogue: [
         { speaker: '草鹿八千流', text: '这里是草鹿！剑剑大人让我管装备。想要好东西？先付钱！', choices: [{ text: '交易', callback: 'openShop' }] },

@@ -1009,92 +1009,9 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // 2) 道路：用 tile_road 铺，半透明融合背景；无图时 fallback 纯色
-    const roadH = 60, roadW = 60;
-    const hasRoadTex = this.textures.exists('tile_road');
-    if (hasRoadTex) {
-      const hr = this.add.tileSprite(mapW / 2, mapH * 0.45 + roadH / 2, mapW, roadH, 'tile_road').setDepth(1);
-      hr.setTint(cfg.roadColor).setAlpha(0.9);
-      const vr = this.add.tileSprite(mapW * 0.48 + roadW / 2, mapH / 2, roadW, mapH, 'tile_road').setDepth(1);
-      vr.setTint(cfg.roadColor).setAlpha(0.9);
-    } else {
-      g.fillStyle(cfg.roadColor, 1);
-      g.fillRect(0, mapH * 0.45, mapW, roadH);
-      g.fillRect(mapW * 0.48, 0, roadW, mapH);
-    }
-    // 道路中线（虚线）
-    g.fillStyle(0xffffff, 0.12);
-    for (let rx = 40; rx < mapW; rx += 80) g.fillRect(rx, mapH * 0.45 + roadH / 2 - 2, 36, 4);
-    for (let ry = 40; ry < mapH; ry += 80) g.fillRect(mapW * 0.48 + roadW / 2 - 2, ry, 4, 36);
-
-    // 2.5) 拼接装饰：把不同图片摆在不同坐标，组成场景（飘流幻境式：一大底 + 四处摆物件）。坐标 0..1 归一化。
-    for (const p of cfg.props ?? []) {
-      if (!this.textures.exists(p.image)) continue;
-      const img = this.add.image(p.x * mapW, p.y * mapH, p.image)
-        .setOrigin(p.originX ?? 0.5, p.originY ?? 0.5)
-        .setDepth(p.depth ?? 1);
-      if (p.scale) img.setScale(p.scale);
-      if (p.alpha != null) img.setAlpha(p.alpha);
-    }
-
-    // 3) 装饰物（建筑/池塘）：更精致的程序化占位，未来可替换为图片 key
-    for (const dec of cfg.decorations) {
-      const dx = dec.x * mapW, dy = dec.y * mapH;
-      if (dec.type === 'house') {
-        const w = dec.w || 100, h = dec.h || 80;
-        // 阴影
-        g.fillStyle(0x000000, 0.25);
-        g.fillRoundedRect(dx - w / 2 + 8, dy - 32, w, h, 6);
-        // 主墙
-        g.fillStyle(0x8b7355, 1);
-        g.fillRoundedRect(dx - w / 2, dy - 40, w, h, 4);
-        // 木框/门
-        g.fillStyle(0x5c4a35, 1);
-        g.fillRoundedRect(dx - w / 6, dy - 8, w / 3, h - 32, 2);
-        // 窗
-        g.fillStyle(0x4a5a6a, 1);
-        g.fillRoundedRect(dx - w / 3 + 4, dy - 30, w / 5, h / 3, 2);
-        g.fillRoundedRect(dx + w / 12, dy - 30, w / 5, h / 3, 2);
-        // 屋顶（三角）
-        g.fillStyle(0x6d4c41, 1);
-        g.fillTriangle(dx - w / 2 - 10, dy - 40, dx + w / 2 + 10, dy - 40, dx, dy - 40 - h * 0.45);
-        // 屋顶高光
-        g.fillStyle(0x8d6c5f, 1);
-        g.fillTriangle(dx - w / 4, dy - 40 - h * 0.1, dx + w / 4, dy - 40 - h * 0.1, dx, dy - 40 - h * 0.4);
-      } else if (dec.type === 'pond') {
-        const pw = dec.w || 100, ph = dec.h || 70;
-        // 水影
-        g.fillStyle(0x000000, 0.2);
-        g.fillEllipse(dx + 4, dy + 4, pw, ph);
-        // 水面
-        g.fillStyle(0x4a7a9a, 0.9);
-        g.fillEllipse(dx, dy, pw, ph);
-        // 水波高光
-        g.fillStyle(0x8fcce8, 0.35);
-        g.fillEllipse(dx - pw * 0.15, dy - ph * 0.12, pw * 0.45, ph * 0.35);
-        g.fillStyle(0xaaddff, 0.2);
-        g.fillEllipse(dx + pw * 0.2, dy + ph * 0.1, pw * 0.25, ph * 0.2);
-      }
-    }
-
-    // 4) 树木：成群分布，有树干+多层树冠
-    for (let c = 0; c < 12; c++) {
-      const cx = Phaser.Math.Between(80, mapW - 80);
-      const cy = Phaser.Math.Between(80, mapH - 80);
-      for (let t = 0; t < Phaser.Math.Between(3, 7); t++) {
-        const tx = Phaser.Math.Clamp(cx + Phaser.Math.Between(-70, 70), 40, mapW - 40);
-        const ty = Phaser.Math.Clamp(cy + Phaser.Math.Between(-60, 60), 40, mapH - 40);
-        // 树干
-        g.fillStyle(0x553311, 1);
-        g.fillRect(tx - 3, ty + 6, 6, 18);
-        // 树冠（两层，深浅）
-        const r = Phaser.Math.Between(12, 18);
-        g.fillStyle(cfg.treeColor, 1);
-        g.fillCircle(tx, ty, r);
-        g.fillStyle(Phaser.Display.Color.ValueToColor(cfg.treeColor).lighten(20).color, 0.6);
-        g.fillCircle(tx - r * 0.25, ty - r * 0.2, r * 0.65);
-      }
-    }
+    // 2)～4) 原代码占位美术已移除：灰色道路(tile_road/roadColor)、拼接装饰(cfg.props/deco_rock)、
+    //     建筑池塘(cfg.decorations/deco_house_a·b·deco_pond)、全局树木(deco_tree) 全部不再渲染。
+    //     场景现在只铺 backgroundImage（21 张真实区域地图），不叠加任何程序化占位。
 
     // 5) Zone exit portals
     for (const exit of cfg.exits) {
@@ -1114,12 +1031,19 @@ export class GameScene extends Phaser.Scene {
     const dp = getDungeonPortal(GameState.zone);
     const dx = dp.x * mapW, dy = dp.y * mapH;
     this.dungeonPortalPos = { x: dx, y: dy };
-    const portal = this.add.graphics();
-    portal.fillStyle(0xaa66ff, 0.15); portal.fillCircle(dx, dy, 38);
-    portal.fillStyle(0xaa66ff, 0.32); portal.fillCircle(dx, dy, 24);
-    portal.lineStyle(2, 0xcc99ff, 0.9); portal.strokeCircle(dx, dy, 32);
-    portal.setDepth(3);
-    this.tweens.add({ targets: portal, alpha: 0.35, duration: 1100, yoyo: true, repeat: -1 });
+    if (this.textures.exists('dungeon_portal_1')) {
+      const portal = this.add.image(dx, dy, 'dungeon_portal_1').setDepth(3);
+      portal.setDisplaySize(96, 96);
+      this.tweens.add({ targets: portal, alpha: 0.65, duration: 1100, yoyo: true, repeat: -1 });
+    } else {
+      // 缺图时回退紫圈占位
+      const portal = this.add.graphics();
+      portal.fillStyle(0xaa66ff, 0.15); portal.fillCircle(dx, dy, 38);
+      portal.fillStyle(0xaa66ff, 0.32); portal.fillCircle(dx, dy, 24);
+      portal.lineStyle(2, 0xcc99ff, 0.9); portal.strokeCircle(dx, dy, 32);
+      portal.setDepth(3);
+      this.tweens.add({ targets: portal, alpha: 0.35, duration: 1100, yoyo: true, repeat: -1 });
+    }
     const tag = this.add.text(dx, dy - 46, '\u25C6 副本' + GameState.zone, { fontSize: '12px', color: '#d9b3ff', fontStyle: 'bold', backgroundColor: '#221133cc', padding: { x: 5, y: 2 } }).setOrigin(0.5).setDepth(6);
     this.tweens.add({ targets: tag, y: dy - 52, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
   }
@@ -1242,9 +1166,9 @@ export class GameScene extends Phaser.Scene {
     const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
     for (const pt of cfg.gathering) {
       const gx = pt.x * GAME_WIDTH * 3, gy = pt.y * GAME_HEIGHT * 2;
-      const colors: Record<string, number> = { '\u77ff\u8109': 0x886644, '\u836f\u8349': 0x44aa44, '\u7075\u6728': 0x668844, '\u7075\u8109': 0x8844cc };
-      const sprite = this.physics.add.sprite(gx, gy, 'gather').setDepth(2);
-      sprite.setTint(colors[pt.type] || 0x88aa88);
+      const key = `gather_${pt.type}`;
+      if (!this.textures.exists(key)) { console.warn('[gather] missing texture ' + key + ', skipped'); continue; }
+      const sprite = this.physics.add.sprite(gx, gy, key).setDepth(2);
       const label = this.add.text(gx, gy - 20, pt.type, { fontSize: '10px', color: '#aaddaa', backgroundColor: '#00000066', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(3);
       this.tweens.add({ targets: sprite, alpha: 0.6, duration: 1500, yoyo: true, repeat: -1 });
       this.gatherPoints.push({ sprite, type: pt.type, label });

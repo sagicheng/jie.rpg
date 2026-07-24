@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone15: ZoneConfig = {
     id: 15, name: '完现术总本山',
-    groundColor: 0x553366, roadColor: 0x775588, treeColor: 0x442255,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 180, h: 130 },
-      { type: 'house', x: 0.6, y: 0.55, w: 150, h: 110 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 95, h: 70 },
-    ],
+    backgroundImage: 'bg_zone_15',
+    backgroundMode: 'cover',
+    groundColor: 0x553366,
     npcs: [
       { x: 0.45, y: 0.35, name: '银城空吾', role: 'merchant', dialogue: [
         { speaker: '银城空吾', text: '完现术总本山——所有完现术者的圣地。这里的装备是最高级的。', choices: [{ text: '交易', callback: 'openShop' }] },

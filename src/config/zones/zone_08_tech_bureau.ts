@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone08: ZoneConfig = {
     id: 8, name: '技术開発局',
-    groundColor: 0x999988, roadColor: 0xbbbbaa, treeColor: 0x777766,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 150, h: 110 },
-      { type: 'house', x: 0.6, y: 0.55, w: 140, h: 100 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 90, h: 65 },
-    ],
+    backgroundImage: 'bg_zone_08',
+    backgroundMode: 'cover',
+    groundColor: 0x999988,
     npcs: [
       { x: 0.45, y: 0.35, name: '涅茧利', role: 'merchant', dialogue: [
         { speaker: '涅茧利', text: '技术开发局的装备——全都是最新研究成果。哼，别弄坏了。', choices: [{ text: '交易', callback: 'openShop' }] },

@@ -21,6 +21,29 @@ export const ASSET_IMAGES: AssetImage[] = [
   { key: 'bg_battle', path: 'assets/backgrounds/bg_battle.png' },
   { key: 'bg_town', path: 'assets/backgrounds/bg_town.png' },
 
+  // 区域背景图（21 区，1920×1080 横向，由 AI 生成的手绘蜂窝纹理场景底图）
+  { key: 'bg_zone_01', path: 'assets/backgrounds/bg_zone_01.png' },
+  { key: 'bg_zone_02', path: 'assets/backgrounds/bg_zone_02.png' },
+  { key: 'bg_zone_03', path: 'assets/backgrounds/bg_zone_03.png' },
+  { key: 'bg_zone_04', path: 'assets/backgrounds/bg_zone_04.png' },
+  { key: 'bg_zone_05', path: 'assets/backgrounds/bg_zone_05.png' },
+  { key: 'bg_zone_06', path: 'assets/backgrounds/bg_zone_06.png' },
+  { key: 'bg_zone_07', path: 'assets/backgrounds/bg_zone_07.png' },
+  { key: 'bg_zone_08', path: 'assets/backgrounds/bg_zone_08.png' },
+  { key: 'bg_zone_09', path: 'assets/backgrounds/bg_zone_09.png' },
+  { key: 'bg_zone_10', path: 'assets/backgrounds/bg_zone_10.png' },
+  { key: 'bg_zone_11', path: 'assets/backgrounds/bg_zone_11.png' },
+  { key: 'bg_zone_12', path: 'assets/backgrounds/bg_zone_12.png' },
+  { key: 'bg_zone_13', path: 'assets/backgrounds/bg_zone_13.png' },
+  { key: 'bg_zone_14', path: 'assets/backgrounds/bg_zone_14.png' },
+  { key: 'bg_zone_15', path: 'assets/backgrounds/bg_zone_15.png' },
+  { key: 'bg_zone_16', path: 'assets/backgrounds/bg_zone_16.png' },
+  { key: 'bg_zone_17', path: 'assets/backgrounds/bg_zone_17.png' },
+  { key: 'bg_zone_18', path: 'assets/backgrounds/bg_zone_18.png' },
+  { key: 'bg_zone_19', path: 'assets/backgrounds/bg_zone_19.png' },
+  { key: 'bg_zone_20', path: 'assets/backgrounds/bg_zone_20.png' },
+  { key: 'bg_zone_21', path: 'assets/backgrounds/bg_zone_21.png' },
+
   // 状态效果图标 (13种 BUFF/debuff) — 64x64, 透明背景, 圆角边框已含
   { key: 'icon_burn',     path: 'assets/icons/icon_burn.png' },     // 灼烧
   { key: 'icon_freeze',   path: 'assets/icons/icon_freeze.png' },   // 冻结
@@ -104,4 +127,14 @@ export const ASSET_IMAGES: AssetImage[] = [
   { key: 'border_blue',   path: 'assets/equip_borders/border_blue.png' },   // 蓝
   { key: 'border_purple', path: 'assets/equip_borders/border_purple.png' }, // 紫
   { key: 'border_gold',   path: 'assets/equip_borders/border_gold.png' },   // 金
+
+
+  // 采集点 (world) — 64x64, 透明背景, 由「场景装饰与采集点」表生成
+  { key: 'gather_矿脉', path: 'assets/world/gather_矿脉.png' }, // 矿脉
+  { key: 'gather_药草', path: 'assets/world/gather_药草.png' }, // 药草
+  { key: 'gather_灵木', path: 'assets/world/gather_灵木.png' }, // 灵木
+  { key: 'gather_灵脉', path: 'assets/world/gather_灵脉.png' }, // 灵脉
+
+  // 副本传送阵入口 (world) — 128x128, 透明背景, 由「场景装饰与采集点」表生成
+  { key: 'dungeon_portal_1', path: 'assets/world/dungeon_portal_1.png' },
 ];

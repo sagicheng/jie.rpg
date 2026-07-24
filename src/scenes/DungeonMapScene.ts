@@ -180,29 +180,6 @@ export class DungeonMapScene extends Phaser.Scene {
     this.mapGfx = g;
     g.fillStyle(vis.groundColor, 1);
     g.fillRect(0, 0, mapW, mapH);
-    g.fillStyle(vis.roadColor, 1);
-    g.fillRect(0, mapH * 0.45, mapW, 60);
-    g.fillRect(mapW * 0.48, 0, 60, mapH);
-    for (const dec of vis.decorations) {
-      const dx = dec.x * mapW, dy = dec.y * mapH;
-      if (dec.type === 'house') {
-        g.fillStyle(0x665544, 1);
-        g.fillRect(dx - (dec.w || 100) / 2, dy - 40, dec.w || 100, dec.h || 80);
-        g.fillStyle(0x554433, 1);
-        g.fillRect(dx - (dec.w || 100) / 4, dy - 40, (dec.w || 100) / 2, 50);
-      } else if (dec.type === 'pond') {
-        g.fillStyle(0x335577, 0.7);
-        g.fillEllipse(dx, dy, dec.w || 100, dec.h || 70);
-      }
-    }
-    g.fillStyle(vis.treeColor, 1);
-    for (let i = 0; i < 40; i++) {
-      const tx = Phaser.Math.Between(50, mapW - 50), ty = Phaser.Math.Between(50, mapH - 50);
-      g.fillCircle(tx, ty, 16);
-      g.fillStyle(0x553311, 1);
-      g.fillRect(tx - 2, ty + 12, 4, 16);
-      g.fillStyle(vis.treeColor, 1);
-    }
   }
 
   // ═══ 明雷怪（散点分布，碰任意一只即打整组）═══

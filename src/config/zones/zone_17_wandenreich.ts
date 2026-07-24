@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone17: ZoneConfig = {
     id: 17, name: '星十字宫',
-    groundColor: 0x334466, roadColor: 0x556688, treeColor: 0x223355,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 180, h: 130 },
-      { type: 'house', x: 0.6, y: 0.55, w: 160, h: 120 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 90, h: 65 },
-    ],
+    backgroundImage: 'bg_zone_17',
+    backgroundMode: 'cover',
+    groundColor: 0x334466,
     npcs: [
       { x: 0.45, y: 0.35, name: '莉托托', role: 'merchant', dialogue: [
         { speaker: '莉托托', text: '饿了……买装备顺便给我带点吃的？星十字宫的货可是最好的。', choices: [{ text: '交易', callback: 'openShop' }] },

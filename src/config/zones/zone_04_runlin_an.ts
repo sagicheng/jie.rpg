@@ -3,14 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone04: ZoneConfig = {
     id: 4, name: '润林安',
-    groundColor: 0x665544, roadColor: 0x887766, treeColor: 0x443322,
-    decorations: [
-      { type: 'house', x: 0.2, y: 0.3, w: 140, h: 100 },
-      { type: 'house', x: 0.5, y: 0.15, w: 120, h: 80 },
-      { type: 'house', x: 0.7, y: 0.6, w: 130, h: 90 },
-      { type: 'pond', x: 0.85, y: 0.25, w: 90, h: 70 },
-      { type: 'pond', x: 0.1, y: 0.55, w: 80, h: 60 },
-    ],
+    backgroundImage: 'bg_zone_04',
+    backgroundMode: 'cover',
+    groundColor: 0x665544,
     npcs: [
       { x: 0.5, y: 0.2, name: '志波空鹤', role: 'merchant', dialogue: [
         { speaker: '志波空鹤', text: '花火和武器都在我这。流魂街最好的装备店！', choices: [{ text: '交易', callback: 'openShop' }] },

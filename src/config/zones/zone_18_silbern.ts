@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone18: ZoneConfig = {
     id: 18, name: '银架城',
-    groundColor: 0x445577, roadColor: 0x6677aa, treeColor: 0x335588,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 200, h: 150 },
-      { type: 'house', x: 0.6, y: 0.55, w: 180, h: 130 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 100, h: 80 },
-    ],
+    backgroundImage: 'bg_zone_18',
+    backgroundMode: 'cover',
+    groundColor: 0x445577,
     npcs: [
       { x: 0.45, y: 0.35, name: '友哈巴赫(残影)', role: 'merchant', dialogue: [
         { speaker: '友哈巴赫(残影)', text: '银架城的宝库——全知全能所见的一切珍宝。拿去吧。', choices: [{ text: '交易', callback: 'openShop' }] },

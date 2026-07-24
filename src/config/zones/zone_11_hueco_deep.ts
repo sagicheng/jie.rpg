@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone11: ZoneConfig = {
     id: 11, name: '黑腔深部',
-    groundColor: 0x777788, roadColor: 0x9999aa, treeColor: 0x555566,
-    decorations: [
-      { type: 'pond', x: 0.3, y: 0.35, w: 130, h: 95 },
-      { type: 'house', x: 0.6, y: 0.55, w: 110, h: 80 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 85, h: 60 },
-    ],
+    backgroundImage: 'bg_zone_11',
+    backgroundMode: 'cover',
+    groundColor: 0x777788,
     npcs: [
       { x: 0.45, y: 0.35, name: '萧隆库方', role: 'merchant', dialogue: [
         { speaker: '萧隆库方', text: '黑腔深部的装备——用破面的灵压锻造。比白砂原的强多了。', choices: [{ text: '交易', callback: 'openShop' }] },

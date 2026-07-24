@@ -106,7 +106,6 @@ export class BootScene extends Phaser.Scene {
       [0x558844, 'tile_grass'],
       [0x445533, 'tile_grass_dark'],
       [0x776655, 'tile_path'],
-      [0x887766, 'tile_road'],
       [0x555566, 'tile_wall'],
       [0x4488aa, 'tile_water'],
     ];
@@ -134,27 +133,8 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture('tile_ground', 64, 64);
     g.clear();
 
-    // 采集点占位 (24x24)
-    g.fillStyle(0x66aa66, 1);
-    g.fillCircle(12, 12, 10);
-    g.fillStyle(0x88cc88, 0.6);
-    g.fillCircle(12, 12, 6);
-    g.generateTexture('gather', 24, 24);
-    g.clear();
-
-    // 场景拼接占位装饰（真实美术未覆盖时演示 props 系统用）
-    // 树：树干 + 双层树冠
-    g.fillStyle(0x5b3a1e, 1); g.fillRect(28, 50, 8, 18);
-    g.fillStyle(0x2e7d32, 1); g.fillCircle(32, 38, 22);
-    g.fillStyle(0x43a047, 0.7); g.fillCircle(24, 32, 13);
-    g.generateTexture('deco_tree', 64, 72);
-    g.clear();
-    // 岩石：阴影 + 两层岩面
-    g.fillStyle(0x000000, 0.25); g.fillEllipse(34, 56, 56, 16);
-    g.fillStyle(0x8a8a92, 1); g.fillEllipse(32, 44, 52, 34);
-    g.fillStyle(0xa9a9b2, 1); g.fillEllipse(26, 38, 28, 18);
-    g.generateTexture('deco_rock', 64, 64);
-    g.clear();
+    // 注：采集点(gather_*) 现已由 assetManifest 加载真实美术，
+    // 不再在此生成程序化占位，避免覆盖真图。
 
     // 元素图标 (28x28)
     // 火 - 火焰

@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone14: ZoneConfig = {
     id: 14, name: 'XCUTION基地',
-    groundColor: 0x445588, roadColor: 0x6677aa, treeColor: 0x335577,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 150, h: 110 },
-      { type: 'house', x: 0.6, y: 0.55, w: 130, h: 95 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 85, h: 60 },
-    ],
+    backgroundImage: 'bg_zone_14',
+    backgroundMode: 'cover',
+    groundColor: 0x445588,
     npcs: [
       { x: 0.45, y: 0.35, name: '银城空吾', role: 'merchant', dialogue: [
         { speaker: '银城空吾', text: 'XCUTION基地的装备——完现术强化的最高水平。', choices: [{ text: '交易', callback: 'openShop' }] },

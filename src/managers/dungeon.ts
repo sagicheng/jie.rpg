@@ -89,9 +89,6 @@ export interface DungeonStageVisual {
   title: string;
   subtitle: string;
   groundColor: number;
-  roadColor: number;
-  treeColor: number;
-  decorations: any[];
 }
 
 const STAGE_LABELS = ['',
@@ -104,7 +101,7 @@ const STAGE_DESCS = [
 ];
 
 /**
- * 副本地图每层的视觉配置。复用对应区域的地面/道路/树木配色与装饰，
+ * 副本地图每层的视觉配置。复用对应区域的地面配色，
  * 仅叠加层标题与层描述，保持与原地图风格一致。
  */
 export function getDungeonStageVisual(dungeonId: number, stage: number): DungeonStageVisual {
@@ -113,8 +110,5 @@ export function getDungeonStageVisual(dungeonId: number, stage: number): Dungeon
     title: `副本 ${dungeonId} · ${zone.name} — ${STAGE_LABELS[stage] || ''}`,
     subtitle: STAGE_DESCS[stage] || '',
     groundColor: zone.groundColor,
-    roadColor: zone.roadColor,
-    treeColor: zone.treeColor,
-    decorations: zone.decorations || [],
   };
 }

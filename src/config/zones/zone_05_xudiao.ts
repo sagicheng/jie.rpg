@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone05: ZoneConfig = {
     id: 5, name: '戌吊',
-    groundColor: 0x665555, roadColor: 0x887766, treeColor: 0x443333,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 130, h: 95 },
-      { type: 'house', x: 0.6, y: 0.55, w: 120, h: 85 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 85, h: 60 },
-    ],
+    backgroundImage: 'bg_zone_05',
+    backgroundMode: 'cover',
+    groundColor: 0x665555,
     npcs: [
       { x: 0.45, y: 0.35, name: '志波岩鹫', role: 'merchant', dialogue: [
         { speaker: '志波岩鹫', text: '姐姐让我看店。戌吊的装备比润林安还强一点，别小看！', choices: [{ text: '交易', callback: 'openShop' }] },

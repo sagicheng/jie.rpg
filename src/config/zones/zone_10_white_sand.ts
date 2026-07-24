@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone10: ZoneConfig = {
     id: 10, name: '白砂原',
-    groundColor: 0x888899, roadColor: 0xaaaabb, treeColor: 0x666677,
-    decorations: [
-      { type: 'pond', x: 0.3, y: 0.3, w: 180, h: 120 },
-      { type: 'pond', x: 0.6, y: 0.5, w: 160, h: 110 },
-      { type: 'house', x: 0.15, y: 0.65, w: 100, h: 70 },
-    ],
+    backgroundImage: 'bg_zone_10',
+    backgroundMode: 'cover',
+    groundColor: 0x888899,
     npcs: [
       { x: 0.4, y: 0.3, name: '妮露', role: 'merchant', dialogue: [
         { speaker: '妮露', text: '虚圈的装备很特别！都是用虚壳做的！', choices: [{ text: '交易', callback: 'openShop' }] },

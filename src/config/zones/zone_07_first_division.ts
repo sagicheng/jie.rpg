@@ -3,13 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone07: ZoneConfig = {
     id: 7, name: '一番队舍',
-    groundColor: 0x888877, roadColor: 0xaaa999, treeColor: 0x555544,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.3, w: 200, h: 150 },
-      { type: 'house', x: 0.6, y: 0.5, w: 180, h: 130 },
-      { type: 'house', x: 0.15, y: 0.6, w: 160, h: 120 },
-      { type: 'pond', x: 0.5, y: 0.15, w: 100, h: 80 },
-    ],
+    backgroundImage: 'bg_zone_07',
+    backgroundMode: 'cover',
+    groundColor: 0x888877,
     npcs: [
       { x: 0.7, y: 0.5, name: '朽木白哉', role: 'merchant', dialogue: [
         { speaker: '朽木白哉', text: '朽木家的装备都是精工打造。不便宜，但值得。', choices: [{ text: '交易', callback: 'openShop' }] },

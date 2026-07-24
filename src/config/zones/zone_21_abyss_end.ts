@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone21: ZoneConfig = {
     id: 21, name: '终焉之渊',
-    groundColor: 0x1a0a10, roadColor: 0x331520, treeColor: 0x0a0508,
-    decorations: [
-      { type: 'pond', x: 0.3, y: 0.3, w: 180, h: 130 },
-      { type: 'house', x: 0.6, y: 0.55, w: 150, h: 110 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 100, h: 80 },
-    ],
+    backgroundImage: 'bg_zone_21',
+    backgroundMode: 'cover',
+    groundColor: 0x1a0a10,
     npcs: [
       { x: 0.45, y: 0.35, name: '终焉看守', role: 'merchant', dialogue: [
         { speaker: '终焉看守', text: '终焉之渊——所有灵魂的终点。这里的装备是地狱最高级的。', choices: [{ text: '交易', callback: 'openShop' }] },

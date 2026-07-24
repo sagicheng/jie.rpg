@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone16: ZoneConfig = {
     id: 16, name: '影之领域',
-    groundColor: 0x334455, roadColor: 0x556677, treeColor: 0x223344,
-    decorations: [
-      { type: 'house', x: 0.25, y: 0.35, w: 170, h: 120 },
-      { type: 'house', x: 0.55, y: 0.55, w: 150, h: 110 },
-      { type: 'pond', x: 0.45, y: 0.15, w: 85, h: 60 },
-    ],
+    backgroundImage: 'bg_zone_16',
+    backgroundMode: 'cover',
+    groundColor: 0x334455,
     npcs: [
       { x: 0.45, y: 0.3, name: '哈斯沃德', role: 'merchant', dialogue: [
         { speaker: '哈斯沃德', text: '无形帝国的装备，以灭却师之力锻造。', choices: [{ text: '交易', callback: 'openShop' }] },

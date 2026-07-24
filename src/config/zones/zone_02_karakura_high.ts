@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone02: ZoneConfig = {
     id: 2, name: '空座高校',
-    groundColor: 0x445577, roadColor: 0x667799, treeColor: 0x334466,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 160, h: 110 },
-      { type: 'house', x: 0.6, y: 0.55, w: 140, h: 100 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 80, h: 60 },
-    ],
+    backgroundImage: 'bg_zone_02',
+    backgroundMode: 'cover',
+    groundColor: 0x445577,
     npcs: [
       { x: 0.45, y: 0.35, name: '浅野启吾', role: 'merchant', dialogue: [
         { speaker: '浅野启吾', text: '嘿嘿，我从浦原大叔那里进了些货。虽然不太会用，但装备还是靠谱的！', choices: [{ text: '交易', callback: 'openShop' }] },

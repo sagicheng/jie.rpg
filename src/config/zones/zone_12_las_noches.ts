@@ -3,12 +3,9 @@ import type { ZoneConfig } from './types';
 import { shop } from './shop';
   export const zone12: ZoneConfig = {
     id: 12, name: '虚夜宫',
-    groundColor: 0x666677, roadColor: 0x888899, treeColor: 0x444455,
-    decorations: [
-      { type: 'house', x: 0.3, y: 0.35, w: 200, h: 150 },
-      { type: 'house', x: 0.6, y: 0.55, w: 180, h: 130 },
-      { type: 'pond', x: 0.45, y: 0.2, w: 100, h: 80 },
-    ],
+    backgroundImage: 'bg_zone_12',
+    backgroundMode: 'cover',
+    groundColor: 0x666677,
     npcs: [
       { x: 0.45, y: 0.35, name: '赫丽贝尔', role: 'merchant', dialogue: [
         { speaker: '赫丽贝尔', text: '虚夜宫的装备——顶级的破面锻造品。蓝染大人走后，这些都归我了。', choices: [{ text: '交易', callback: 'openShop' }] },
