@@ -127,13 +127,6 @@ export const ASSET_IMAGES: AssetImage[] = [
   { key: 'slot_charm',    path: 'assets/equip_slots/slot_charm.png' },    // 护符
   { key: 'slot_pendant',  path: 'assets/equip_slots/slot_pendant.png' },  // 挂饰
 
-  // 装备品质边框 (5种) — 64x64, 透明背景, 由「装备槽位与边框」提取
-  { key: 'border_white',  path: 'assets/equip_borders/border_white.png' },  // 白
-  { key: 'border_green',  path: 'assets/equip_borders/border_green.png' },  // 绿
-  { key: 'border_blue',   path: 'assets/equip_borders/border_blue.png' },   // 蓝
-  { key: 'border_purple', path: 'assets/equip_borders/border_purple.png' }, // 紫
-  { key: 'border_gold',   path: 'assets/equip_borders/border_gold.png' },   // 金
-
 
   // 采集点 (world) — 64x64, 透明背景, 由「场景装饰与采集点」表生成
   { key: 'gather_矿脉', path: 'assets/world/gather_矿脉.png' }, // 矿脉
