@@ -68,6 +68,12 @@ export function closeStatPanel(scene: GameScene): void {
   if (scene.statPanel) {
     const h = (scene as any)._statPanelUpdate;
     if (h) { scene.scene.get('UIScene').events.off('updateStats', h); (scene as any)._statPanelUpdate = null; }
+    // 清理立绘动效：解绑 pointermove + 停止 tween，避免泄漏
+    const pm = (scene as any)._statPanelPointerMove;
+    if (pm) { scene.input.off('pointermove', pm); (scene as any)._statPanelPointerMove = null; }
+    const tw = (scene as any)._statPanelTweens;
+    if (Array.isArray(tw)) tw.forEach((t: Phaser.Tweens.Tween) => t.stop());
+    (scene as any)._statPanelTweens = null;
     scene.statPanel.destroy(true); scene.statPanel = null; scene.resumeFromMenu();
   }
 }
@@ -240,78 +246,117 @@ export function renderStatPanel(scene: GameScene): void {
       p.add(abtn);
     }
 
-    // ═══ Right column: Equipment grid ═══
+    // ═══ Right column: 斩魄刀立绘(左半) + 装备格(右半) ═══
+    const spTweens: Phaser.Tweens.Tween[] = ((scene as any)._statPanelTweens = []);
+    const portraitW = 260;                 // 竖向立绘框宽度（窄长条）
+    const bandY = hdrY + 32, bandH = 460;  // 竖向高度
+    const frameX = rx, frameY = bandY, frameW = portraitW, frameH = bandH;
+    const gridX = rx + portraitW + 12;
     p.add(scene.add.text(rx, hdrY, '装备栏', { fontSize: '18px', color: '#aaccdd', fontStyle: 'bold', padding: { y: 3 } }));
-    p.add(scene.add.text(rx + 80, hdrY + 4, '（查看用·卸下请开背包 B）', { fontSize: '11px', color: '#556688', padding: { y: 1 } }));
+    p.add(scene.add.text(rx + 80, hdrY + 4, '（立绘左 · 装备格右）', { fontSize: '11px', color: '#556688', padding: { y: 1 } }));
+
+    // ── 立绘框（竖向悬挂式：纯斩魄刀立绘，不带任何元素属性）──
+    const frameBg = scene.add.graphics();
+    frameBg.fillStyle(0x0d0d1d, 0.7); frameBg.fillRoundedRect(frameX, frameY, frameW, frameH, 10);
+    frameBg.lineStyle(1.5, 0xe8d5a3, 0.5); frameBg.strokeRoundedRect(frameX, frameY, frameW, frameH, 10); p.add(frameBg);
+
+    // 视差外层 / 呼吸内层（嵌套容器，互不干扰）
+    const parallaxBox = scene.add.container(frameX + frameW / 2, frameY + frameH / 2); p.add(parallaxBox);
+    const illoBox = scene.add.container(0, 0); parallaxBox.add(illoBox);
+
+    const zkName = GameState.zanpakuto;
+    const isBankai = GameState.hasBankai, isShikai = GameState.hasShikai;
+    let artKey: string | null = null;
+    if (zkName) {
+      if (isBankai && scene.textures.exists(`zan_${zkName}_bankai`)) artKey = `zan_${zkName}_bankai`;
+      else if (scene.textures.exists(`zan_${zkName}_shikai`)) artKey = `zan_${zkName}_shikai`;
+    }
+    let illoImg: Phaser.GameObjects.Image | null = null;
+    if (artKey) {
+      illoImg = scene.add.image(0, 0, artKey).setOrigin(0.5);
+      const src = scene.textures.get(artKey).getSourceImage() as { width: number; height: number };
+      // 竖向框：以高度为主适配，保留刀竖直悬挂（刀柄在上、刀身在下的原始比例）
+      const sc = Math.min((frameW - 24) / src.width, (frameH - 36) / src.height, 1.4);
+      illoImg.setScale(sc);
+      illoBox.add(illoImg);
+    } else {
+      // 无立绘：中立占位文字（不显示元素图标，避免元素属性混入立绘区）
+      illoBox.add(scene.add.text(0, 0, zkName ? (isShikai ? '始解立绘待导入' : '立绘待导入') : '— 未觉醒 —',
+        { fontSize: '13px', color: '#6677aa', align: 'center', padding: { y: 2 } }).setOrigin(0.5));
+    }
+
+    // 铭牌（仅刀名 + 始解/卍解状态，不含元素）
+    p.add(scene.add.text(frameX + frameW / 2, frameY + frameH - 14,
+      zkName ? `${zkName}  始解${isShikai ? '✓' : '✗'} 卍解${isBankai ? '✓' : '✗'}`
+             : '尚无斩魄刀',
+      { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }).setOrigin(0.5));
+
+    // ── 动效（T1 呼吸 + T4 视差 + T5 状态联动；已移除元素底光 T2'）──
+    const amp = !zkName ? 0 : isBankai ? 9 : isShikai ? 7 : 4;
+    const dur = isBankai ? 3000 : isShikai ? 3400 : 4500;
+    if (illoBox && amp > 0) {
+      spTweens.push(scene.tweens.add({ targets: illoBox, y: -amp, duration: dur, yoyo: true, repeat: -1, ease: 'Sine.inOut' }));
+      spTweens.push(scene.tweens.add({ targets: illoBox, scaleY: 1.03, duration: dur * 0.9, yoyo: true, repeat: -1, ease: 'Sine.inOut' }));
+    }
+    if (isBankai && illoImg) {
+      spTweens.push(scene.tweens.add({ targets: illoImg, angle: 1.2, duration: 6000, yoyo: true, repeat: -1, ease: 'Sine.inOut' }));
+    }
+    // T4 鼠标视差
+    const cxS = frameX + frameW / 2, cyS = frameY + frameH / 2;
+    const onPointerMove = (pointer: Phaser.Input.Pointer) => {
+      if (!parallaxBox.active) return;
+      const dx = (pointer.x - cxS) / (GAME_WIDTH / 2), dy = (pointer.y - cyS) / (GAME_HEIGHT / 2);
+      const ax = isBankai ? 16 : 12, ay = isBankai ? 10 : 7;
+      scene.tweens.killTweensOf(parallaxBox);
+      scene.tweens.add({ targets: parallaxBox, x: cxS + dx * ax, y: cyS + dy * ay, duration: 300, ease: 'Sine.out' });
+    };
+    scene.input.on('pointermove', onPointerMove);
+    (scene as any)._statPanelPointerMove = onPointerMove;
+
+    // ── 装备格（立绘右侧，3×3 小格）──
     const eq = Inventory.equipment;
     const sn: Record<string, string> = { weapon: '斩魄刀', head: '头部', body: '身体', bracer: '手甲', boots: '战靴', belt: '腰带', ring: '戒指', necklace: '项链', charm: '护符', pendant: '挂饰' };
     const eqs: EquipSlot[] = ['head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
-    const eqY = hdrY + 36;
-    const eqColW = (colW - 10) / 2;
-    const eqRowH = 76;
-    // 斩魄刀（固定头部，独立于装备槽渲染）
-    {
-      const zkW = 2 * eqColW + 10, zkH = 66;
-      const zer = scene.add.graphics(); zer.fillStyle(0x0d0d1d, 0.6); zer.fillRoundedRect(rx, eqY, zkW, zkH, 6);
-      zer.lineStyle(1, 0x334466, 0.4); zer.strokeRoundedRect(rx, eqY, zkW, zkH, 6); p.add(zer);
-      p.add(scene.add.text(rx + 10, eqY + 6, '斩魄刀', { fontSize: '11px', color: '#667799', fontStyle: 'bold', padding: { y: 1 } }));
-      const zk = GameState.zanpakuto;
-      if (zk) {
-        p.add(scene.add.text(rx + 10, eqY + 24, zk, { fontSize: '13px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 1 } }));
-        const zkElKey = GameState.element ? `icon_${GameState.element}` : null;
-        if (zkElKey && scene.textures.exists(zkElKey)) {
-          p.add(scene.add.image(rx + zkW - 22, eqY + 33, zkElKey).setOrigin(0.5).setDisplaySize(34, 34));
-        }
-        p.add(scene.add.text(rx + 10, eqY + 46, `元素: ${GameState.element || '无'}  (始解${GameState.hasShikai ? '✓' : '✗'})`, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
-      } else {
-        p.add(scene.add.text(rx + 10, eqY + 28, '— 未觉醒 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
-      }
-    }
-    const ICON = 58;   // 槽位 PNG 显示尺寸（以 PNG 形状为主）
+    const gCols = 3, gGap = 8, gCellW = (colW - portraitW - 12 - gGap * (gCols - 1)) / gCols, gCellH = 82;
+    const QC: Record<string, string> = { white: '#cccccc', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
     eqs.forEach((s, i) => {
-      const c2 = i % 2, r2 = Math.floor(i / 2);
-      const sx = rx + c2 * (eqColW + 10), sy = eqY + eqRowH + r2 * eqRowH;
+      const c = i % gCols, r = Math.floor(i / gCols);
+      const sx = gridX + c * (gCellW + gGap), sy = bandY + r * (gCellH + gGap);
       const it = eq[s];
       const q = it?.quality || 'white';
-      // 品质色（代码描边，不使用 PNG 边框——沿用旧版观感，用户偏好代码实现）
-      const QC: Record<string, string> = { white: '#cccccc', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
       const qCol = parseInt((QC[q] || '#cccccc').replace('#', ''), 16);
-      // 背板 + 品质描边（代码实现）
-      const er = scene.add.graphics(); er.fillStyle(0x0d0d1d, 0.6); er.fillRoundedRect(sx, sy, eqColW, 66, 6);
-      er.lineStyle(it ? 2 : 1, it ? qCol : 0x334466, it ? 0.95 : 0.4); er.strokeRoundedRect(sx, sy, eqColW, 66, 6); p.add(er);
-      if (it) addEnhanceGlow(scene, p, er, sx, sy, eqColW, 66, it, 6);
-      // 槽位 PNG（以图片形状为主，铺在左侧）
+      const er = scene.add.graphics(); er.fillStyle(0x0d0d1d, 0.6); er.fillRoundedRect(sx, sy, gCellW, gCellH, 6);
+      er.lineStyle(it ? 2 : 1, it ? qCol : 0x334466, it ? 0.95 : 0.4); er.strokeRoundedRect(sx, sy, gCellW, gCellH, 6); p.add(er);
+      if (it) addEnhanceGlow(scene, p, er, sx, sy, gCellW, gCellH, it, 6);
       const slotKey = `slot_${s}`;
-      const cx = sx + ICON / 2 + 4, cyc = sy + 33;
+      const ic = Math.min(gCellW, gCellH) - 30;
+      const iconY = sy + 30;
       if (scene.textures.exists(slotKey)) {
-        p.add(scene.add.image(cx, cyc, slotKey).setOrigin(0.5).setDisplaySize(ICON, ICON));
+        p.add(scene.add.image(sx + gCellW / 2, iconY, slotKey).setOrigin(0.5).setDisplaySize(ic, ic).setAlpha(it ? 1 : 0.5));
       }
-      // 文本信息（整体右移给槽位图标让位）
-      const tx = sx + ICON + 12;
-      p.add(scene.add.text(tx, sy + 6, sn[s], { fontSize: '11px', color: '#667799', fontStyle: 'bold', padding: { y: 1 } }));
+      // 左上角：槽位名小标签（不占用主视觉区）
+      p.add(scene.add.text(sx + 6, sy + 5, sn[s], { fontSize: '9px', color: '#556688', padding: { y: 1 } }));
+
+      // 下层居中：装备名（含强化等级，按品质染色）
+      const nmY = sy + gCellH - 13;
       if (it) {
-        const elv = it.enhanceLevel || 0; const lvTxt = elv > 0 ? ` +${elv}` : '';
-        const itemTxt = scene.add.text(tx, sy + 24, `${it.name}${lvTxt}`, {
-          fontSize: '13px', color: QC[q] || '#cccccc', fontStyle: 'bold', padding: { y: 1 }
-        });
-        // Truncate long names
-        if (itemTxt.width > eqColW - (ICON + 16)) { itemTxt.setText(it.name.slice(0, 8) + '…' + lvTxt); }
-        p.add(itemTxt);
-        const sts = Object.entries(it.stats as Record<string, number>).map(([k, v]) => `${k}+${v}`).join('  ');
-        p.add(scene.add.text(tx, sy + 46, sts, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
-        const refineStr = getRefineDisplay(it);
-        if (refineStr) p.add(scene.add.text(tx, sy + 58, `精炼: ${refineStr}`, { fontSize: '9px', color: '#F5A623', padding: { y: 1 } }));
-        // 属性面板(C)仅查看装备，不允许点击卸下（卸下请在背包(B)面板操作）
+        const lvTxt = (it.enhanceLevel || 0) > 0 ? ` +${it.enhanceLevel}` : '';
+        const nm = scene.add.text(sx + gCellW / 2, nmY, `${it.name}${lvTxt}`,
+          { fontSize: '10px', color: QC[q] || '#cccccc', fontStyle: 'bold', align: 'center', padding: { y: 1 } }).setOrigin(0.5, 0.5);
+        if (nm.width > gCellW - 8) nm.setText(it.name.slice(0, 5) + '…' + lvTxt);
+        p.add(nm);
       } else {
-        p.add(scene.add.text(sx + ICON + 12, sy + 30, '— 空 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));
+        p.add(scene.add.text(sx + gCellW / 2, nmY, '空', { fontSize: '10px', color: '#334455' }).setOrigin(0.5, 0.5));
       }
     });
 
-    // ═══ Right column: Derived combat stats summary (below equipment) ═══
-    const sumY = eqY + 6 * eqRowH + 8;
-    if (sumY + 142 < oy + oh) {
-      const sumBg = scene.add.graphics(); sumBg.fillStyle(0x1a1a36, 0.5); sumBg.fillRoundedRect(rx, sumY, colW, 132, 6); sumBg.lineStyle(1, 0x334466, 0.3); sumBg.strokeRoundedRect(rx, sumY, colW, 132, 6); p.add(sumBg);
-      p.add(scene.add.text(rx + 16, sumY + 8, '战斗属性', { fontSize: '13px', color: '#aaccdd', fontStyle: 'bold', padding: { y: 1 } }));
+    // ═══ 战斗属性摘要（紧贴装备格下方，仅右侧区域） ═══
+    const gridBottom = bandY + 3 * (gCellH + gGap);   // 3行装备格底部
+    const sumY = gridBottom + 10;
+    const sumW = colW - portraitW - 12;                 // 仅装备格区域宽
+    if (sumY + 132 < oy + oh) {
+      const sumBg = scene.add.graphics(); sumBg.fillStyle(0x1a1a36, 0.5); sumBg.fillRoundedRect(gridX, sumY, sumW, 132, 6); sumBg.lineStyle(1, 0x334466, 0.3); sumBg.strokeRoundedRect(gridX, sumY, sumW, 132, 6); p.add(sumBg);
+      p.add(scene.add.text(gridX + 16, sumY + 8, '战斗属性', { fontSize: '13px', color: '#aaccdd', fontStyle: 'bold', padding: { y: 1 } }));
       const ds = [
         `生命: ${GameState.maxHp}`, `法力: ${GameState.maxMp}`,
         `物攻: ${GameState.atk}`, `物防: ${GameState.def}`,
@@ -321,9 +366,10 @@ export function renderStatPanel(scene: GameScene): void {
       ];
       ds.forEach((line, i) => {
         const c2 = i % 2, r2 = Math.floor(i / 2);
-        p.add(scene.add.text(rx + 16 + c2 * (colW / 2 - 10), sumY + 32 + r2 * 22, line, { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }));
+        p.add(scene.add.text(gridX + 16 + c2 * (sumW / 2 - 10), sumY + 32 + r2 * 22, line, { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }));
       });
     }
+    // 底部预留区域留给以后扩展内容
 
     // Footer
     const fy = oy + oh - 28; const ft = scene.add.graphics(); ft.fillStyle(0x1a1a36, 0.8); ft.fillRoundedRect(ox + 4, fy, ow - 8, 24, { tl: 0, tr: 0, bl: 10, br: 10 }); p.add(ft);
