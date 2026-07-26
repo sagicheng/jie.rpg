@@ -64,6 +64,7 @@ export function showElementSelection(scene: GameScene): void {
     const elements = ['\u706b', '\u98ce', '\u6c34', '\u571f'];
     const colors: Record<string, string> = { '\u706b': '#ff6644', '\u98ce': '#44cc88', '\u6c34': '#4488ff', '\u571f': '#cc9944' };
     const desc: Record<string, string> = { '\u706b': '\u5f3a\u653b\u578b\uff0cATK+10%', '\u98ce': '\u654f\u6377\u578b\uff0cSPD+10%', '\u6c34': '\u5747\u8861\u578b\uff0cHP+5% MP+5%', '\u571f': '\u9632\u5fa1\u578b\uff0cDEF+10%' };
+    const iconKey: Record<string, string> = { '\u706b': 'icon_\u706b', '\u98ce': 'icon_\u98ce', '\u6c34': 'icon_\u6c34', '\u571f': 'icon_\u571f' };
     const panel = scene.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30).setDepth(400).setScrollFactor(0);
     const bg = scene.add.graphics();
     bg.fillStyle(0x1a1a2e, 0.95); bg.fillRoundedRect(-250, -100, 500, 200, 10);
@@ -76,8 +77,10 @@ export function showElementSelection(scene: GameScene): void {
       card.fillStyle(parseInt(colors[el].replace('#', ''), 16), 0.2); card.fillRoundedRect(ex - 45, -25, 90, 80, 6);
       card.lineStyle(2, parseInt(colors[el].replace('#', ''), 16), 0.6); card.strokeRoundedRect(ex - 45, -25, 90, 80, 6);
       panel.add(card);
-      panel.add(scene.add.text(ex, -15, el, { fontSize: '22px', color: colors[el], fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5));
-      panel.add(scene.add.text(ex, 10, desc[el], { fontSize: '9px', color: '#aaaacc', wordWrap: { width: 80 }, padding: { y: 1 } }).setOrigin(0.5));
+      const icon = scene.add.image(ex, -4, iconKey[el]).setDisplaySize(40, 40).setOrigin(0.5);
+      panel.add(icon);
+      panel.add(scene.add.text(ex, 22, el, { fontSize: '12px', color: colors[el], fontStyle: 'bold', padding: { y: 1 } }).setOrigin(0.5));
+      panel.add(scene.add.text(ex, 38, desc[el], { fontSize: '9px', color: '#aaaacc', wordWrap: { width: 84 }, padding: { y: 1 } }).setOrigin(0.5));
       card.setInteractive(new Phaser.Geom.Rectangle(ex - 45, -25, 90, 80), Phaser.Geom.Rectangle.Contains);
       card.on('pointerover', () => { card.clear(); card.fillStyle(parseInt(colors[el].replace('#', ''), 16), 0.4); card.fillRoundedRect(ex - 45, -25, 90, 80, 6); card.lineStyle(2, parseInt(colors[el].replace('#', ''), 16), 0.9); card.strokeRoundedRect(ex - 45, -25, 90, 80, 6); });
       card.on('pointerout', () => { card.clear(); card.fillStyle(parseInt(colors[el].replace('#', ''), 16), 0.2); card.fillRoundedRect(ex - 45, -25, 90, 80, 6); card.lineStyle(2, parseInt(colors[el].replace('#', ''), 16), 0.6); card.strokeRoundedRect(ex - 45, -25, 90, 80, 6); });

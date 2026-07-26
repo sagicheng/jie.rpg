@@ -100,7 +100,13 @@ export function renderStatPanel(scene: GameScene): void {
     // Player info banner
     const infoBg = scene.add.graphics(); infoBg.fillStyle(0x1a1a36, 0.6); infoBg.fillRoundedRect(lx, hdrY, colW, 58, 6); infoBg.lineStyle(1, 0x334466, 0.4); infoBg.strokeRoundedRect(lx, hdrY, colW, 58, 6); p.add(infoBg);
     p.add(scene.add.text(lx + 16, hdrY + 8, `${GameState.playerName}   Lv.${GameState.level}`, { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 2 } }));
-    p.add(scene.add.text(lx + 16, hdrY + 32, `金币: ${GameState.gold}    元素: ${GameState.element || '无'}    斩魄刀: ${GameState.zanpakuto || '无'}`, { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }));
+    p.add(scene.add.text(lx + 16, hdrY + 32, `金币: ${GameState.gold}    斩魄刀: ${GameState.zanpakuto || '无'}`, { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }));
+    // 当前元素共鸣图标（独立美术，替代原程序化占位）
+    const elIconKey = GameState.element ? `icon_${GameState.element}` : null;
+    if (elIconKey && scene.textures.exists(elIconKey)) {
+      const ei = scene.add.image(lx + colW - 26, hdrY + 29, elIconKey).setOrigin(0.5).setDisplaySize(44, 44);
+      p.add(ei);
+    }
 
     // Six power system unlock status
     const unlockY = hdrY + 72;
@@ -252,6 +258,10 @@ export function renderStatPanel(scene: GameScene): void {
       const zk = GameState.zanpakuto;
       if (zk) {
         p.add(scene.add.text(rx + 10, eqY + 24, zk, { fontSize: '13px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 1 } }));
+        const zkElKey = GameState.element ? `icon_${GameState.element}` : null;
+        if (zkElKey && scene.textures.exists(zkElKey)) {
+          p.add(scene.add.image(rx + zkW - 22, eqY + 33, zkElKey).setOrigin(0.5).setDisplaySize(34, 34));
+        }
         p.add(scene.add.text(rx + 10, eqY + 46, `元素: ${GameState.element || '无'}  (始解${GameState.hasShikai ? '✓' : '✗'})`, { fontSize: '10px', color: '#8899bb', padding: { y: 1 } }));
       } else {
         p.add(scene.add.text(rx + 10, eqY + 28, '— 未觉醒 —', { fontSize: '13px', color: '#334455', padding: { y: 1 } }));

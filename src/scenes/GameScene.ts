@@ -1555,6 +1555,8 @@ export class GameScene extends Phaser.Scene {
   /** 意图回执提示（服务端权威操作结果）。 */
   private onIntentResult(res: any): void {
     if (!res) return;
+    // 静默服务端无意义的填充确认（'ok'）：切鬼道tab、加节点等操作已有面板/UI 实时反馈，无需弹「OK」刷屏
+    if (res.ok && (res.msg === 'ok' || res.msg === 'OK' || res.msg === 'Ok' || res.msg === 'OK.')) return;
     this.showWorldNotif(res.msg || (res.ok ? '操作成功' : '操作失败'), !!res.ok);
   }
 

@@ -93,23 +93,37 @@ export function showKidoPanel(scene: GameScene): void {
     p.add(scene.add.text(GAME_WIDTH / 2, oy + th + 16, `\u53ef\u7528\u9b3c\u9053\u70b9: ${avail}  |  \u5df2\u6295\u5165: ${totalSpent}  |  \u5f53\u524d: ${schools.find(s => s.id === activeTab)?.name || ''}`, {
       fontSize: '14px', color: '#ffcc44', fontStyle: 'bold', padding: { y: 2 }, backgroundColor: '#121222' }).setOrigin(0.5));
 
-    // Tab buttons
+    // Tab buttons — 带独立美术TAB图标
     const tabY = oy + th + 44;
+    const tabIconKeys: Record<KidoSchool, string> = { hado: 'kido_tab_hado', bakudo: 'kido_tab_bakudo', kaido: 'kido_tab_kaido' };
     schools.forEach((s, i) => {
       const isA = s.id === activeTab; const tx = ox + 30 + i * 140;
+      const tabW = 130, tabH = 34;
+      const colN = parseInt(s.color.replace('#', ''), 16);
       const tb2 = scene.add.graphics();
-      tb2.fillStyle(isA ? 0x2a1a0a : 0x111122, 0.8); tb2.fillRoundedRect(tx, tabY, 130, 34, 6);
-      tb2.lineStyle(1, isA ? parseInt(s.color.replace('#', ''), 16) : 0x334466, isA ? 0.8 : 0.4);
-      tb2.strokeRoundedRect(tx, tabY, 130, 34, 6); p.add(tb2);
-      const t = scene.add.text(tx + 65, tabY + 17, s.name, {
+      tb2.fillStyle(isA ? 0x2a1a0a : 0x111122, 0.8); tb2.fillRoundedRect(tx, tabY, tabW, tabH, 6);
+      tb2.lineStyle(1, isA ? colN : 0x334466, isA ? 0.8 : 0.4);
+      tb2.strokeRoundedRect(tx, tabY, tabW, tabH, 6); p.add(tb2);
+      // 悬停高亮层（非激活 tab 悬停时显示）
+      const hover = scene.add.graphics();
+      hover.fillStyle(colN, 0.18); hover.fillRoundedRect(tx, tabY, tabW, tabH, 6);
+      hover.setVisible(false); p.add(hover);
+      // TAB 图标（左侧小徽章）
+      const tIconKey = tabIconKeys[s.id];
+      if (scene.textures.exists(tIconKey)) {
+        p.add(scene.add.image(tx + 22, tabY + 17, tIconKey).setOrigin(0.5).setDisplaySize(26, 26));
+      }
+      const t = scene.add.text(tx + 72, tabY + 17, s.name, {
         fontSize: '15px', color: isA ? s.color : '#555566', fontStyle: 'bold', padding: { y: 2 }
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-      t.on('pointerover', () => { if (!isA) t.setColor('#888899'); });
-      t.on('pointerout', () => { if (!isA) t.setColor('#555566'); });
-      t.on('pointerdown', () => {
+      }).setOrigin(0.5); p.add(t);
+      // 整块 tab（图标+文字+背景）均为可点击热区
+      const hit = scene.add.zone(tx, tabY, tabW, tabH).setOrigin(0, 0).setInteractive({ useHandCursor: true });
+      hit.on('pointerover', () => { if (!isA) { hover.setVisible(true); t.setColor('#888899'); } });
+      hit.on('pointerout', () => { hover.setVisible(false); if (!isA) t.setColor('#555566'); });
+      hit.on('pointerdown', () => {
         if (s.id !== activeTab) { if (isOnline()) requestKidoSetSchool(s.id); Kido.school = s.id; closeKidoPanel(scene); showKidoPanel(scene); }
       });
-      p.add(t);
+      p.add(hit);
     });
 
     // Get nodes for active school, grouped by tier
@@ -123,6 +137,10 @@ export function showKidoPanel(scene: GameScene): void {
     const nodeAreaH = oh - (nodeAreaY - oy) - 50;
     const rowH = nodeAreaH / 5;
     const nR = 26;
+
+    // 节点图标 key 前缀（按系别）
+    const kidoIconPrefix: Record<KidoSchool, string> = { hado: 'kido_hado_node_', bakudo: 'kido_bakudo_node_', kaido: 'kido_kaido_node_' };
+    let nodeRenderIdx = 0; // 当前系内节点渲染序号(1-based)，用于映射 icon_01~icon_20
 
     tiers.forEach((tier, tierIdx) => {
       const tierNodes = sch.filter(n => n.tier === tier).sort((a, b) => (a.column || 0) - (b.column || 0));
@@ -147,6 +165,15 @@ export function showKidoPanel(scene: GameScene): void {
         const active = nodePts > 0;
         const canAdd = Kido.canAddPoint(n.id);
         const isMaxed = nodePts >= n.maxPoints;
+
+        // 节点图标（独立美术，按渲染序号映射 node_01~node_20）
+        nodeRenderIdx++;
+        const iconKey = `${kidoIconPrefix[activeTab]}${String(nodeRenderIdx).padStart(2,'0')}`;
+        if (scene.textures.exists(iconKey)) {
+          const nImg = scene.add.image(nx, ny, iconKey).setOrigin(0.5).setDisplaySize(50, 50);
+          nImg.setAlpha(active ? 1 : unlocked ? 0.55 : 0.25);
+          p.add(nImg);
+        }
 
         // Connection line to parent (previous tier, same column)
         if (tierIdx > 0) {

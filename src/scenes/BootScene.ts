@@ -135,59 +135,8 @@ export class BootScene extends Phaser.Scene {
 
     // 注：采集点(gather_*) 现已由 assetManifest 加载真实美术，
     // 不再在此生成程序化占位，避免覆盖真图。
-
-    // 元素图标 (28x28)
-    // 火 - 火焰
-    g.fillStyle(0xcc2200, 0.6);
-    g.fillRect(0, 0, 28, 28);
-    g.fillStyle(0xff2200, 1);
-    g.fillTriangle(14, 1, 1, 26, 10, 26);
-    g.fillStyle(0xff6622, 1);
-    g.fillTriangle(14, 6, 4, 26, 19, 26);
-    g.fillStyle(0xffaa44, 1);
-    g.fillTriangle(14, 14, 8, 26, 27, 26);
-    g.generateTexture('icon_fire', 28, 28);
-    g.clear();
-
-    // 风 - 旋风纹
-    g.fillStyle(0x004400, 0.6);
-    g.fillRect(0, 0, 28, 28);
-    g.lineStyle(2, 0x22cc44, 1);
-    g.beginPath(); g.arc(13, 13, 10, -2.5, 4.5, false); g.strokePath();
-    g.lineStyle(2, 0x44ee66, 1);
-    g.beginPath(); g.arc(13, 13, 7, -2.0, 3.5, false); g.strokePath();
-    g.lineStyle(1.5, 0x88ffaa, 0.7);
-    g.beginPath(); g.moveTo(13, 3); g.lineTo(15, 9); g.moveTo(23, 13); g.lineTo(17, 15); g.strokePath();
-    g.generateTexture('icon_wind', 28, 28);
-    g.clear();
-
-    // 水 - 水滴
-    g.fillStyle(0x000044, 0.6);
-    g.fillRect(0, 0, 28, 28);
-    g.fillStyle(0x0066cc, 1);
-    g.fillTriangle(14, 1, 1, 20, 14, 27);
-    g.fillTriangle(14, 1, 27, 20, 14, 27);
-    g.fillStyle(0x2288ee, 1);
-    g.fillTriangle(14, 6, 5, 20, 14, 27);
-    g.fillTriangle(14, 6, 23, 20, 14, 27);
-    g.fillStyle(0x66bbff, 0.5);
-    g.fillCircle(12, 16, 4);
-    g.generateTexture('icon_water', 28, 28);
-    g.clear();
-
-    // 土 - 山岩
-    g.fillStyle(0x443300, 0.6);
-    g.fillRect(0, 0, 28, 28);
-    g.fillStyle(0x886622, 1);
-    g.fillTriangle(14, 2, 1, 26, 9, 26);
-    g.fillStyle(0xbb9944, 1);
-    g.fillTriangle(11, 12, 27, 2, 27, 26);
-    g.fillStyle(0xddbb66, 0.6);
-    g.fillTriangle(14, 10, 6, 24, 18, 24);
-    g.lineStyle(1, 0x665522, 0.4);
-    g.lineBetween(10, 26, 14, 12); g.lineBetween(14, 12, 24, 10);
-    g.generateTexture('icon_earth', 28, 28);
-    g.clear();
+    // 注：元素共鸣图标(icon_火/风/水/土) 已由 assetManifest 加载独立美术，
+    // 原 28x28 程序化占位已移除，不在此生成。
 
     g.destroy();
   }

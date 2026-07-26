@@ -59,6 +59,12 @@ export const ASSET_IMAGES: AssetImage[] = [
   { key: 'icon_matkDown', path: 'assets/icons/icon_matkDown.png' }, // 降灵压
   { key: 'icon_seal',     path: 'assets/icons/icon_seal.png' },     // 封印
 
+  // 元素共鸣图标 (4种) — 火/风/水/土，透明背景，由独立美术产出替换原程序化占位
+  { key: 'icon_火', path: 'assets/icons/icon_火.png' },
+  { key: 'icon_风', path: 'assets/icons/icon_风.png' },
+  { key: 'icon_水', path: 'assets/icons/icon_水.png' },
+  { key: 'icon_土', path: 'assets/icons/icon_土.png' },
+
   // 材料图标 (23种) — 64x64, 透明背景, 由「材料图标」两张表提取
   { key: 'mat_完现结晶', path: 'assets/materials/mat_完现结晶.png' }, // 完现结晶
   { key: 'mat_灵银碎片', path: 'assets/materials/mat_灵银碎片.png' }, // 灵银碎片
@@ -137,4 +143,17 @@ export const ASSET_IMAGES: AssetImage[] = [
 
   // 副本传送阵入口 (world) — 128x128, 透明背景, 由「场景装饰与采集点」表生成
   { key: 'dungeon_portal_1', path: 'assets/world/dungeon_portal_1.png' },
+
+  // 鬼道 TAB 图标 (3系) — 大型圆形徽章，由独立美术产出
+  { key: 'kido_tab_hado',   path: 'assets/kido/tabs/tab_hado.png' },    // 破道TAB
+  { key: 'kido_tab_bakudo', path: 'assets/kido/tabs/tab_bakudo.png' },   // 缚道TAB
+  { key: 'kido_tab_kaido',  path: 'assets/kido/tabs/tab_kaido.png' },    // 回道TAB
+
+  // 鬼道节点图标 — 每系20个，按节点树顺序(T1C0→T5C3)映射 node_01~node_20
+  // 破道 (hado) — 20节点
+  ...Array.from({length: 20}, (_, i) => ({ key: `kido_hado_node_${String(i+1).padStart(2,'0')}`, path: `assets/kido/hado/node_${String(i+1).padStart(2,'0')}.png` })),
+  // 缚道 (bakudo) — 20节点
+  ...Array.from({length: 20}, (_, i) => ({ key: `kido_bakudo_node_${String(i+1).padStart(2,'0')}`, path: `assets/kido/bakudo/node_${String(i+1).padStart(2,'0')}.png` })),
+  // 回道 (kaido) — 20节点
+  ...Array.from({length: 20}, (_, i) => ({ key: `kido_kaido_node_${String(i+1).padStart(2,'0')}`, path: `assets/kido/kaido/node_${String(i+1).padStart(2,'0')}.png` })),
 ];
