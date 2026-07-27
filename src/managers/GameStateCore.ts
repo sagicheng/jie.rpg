@@ -8,6 +8,7 @@ import { Constructor } from '../core/types';
 export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
   return class GameStateCore extends Base {
     playerName = '隐世';
+    gender: 'male' | 'female' = 'male';
     zone = 1;
     discoveredZones: number[] = [1];
     // 公会（客户端缓存，进房后由 REST 拉取；实时聊天不依赖此）
@@ -41,6 +42,7 @@ export function GameStateCoreMixin<TBase extends Constructor>(Base: TBase) {
     /** 重置核心数据 */
     resetCore(): void {
       this.playerName = '';
+      this.gender = 'male';
       this.level = 1; this.exp = 0; this.statPoints = 0;
       this.gold = 0; this.x = 400; this.y = 500; this.zone = 1;
       this.hasCreated = false; this.newGame = true;

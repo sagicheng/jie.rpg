@@ -115,7 +115,8 @@ export function renderStatPanel(scene: GameScene): void {
     // ═══ Left column: Info block ═══
     // Player info banner
     const infoBg = scene.add.graphics(); infoBg.fillStyle(0x1a1a36, 0.6); infoBg.fillRoundedRect(lx, hdrY, colW, 58, 6); infoBg.lineStyle(1, 0x334466, 0.4); infoBg.strokeRoundedRect(lx, hdrY, colW, 58, 6); p.add(infoBg);
-    p.add(scene.add.text(lx + 16, hdrY + 8, `${GameState.playerName}   Lv.${GameState.level}`, { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 2 } }));
+    const gSym = GameState.gender === 'female' ? '♀' : '♂';
+    p.add(scene.add.text(lx + 16, hdrY + 8, `${GameState.playerName}  ${gSym}  Lv.${GameState.level}`, { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 2 } }));
     p.add(scene.add.text(lx + 16, hdrY + 32, `金币: ${GameState.gold}    斩魄刀: ${GameState.zanpakuto || '无'}`, { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }));
     // 当前元素共鸣图标（独立美术，替代原程序化占位）
     const elIconKey = GameState.element ? `icon_${GameState.element}` : null;
@@ -283,14 +284,16 @@ export function renderStatPanel(scene: GameScene): void {
     // ⚠️ 定位用「世界坐标 = 相机滚动 + 框屏幕中心」，不依赖 scrollFactor(0)：
     // 实测粒子确实继承 emitter 的 scrollFactor，但为彻底排除「相机滚动把世界坐标粒子推出屏幕外」这一变量，
     // 这里直接把发射器放在世界坐标的框中心（= cam.scroll + 屏中心），确保任何滚动下都落在立绘框内可见。
+    const showParticles = !!GameState.hasShikai;   // 仅「已激活始解」才在立绘区放粒子特效
     const prevEmitter = (scene as any)._statPanelEmitter as Phaser.GameObjects.Particles.ParticleEmitter | undefined;
-    if (prevEmitter && prevEmitter.scene) {
-      // 面板因 worldSync 刷新重建时：复用旧发射器（仅重新定位），绝不销毁 → 在飘粒子不会被「擦掉」再从头来
-      prevEmitter.setPosition(cam.scrollX + fcx, cam.scrollY + fcy);
-      prevEmitter.emitting = true;
-      (scene as any)._statPanelEmitter = prevEmitter;
-    } else {
-      const portraitEmitter = scene.add.particles(
+    if (showParticles) {
+      if (prevEmitter && prevEmitter.scene) {
+        // 面板因 worldSync 刷新重建时：复用旧发射器（仅重新定位），绝不销毁 → 在飘粒子不会被「擦掉」再从头来
+        prevEmitter.setPosition(cam.scrollX + fcx, cam.scrollY + fcy);
+        prevEmitter.emitting = true;
+        (scene as any)._statPanelEmitter = prevEmitter;
+      } else {
+        const portraitEmitter = scene.add.particles(
         cam.scrollX + fcx,
         cam.scrollY + fcy,
         texKey,
@@ -311,6 +314,11 @@ export function renderStatPanel(scene: GameScene): void {
       );
       portraitEmitter.setDepth(320);
       (scene as any)._statPanelEmitter = portraitEmitter;
+      }
+    } else {
+      // 未激活始解：立绘区不放粒子特效，清掉可能残留的发射器（避免关面板前一直飘）
+      if (prevEmitter && prevEmitter.scene) { prevEmitter.stop(); prevEmitter.destroy(); }
+      (scene as any)._statPanelEmitter = null;
     }
 
     // 视差外层 / 呼吸内层（嵌套容器，互不干扰）

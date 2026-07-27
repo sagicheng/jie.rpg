@@ -35,9 +35,10 @@ db.exec(`
     account_id    INTEGER NOT NULL REFERENCES accounts(id),
     name          TEXT NOT NULL,
     element       TEXT NOT NULL,
+    gender        TEXT NOT NULL DEFAULT 'male',
     world_data    TEXT NOT NULL DEFAULT '{}',
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(account_id, name)
+    UNIQUE(name)
   );
 
   CREATE TABLE IF NOT EXISTS guilds (
@@ -91,6 +92,7 @@ db.exec(`
 for (const [t, c, d] of [
   ['guilds', 'contribution', 'INTEGER NOT NULL DEFAULT 0'],
   ['guild_members', 'contribution', 'INTEGER NOT NULL DEFAULT 0'],
+  ['characters', 'gender', "TEXT NOT NULL DEFAULT 'male'"],
 ] as const) {
   const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((r: any) => (r as any).name);
   if (!cols.includes(c)) db.prepare(`ALTER TABLE ${t} ADD COLUMN ${c} ${d}`).run();
@@ -145,14 +147,18 @@ export interface CharacterRow {
   account_id: number;
   name: string;
   element: string;
+  gender: string;       // 'male' | 'female'
   world_data: string;  // JSON
   created_at: string;
 }
 
-/** 创建角色（同一账号下角色名不可重复）。 */
-export function createCharacter(accountId: number, name: string, element: string): CharacterRow {
-  const stmt = db.prepare('INSERT INTO characters (account_id, name, element) VALUES (?, ?, ?)');
-  const result = stmt.run(accountId, name, element);
+/** 创建角色（角色名全局唯一，跨账号不可重复）。 */
+export function createCharacter(accountId: number, name: string, element: string, gender: string = 'male'): CharacterRow {
+  const clean = String(name).trim();
+  if (getCharacterByName(clean)) throw new Error('该角色名已被其他玩家占用');
+  const g = gender === 'female' ? 'female' : 'male';
+  const stmt = db.prepare('INSERT INTO characters (account_id, name, element, gender) VALUES (?, ?, ?, ?)');
+  const result = stmt.run(accountId, clean, element, g);
   return db.prepare('SELECT * FROM characters WHERE id = ?').get(Number(result.lastInsertRowid)) as CharacterRow;
 }
 

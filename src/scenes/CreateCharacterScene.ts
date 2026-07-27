@@ -28,7 +28,9 @@ const ELEMENTS: Array<{ key: string; name: string; desc: string; color: number }
 export class CreateCharacterScene extends Phaser.Scene {
   private authToken = '';
   private playerName = '';
+  private playerGender: 'male' | 'female' = 'male';
   private domEls: HTMLElement[] = [];
+  private _genderChips: Array<{ key: 'male' | 'female'; bg: Phaser.GameObjects.Graphics; txt: Phaser.GameObjects.Text; w: number; h: number }> = [];
 
   constructor() {
     super({ key: 'CreateCharacterScene' });
@@ -37,6 +39,9 @@ export class CreateCharacterScene extends Phaser.Scene {
   create(data?: { authToken?: string }): void {
     this.domEls.forEach(e => { try { e.remove(); } catch (_) {} });
     this.domEls = [];
+    this.playerName = '';
+    this.playerGender = 'male';
+    this._genderChips = [];
     this.authToken = data?.authToken || '';
     this.drawBackground();
 
@@ -145,15 +150,32 @@ export class CreateCharacterScene extends Phaser.Scene {
       fontSize: '12px', color: '#FF4D6E',
     }).setOrigin(1, 0).setVisible(false);
 
+    // 性别选择（男 / 女）
+    this.buildGenderChips(fy + fh / 2 + 64);
+
     // 确认按钮（cyan 主色）
-    const btnY = fy + fh / 2 + 70;
-    this.drawButton(fx, btnY, '选择元素', true, () => {
+    const btnY = fy + fh / 2 + 120;
+    this.drawButton(fx, btnY, '选择元素', true, async () => {
       const name = inputEl.value.trim();
       if (!name) {
-        errText.setText('请输入角色名').setVisible(true);
+        errText.setText('请输入角色名').setVisible(true).setColor('#FF4D6E');
         inputEl.style.borderColor = '#FF4D6E';
         return;
       }
+      // 角色名全局查重：占用则留在命名页重输，不进元素选择
+      errText.setText('校验角色名…').setVisible(true).setColor('#1FD9C5');
+      const chk: any = await AuthClient.checkCharacterName(this.authToken, name);
+      if (!chk.ok) {
+        errText.setText(chk.msg || '校验失败，请重试').setVisible(true).setColor('#FF4D6E');
+        return;
+      }
+      if (!chk.available) {
+        errText.setText('该角色名已被占用，请重新输入').setVisible(true).setColor('#FF4D6E');
+        inputEl.style.borderColor = '#FF4D6E';
+        inputEl.focus();
+        return;
+      }
+      errText.setVisible(false);
       inputEl.parentNode?.removeChild(inputEl);
       this.children.removeAll(true);
       this.drawBackground();
@@ -276,7 +298,7 @@ export class CreateCharacterScene extends Phaser.Scene {
     });
     zone.on('pointerdown', async () => {
       statusText.setColor('#1FD9C5').setText('创建角色中…');
-      const res = await AuthClient.createCharacter(this.authToken, this.playerName, el.key);
+      const res = await AuthClient.createCharacter(this.authToken, this.playerName, el.key, this.playerGender);
       if (!res.ok) {
         statusText.setColor('#FF4D6E').setText(res.msg || '创建失败');
         return;
@@ -289,9 +311,66 @@ export class CreateCharacterScene extends Phaser.Scene {
           characterId: res.character.id,
           characterName: this.playerName,
           characterElement: el.key,
+          characterGender: this.playerGender,
         });
       });
     });
+  }
+
+  // ════════════════════════════════════════════════
+  //  性别选择（男 / 女 芯片）
+  // ════════════════════════════════════════════════
+
+  private buildGenderChips(centerY: number): void {
+    const fx = GAME_WIDTH / 2;
+    const chipW = 130, chipH = 46, gap = 24;
+    const leftX = fx - (chipW / 2 + gap / 2);
+    const rightX = fx + (chipW / 2 + gap / 2);
+
+    this.add.text(fx, centerY - chipH / 2 - 26, '性别', {
+      fontFamily: '"Noto Sans SC", sans-serif',
+      fontSize: '14px', fontStyle: '600', color: '#AEB4CC',
+    }).setOrigin(0.5);
+
+    const mk = (key: 'male' | 'female', label: string, cx: number) => {
+      const container = this.add.container(cx, centerY);
+      const bg = this.add.graphics();
+      const txt = this.add.text(0, 0, label, {
+        fontFamily: '"Noto Sans SC", sans-serif',
+        fontSize: '18px', fontStyle: '700', color: '#FFFFFF',
+      }).setOrigin(0.5);
+      container.add([bg, txt]);
+      const chip = { key, bg, txt, w: chipW, h: chipH };
+      this._genderChips.push(chip);
+      const zone = this.add.zone(cx, centerY, chipW, chipH).setInteractive({ useHandCursor: true });
+      zone.on('pointerdown', () => { this.selectGender(key); });
+      this.paintGenderChip(chip, key === this.playerGender);
+    };
+    mk('male', '♂ 男', leftX);
+    mk('female', '♀ 女', rightX);
+  }
+
+  private paintGenderChip(chip: { bg: Phaser.GameObjects.Graphics; txt: Phaser.GameObjects.Text; w: number; h: number }, selected: boolean): void {
+    const c = chip.bg;
+    c.clear();
+    if (selected) {
+      c.fillStyle(0x1FD9C5, 0.18);
+      c.fillRoundedRect(-chip.w / 2, -chip.h / 2, chip.w, chip.h, 12);
+      c.lineStyle(2, 0x1FD9C5, 1);
+      c.strokeRoundedRect(-chip.w / 2, -chip.h / 2, chip.w, chip.h, 12);
+      chip.txt.setColor('#1FD9C5');
+    } else {
+      c.fillStyle(0x14162A, 0.85);
+      c.fillRoundedRect(-chip.w / 2, -chip.h / 2, chip.w, chip.h, 12);
+      c.lineStyle(1, 0x4DD9C5, 0.4);
+      c.strokeRoundedRect(-chip.w / 2, -chip.h / 2, chip.w, chip.h, 12);
+      chip.txt.setColor('#AEB4CC');
+    }
+  }
+
+  private selectGender(key: 'male' | 'female'): void {
+    this.playerGender = key;
+    this._genderChips.forEach(ch => this.paintGenderChip(ch, ch.key === key));
   }
 
   // ════════════════════════════════════════════════

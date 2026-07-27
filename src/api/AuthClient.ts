@@ -54,7 +54,12 @@ export const AuthClient = {
   },
 
   /** 创建角色 */
-  createCharacter(token: string, name: string, element: string) {
-    return authPost('/character/create', token, { name, element });
+  createCharacter(token: string, name: string, element: string, gender: 'male' | 'female' = 'male') {
+    return authPost('/character/create', token, { name, element, gender });
+  },
+
+  /** 检查角色名是否可用（全局唯一，建角前查重） */
+  checkCharacterName(token: string, name: string) {
+    return authPost('/character/check-name', token, { name });
   },
 };

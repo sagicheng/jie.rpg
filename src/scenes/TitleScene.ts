@@ -451,7 +451,7 @@ export class TitleScene extends Phaser.Scene {
     this.drawPanel(GAME_WIDTH / 2, GAME_HEIGHT * 0.5, pw, ph, '选择角色');
 
     const res = await AuthClient.getCharacters(this.authToken);
-    const list: Array<{ id: number; name: string; element: string }> = res.ok ? (res.characters || []) : [];
+    const list: Array<{ id: number; name: string; element: string; gender?: string }> = res.ok ? (res.characters || []) : [];
 
     const fx = GAME_WIDTH / 2;
     const cardW = 440, cardH = 50, gap = 10;
@@ -480,7 +480,7 @@ export class TitleScene extends Phaser.Scene {
     });
   }
 
-  private drawCharacterCard(x: number, y: number, w: number, h: number, ch: { id: number; name: string; element: string }): void {
+  private drawCharacterCard(x: number, y: number, w: number, h: number, ch: { id: number; name: string; element: string; gender?: string }): void {
     const container = this.add.container(x, y);
 
     const bg = this.add.graphics();
@@ -504,8 +504,9 @@ export class TitleScene extends Phaser.Scene {
       fontSize: '18px', fontStyle: '700', color: '#FFFFFF',
     }).setOrigin(0, 0.5);
 
-    // 元素标签
-    const elTag = this.add.text(w / 2 - 30, 0, ch.element, {
+    // 元素标签（含性别符号）
+    const gSym = ch.gender === 'female' ? '♀' : '♂';
+    const elTag = this.add.text(w / 2 - 30, 0, `${gSym} ${ch.element}`, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '13px', fontStyle: '500', color: '#AEB4CC',
     }).setOrigin(1, 0.5);
@@ -536,7 +537,7 @@ export class TitleScene extends Phaser.Scene {
     });
     zone.on('pointerdown', () => {
       this.clearMenu();
-      this.enterGame(ch.id, ch.name, ch.element);
+      this.enterGame(ch.id, ch.name, ch.element, ch.gender);
     });
   }
 
@@ -554,7 +555,7 @@ export class TitleScene extends Phaser.Scene {
     });
   }
 
-  private enterGame(charId: number, name: string, element: string): void {
+  private enterGame(charId: number, name: string, element: string, gender?: string): void {
     this.cameras.main.fadeOut(500, 14, 16, 32);
     this.time.delayedCall(500, () => {
       this.scene.start('GameScene', {
@@ -563,6 +564,7 @@ export class TitleScene extends Phaser.Scene {
         characterId: charId,
         characterName: name,
         characterElement: element,
+        characterGender: gender,
       });
     });
   }

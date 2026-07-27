@@ -16,7 +16,7 @@ import { randomUUID } from 'crypto';
 import {
   createAccount, findAccount, findAccountByToken,
   setAccountToken, clearAccountToken, changePassword,
-  createCharacter, getCharacters, getCharacter,
+  createCharacter, getCharacters, getCharacter, getCharacterByName,
 } from './db';
 
 const router = Router();
@@ -104,28 +104,43 @@ router.post('/characters', (req: Request, res: Response) => {
   if (!token) return fail('未登录', res, 401);
   const acc = findAccountByToken(token);
   if (!acc) return fail('登录已过期', res, 401);
-  const chars = getCharacters(acc.id).map(c => ({ id: c.id, name: c.name, element: c.element, created_at: c.created_at }));
+  const chars = getCharacters(acc.id).map(c => ({ id: c.id, name: c.name, element: c.element, gender: c.gender, created_at: c.created_at }));
   ok({ characters: chars }, res);
 });
 
 // ───────────── 创建角色 ─────────────
 router.post('/character/create', (req: Request, res: Response) => {
   const token = req.body.token || req.headers['x-token'] as string;
-  const { name, element } = req.body;
+  const { name, element, gender } = req.body;
   if (!token) return fail('未登录', res, 401);
   if (!name || !element) return fail('角色名和元素不能为空', res);
   if (typeof name !== 'string' || name.length < 1 || name.length > 12) return fail('角色名长度 1-12 字符', res);
+  const g = gender === 'female' ? 'female' : 'male';
 
   const acc = findAccountByToken(token);
   if (!acc) return fail('登录已过期', res, 401);
 
   try {
-    const ch = createCharacter(acc.id, String(name).trim(), String(element));
-    ok({ character: { id: ch.id, name: ch.name, element: ch.element } }, res);
+    const ch = createCharacter(acc.id, String(name).trim(), String(element), g);
+    ok({ character: { id: ch.id, name: ch.name, element: ch.element, gender: ch.gender } }, res);
   } catch (e: any) {
-    if (e.message?.includes('UNIQUE')) return fail('该账号下已有同名角色', res);
+    if (e.message?.includes('占用') || e.message?.includes('UNIQUE')) return fail('该角色名已被占用', res);
     return fail('创建角色失败', res, 500);
   }
+});
+
+// ───────────── 角色名查重（建角前，全局唯一） ─────────────
+router.post('/character/check-name', (req: Request, res: Response) => {
+  const token = req.body.token || req.headers['x-token'] as string;
+  if (!token) return fail('未登录', res, 401);
+  const acc = findAccountByToken(token);
+  if (!acc) return fail('登录已过期', res, 401);
+  const { name } = req.body;
+  if (!name || typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 12) {
+    return fail('角色名长度 1-12 字符', res);
+  }
+  const exists = !!getCharacterByName(String(name).trim());
+  ok({ available: !exists }, res);
 });
 
 export default router;

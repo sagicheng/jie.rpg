@@ -147,7 +147,7 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' });
   }
 
-  init(data?: { newGame?: boolean; name?: string; element?: string; authToken?: string; characterId?: number; characterName?: string; characterElement?: string }): void {
+  init(data?: { newGame?: boolean; name?: string; element?: string; authToken?: string; characterId?: number; characterName?: string; characterElement?: string; characterGender?: string; gender?: string }): void {
     this.authToken = data?.authToken || '';
     this.characterId = data?.characterId || 0;
 
@@ -179,9 +179,11 @@ export class GameScene extends Phaser.Scene {
       // 角色名/元素不在 worldSync 数据中（存在 DB characters 表），需从 TitleScene 传入
       const chName = data?.characterName || data?.name || '';
       const chElement = data?.characterElement || data?.element || '';
+      const chGender = data?.characterGender || data?.gender || '';
       if (chName) {
         GameState.playerName = chName;
         if (chElement) GameState.element = chElement;
+        if (chGender) GameState.gender = chGender === 'female' ? 'female' : 'male';
         GameState.hasCreated = true;
       }
       // worldSync 会在连房后覆盖本地背包/金币/等级等缓存
@@ -233,7 +235,7 @@ export class GameScene extends Phaser.Scene {
 
     // 玩家头顶：角色名 + 称号（跟随人物移动）。用 displayHeight 而不是 height，避免 512x768 纹理导致标签飞到头顶上方 300+ 像素
     const ph = this.player.displayHeight / 2;
-    this.nameTag = this.add.text(this.player.x, this.player.y - ph - 22, GameState.playerName, {
+    this.nameTag = this.add.text(this.player.x, this.player.y - ph - 22, this.playerDisplayName(), {
       fontSize: '12px', color: '#bfe8ff', fontStyle: 'bold',
       backgroundColor: '#00000066', padding: { x: 4, y: 1 },
     }).setOrigin(0.5, 1).setDepth(11);
@@ -609,10 +611,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** 玩家头顶：角色名 + 称号，跟随移动，文本变化时才重绘 */
+  private playerDisplayName(): string {
+    return GameState.playerName + (GameState.gender === 'female' ? '♀' : '♂');
+  }
+
   private syncPlayerTags(): void {
     const ph = this.player.displayHeight / 2;
     if (this.nameTag) {
-      if (this.nameTag.text !== GameState.playerName) this.nameTag.setText(GameState.playerName);
+      const dn = this.playerDisplayName();
+      if (this.nameTag.text !== dn) this.nameTag.setText(dn);
       this.nameTag.setPosition(Math.round(this.player.x), Math.round(this.player.y - ph - 22));
     }
     if (this.titleTag) {
