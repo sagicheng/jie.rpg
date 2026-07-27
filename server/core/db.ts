@@ -386,6 +386,23 @@ export function getCharacterByName(name: string): CharacterRow | undefined {
   return db.prepare('SELECT * FROM characters WHERE name = ?').get(name) as CharacterRow | undefined;
 }
 
+/** 按角色名模糊搜索（包含匹配，转义 SQL 通配符，精确/前缀优先排序），返回最多 limit 个。 */
+export function getCharactersByNameLike(keyword: string, limit = 10): Array<{ charId: number; name: string }> {
+  const k = (keyword || '').trim();
+  if (!k) return [];
+  const esc = k.replace(/[\\%_]/g, (ch) => '\\' + ch);
+  const likeAll = `%${esc}%`;
+  const likePrefix = `${esc}%`;
+  return db.prepare(`
+    SELECT id AS charId, name FROM characters
+    WHERE name LIKE ? ESCAPE '\\'
+    ORDER BY
+      CASE WHEN name = ? THEN 0 WHEN name LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END,
+      LENGTH(name) ASC, id ASC
+    LIMIT ?
+  `).all(likeAll, k, likePrefix, limit) as Array<{ charId: number; name: string }>;
+}
+
 /** 我的好友列表（已接受，含对方角色名）。 */
 export function getFriends(charId: number): Array<{ charId: number; name: string }> {
   return db.prepare(`

@@ -22,6 +22,7 @@ import { BOSS_CONFIG } from '../managers/BossMechanics';
 import { CONSUMABLES_BY_NAME } from '../managers/ConsumableSystem';
 import { openShop, openMall, toggleInventory, closeInventory, toggleStatPanel, closeStatPanel, renderInventoryPanel, renderStatPanel, showKidoPanel, closeKidoPanel, toggleEnhancePanel, closeEnhancePanel, toggleQuestLog, toggleBestiaryPanel, closeBestiaryPanel, renderQuestBoardPanel, showNamingInput, showShikaiSelection, closeTitlePanel, toggleTitlePanel, openArenaPanel, closeArenaPanel, renderArenaPanel, setArenaStatus, setArenaMatching, renderGuildPanel, renderFriendPanel, renderAuctionPanel, openAuctionPanel, closeAuctionPanel, toggleAuctionPanel, refreshAuctionPanel, openPetPanel, closePetPanel } from '../ui/panels';
 import { GuildClient } from '../api/GuildClient';
+import { CharacterClient } from '../api/CharacterClient';
 import { applyGuildStatBonus } from '../api/GuildSkills';
 import { getClient } from '../core/Net';
 
@@ -100,6 +101,7 @@ export class GameScene extends Phaser.Scene {
   public chatHud: Phaser.GameObjects.Container | null = null;
   public chatHudLines: Phaser.GameObjects.Container | null = null;
   public chatInputEl: HTMLInputElement | null = null;
+  private chatWhisperTargetEl: HTMLInputElement | null = null;
   public chatInputFocused = false;
   public chatChannel = 'world';
   /** 当前私聊目标角色 ID（好友面板"私聊"按钮或 /w 设定，submitChat 复用）。 */
@@ -637,6 +639,7 @@ export class GameScene extends Phaser.Scene {
     if (this.chatHud) this.chatHud.setVisible(v);
     if (this.chatInputEl) this.chatInputEl.style.display = v ? '' : 'none';
     if (this.chatTabBar) this.chatTabBar.style.display = v ? '' : 'none';
+    if (this.chatWhisperTargetEl) this.chatWhisperTargetEl.style.display = (v && this.chatChannel === 'whisper') ? 'block' : 'none';
     const ui = this.scene.get('UIScene') as any;
     if (ui && typeof ui.setQuestTrackerVisible === 'function') ui.setQuestTrackerVisible(v);
   }
@@ -1322,7 +1325,6 @@ export class GameScene extends Phaser.Scene {
   const cn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, `制造成功：${r.name}`, { fontSize: '16px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 } }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
   this.tweens.add({ targets: cn, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => cn.destroy() });
 }); } panel.add(btn2); }); const cl5 = this.add.text(330, -180, '✕', { fontSize: '22px', color: '#ff6666', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }); cl5.on('pointerover', () => cl5.setColor('#ffaaaa')); cl5.on('pointerout', () => cl5.setColor('#ff6666')); cl5.on('pointerdown', () => { panel.destroy(true); this.resumeFromMenu(); }); panel.add(cl5); }
-  // TODO(待实现): 铁匠剧情 — 设计文档规划未实现，此为对话回调入口桩，保留以防入口丢失
   
 
   
@@ -1863,8 +1865,35 @@ export class GameScene extends Phaser.Scene {
     this.closeFriendPanel();
     this.whisperTargetCharId = charId;
     this.switchChatChannel('whisper');
+    if (name && this.chatWhisperTargetEl) this.chatWhisperTargetEl.value = name;
     this.focusChatInput();
     if (name) this.appendChatLine('system', '系统', 0, `正在私聊 ${name}（角色ID ${charId}），直接输入内容发送`);
+  }
+
+  /** 按角色名模糊搜索解析私聊目标，返回 charId（0 表示失败 / 需手动用 /w<ID>）。 */
+  private async resolveWhisperTarget(name: string): Promise<number> {
+    if (!this.authToken || !this.characterId) {
+      this.appendChatLine('system', '系统', 0, '未登录，无法搜索角色');
+      return 0;
+    }
+    try {
+      const res: any = await CharacterClient.search(this.authToken, this.characterId, name);
+      if (!res || !res.ok) { this.appendChatLine('system', '系统', 0, `搜索失败：${res?.msg || '未知错误'}`); return 0; }
+      const list: Array<{ charId: number; name: string }> = res.results || [];
+      if (list.length === 0) { this.appendChatLine('system', '系统', 0, `未找到角色：${name}`); return 0; }
+      if (list.length === 1) {
+        const t = list[0];
+        if (this.chatWhisperTargetEl) this.chatWhisperTargetEl.value = t.name;
+        this.whisperTargetCharId = t.charId;
+        return t.charId;
+      }
+      this.appendChatLine('system', '系统', 0, `找到 ${list.length} 个匹配，请改用 /w<ID> 私聊：`);
+      list.slice(0, 10).forEach((t) => this.appendChatLine('system', '系统', 0, `  ${t.name}（ID ${t.charId}）`));
+      return 0;
+    } catch (e: any) {
+      this.appendChatLine('system', '系统', 0, `搜索异常：${e?.message || e}`);
+      return 0;
+    }
   }
   /** 统一聊天接收：追加到本地日志 + 按频道路由渲染（公会面板聊天区 + 全局 HUD）。 */
   public onChat(msg: { channel: string; fromName: string; fromCharId: number; text: string; ts: number }): void {
@@ -1890,7 +1919,7 @@ export class GameScene extends Phaser.Scene {
         ? (m.fromCharId === this.characterId ? '→[私聊] ' : '[私聊] ')
         : (CHAT_PREFIX[m.channel] || '');
       const line = this.add.text(0, i * 16, `${prefix}${m.fromName}：${m.text}`, {
-        fontSize: '12px', color, wordWrap: { width: 360 }, padding: { y: 1 },
+        fontSize: '12px', color, wordWrap: { width: 500 }, padding: { y: 1 },
       });
       this.chatHudLines!.add(line);
     });
@@ -1913,7 +1942,7 @@ export class GameScene extends Phaser.Scene {
     const W = this.scale.width, H = this.scale.height;
     const c = this.add.container(0, 0).setDepth(5000).setScrollFactor(0);
     this.chatHud = c;
-    const boxX = 12, boxY = H - 260, boxW = 400, boxH = 200;
+    const boxX = 12, boxY = H - 260, boxW = 540, boxH = 200;
 
     // 背景框
     const bg = this.add.graphics();
@@ -1993,6 +2022,20 @@ export class GameScene extends Phaser.Scene {
         this.chatInputEl!.value = ''; this.chatInputEl!.blur();
       }
     });
+    // 私聊对象角色名输入框（仅"私聊"频道显示；发完消息不清空，改对象由玩家手动重输）
+    this.chatWhisperTargetEl = this.spawnWhisperTargetInput();
+    this.chatWhisperTargetEl.addEventListener('focus', () => { if (this.input.keyboard) this.input.keyboard.enabled = false; });
+    this.chatWhisperTargetEl.addEventListener('blur', () => { if (this.input.keyboard) this.input.keyboard.enabled = true; });
+    this.chatWhisperTargetEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        // 输完角色名直接跳到消息输入框，继续输入内容
+        this.chatInputEl?.focus();
+      } else if (e.key === 'Escape') {
+        this.chatWhisperTargetEl!.value = ''; this.chatWhisperTargetEl!.blur();
+      }
+    });
+
     // 画布缩放/居中变化时重定位 DOM 元素，消除左下角偏移
     this.relayoutChatDom();
     if (!this.chatResizeHooked) {
@@ -2002,6 +2045,7 @@ export class GameScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.chatInputEl && this.chatInputEl.parentNode) this.chatInputEl.parentNode.removeChild(this.chatInputEl);
+      if (this.chatWhisperTargetEl && this.chatWhisperTargetEl.parentNode) this.chatWhisperTargetEl.parentNode.removeChild(this.chatWhisperTargetEl);
       if (this.chatTabBar && this.chatTabBar.parentNode) this.chatTabBar.parentNode.removeChild(this.chatTabBar);
     });
   }
@@ -2018,7 +2062,7 @@ export class GameScene extends Phaser.Scene {
    * 而 DOM 元素只在创建时算过一次，窗口改变后便与画布左下角错位。
    */
   private relayoutChatDom(): void {
-    if (!this.chatInputEl && !this.chatTabBar) return;
+    if (!this.chatInputEl && !this.chatTabBar && !this.chatWhisperTargetEl) return;
     const canvas = this.game.canvas;
     const rect = canvas.getBoundingClientRect();
     const gw = this.scale.width, gh = this.scale.height;
@@ -2029,13 +2073,22 @@ export class GameScene extends Phaser.Scene {
       this.chatTabBar.style.top = (rect.top + tabY * sy) + 'px';
     }
     if (this.chatInputEl) {
-      const w = 366, h = 30, lx = 14, ly = gh - 60;
+      const w = 320, h = 30, lx = 14, ly = gh - 60;
       this.chatInputEl.style.left = (rect.left + lx * sx) + 'px';
       this.chatInputEl.style.top = (rect.top + ly * sy) + 'px';
       this.chatInputEl.style.width = (w * sx) + 'px';
       this.chatInputEl.style.height = (h * sy) + 'px';
       this.chatInputEl.style.fontSize = (15 * Math.min(sx, sy)) + 'px';
     }
+    if (this.chatWhisperTargetEl) {
+      const w = 186, h = 30, lx = 342, ly = gh - 60;
+      this.chatWhisperTargetEl.style.left = (rect.left + lx * sx) + 'px';
+      this.chatWhisperTargetEl.style.top = (rect.top + ly * sy) + 'px';
+      this.chatWhisperTargetEl.style.width = (w * sx) + 'px';
+      this.chatWhisperTargetEl.style.height = (h * sy) + 'px';
+      this.chatWhisperTargetEl.style.fontSize = (15 * Math.min(sx, sy)) + 'px';
+    }
+    this.refreshWhisperInputVis();
   }
 
   /** 切换聊天频道并刷新标签 UI。 */
@@ -2057,6 +2110,7 @@ export class GameScene extends Phaser.Scene {
     const LABELS: Record<string, string> = { all: '[全部]', world: '[世界]', guild: '[公会]', team: '[队伍]', whisper: '[私聊]', system: '[系统]' };
     this.chatChannelText?.setText(LABELS[this.chatChannel] || this.chatChannel);
     this.chatChannelText?.setColor(CHAT_COLORS[this.chatChannel] || '#aaccff');
+    this.refreshWhisperInputVis();
   }
 
   private spawnChatInput(): HTMLInputElement {
@@ -2076,12 +2130,37 @@ export class GameScene extends Phaser.Scene {
     return el;
   }
 
+  /** 私聊对象角色名输入框：位于消息输入框右侧，仅"私聊"频道显示。 */
+  private spawnWhisperTargetInput(): HTMLInputElement {
+    const el = document.createElement('input');
+    el.type = 'text'; el.maxLength = 24; el.value = '';
+    el.placeholder = '对方角色名';
+    el.style.cssText = 'position:absolute;font-size:15px;color:#fff;background:#0a0a1e;border:1px solid #a06bd0;border-radius:4px;outline:none;z-index:9999;display:none;';
+    const canvas = this.game.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const gw = this.scale.width, gh = this.scale.height;
+    const sx = rect.width / gw, sy = rect.height / gh;
+    const w = 186, h = 30, lx = 342, ly = gh - 60;
+    el.style.left = (rect.left + lx * sx) + 'px';
+    el.style.top = (rect.top + ly * sy) + 'px';
+    el.style.width = (w * sx) + 'px'; el.style.height = (h * sy) + 'px';
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /** 私聊对象输入框仅在"私聊"频道且聊天 HUD 可见时显示。 */
+  private refreshWhisperInputVis(): void {
+    if (!this.chatWhisperTargetEl) return;
+    const show = this.chatChannel === 'whisper' && (this.chatHud ? this.chatHud.visible : true);
+    this.chatWhisperTargetEl.style.display = show ? 'block' : 'none';
+  }
+
   private focusChatInput(): void {
     this.createChatHud();
     this.chatInputEl?.focus();
   }
 
-  private submitChat(raw: string): void {
+  private async submitChat(raw: string): Promise<void> {
     const v = (raw || '').trim();
     if (!v) return;
     let channel = this.chatChannel === 'all' ? 'world' : this.chatChannel;
@@ -2092,14 +2171,22 @@ export class GameScene extends Phaser.Scene {
     else if (v.startsWith('/w')) {
       const m = v.match(/^\/w(\d+)\s+(.*)$/);
       if (m) { channel = 'whisper'; targetCharId = parseInt(m[1], 10); text = m[2].trim(); }
-      else { this.appendChatLine('system', '系统', 0, '私聊格式：/w<角色ID> 内容'); return; }
+      else { this.appendChatLine('system', '系统', 0, '私聊请点击"私聊"标签并在右侧输入框填写对方角色名'); return; }
     }
     if (!text) return;
     if (channel === 'guild' && !GameState.guildId) { this.appendChatLine('system', '系统', 0, '你不在公会'); return; }
     if (channel === 'team' && !this.teamId) { this.appendChatLine('system', '系统', 0, '你不在队伍'); return; }
-    // whisper 频道：若无 /w 前缀，则复用好友面板"私聊"设定的目标 ID
+    // whisper：无 /w<ID> 前缀时，从"角色名输入框"解析目标（发完不清空该输入框）
+    if (channel === 'whisper' && !targetCharId && this.chatWhisperTargetEl) {
+      const nm = this.chatWhisperTargetEl.value.trim();
+      if (nm) {
+        const cid = await this.resolveWhisperTarget(nm);
+        if (!cid) return;
+        targetCharId = cid;
+      }
+    }
     if (channel === 'whisper' && !targetCharId && this.whisperTargetCharId) targetCharId = this.whisperTargetCharId;
-    if (channel === 'whisper' && !targetCharId) { this.appendChatLine('system', '系统', 0, '请指定私聊对象 ID'); return; }
+    if (channel === 'whisper' && !targetCharId) { this.appendChatLine('system', '系统', 0, '请先填写私聊对象角色名'); return; }
     // 斜杠前缀切换了频道时，同步刷新标签 UI
     if (channel !== this.chatChannel) this.switchChatChannel(channel);
     this.sendChat(channel, text, targetCharId);

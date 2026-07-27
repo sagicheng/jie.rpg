@@ -17,6 +17,7 @@ import { GameRoom } from './api/GameRoom';
 import { BattleRoom } from './api/BattleRoom';
 import { DungeonRoom } from './api/DungeonRoom';
 import { PvpRoom } from './api/PvpRoom';
+import characterRoutes from './modules/feature/character';
 import { startArenaTicker } from './modules/feature/arenaService';
 import authRoutes from './core/auth';
 import guildRoutes from './modules/feature/guild';
@@ -31,6 +32,7 @@ app.use(express.json());
 app.use('/api', authRoutes);
 app.use('/api/guild', guildRoutes);
 app.use('/api/friend', friendRoutes);
+app.use('/api/character', characterRoutes);
 
 // Colyseus（WebSocket 实时通信）
 const httpServer = http.createServer(app);
