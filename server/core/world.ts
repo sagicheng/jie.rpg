@@ -279,7 +279,18 @@ export class WorldService {
   get(sid: string): PlayerWorld {
     let w = this.worlds.get(sid);
     if (!w) { w = seedWorld(); this.worlds.set(sid, w); }
+    this.refreshDungeonWeekly(w);
     return w;
+  }
+
+  /** 主动按当前日历周刷新副本周计数。
+   *  修复「用完次数后仅查看不进本、跨周也不刷新」的惰性重置问题：
+   *  原逻辑只在 enterDungeon 内判定周变化，导致不进本就永远显示旧次数。
+   *  现在在取世界(get)、从DB加载(loadFromJSON)、进本(enterDungeon)三处统一校正，
+   *  保证 worldSync 推送给客户端的次数始终对应当前周。 */
+  private refreshDungeonWeekly(pw: PlayerWorld): void {
+    const w = weekStr();
+    if (pw.dungeonWeekly.week !== w) pw.dungeonWeekly = { week: w, count: 0 };
   }
 
   /** 从 DB JSON 恢复世界状态（用于现有角色进房）。 */
@@ -320,6 +331,7 @@ export class WorldService {
     if (data.dailyClaimed) w.dailyClaimed = data.dailyClaimed;
     if (data.weeklyClaimed) w.weeklyClaimed = data.weeklyClaimed;
     if (data.dungeonWeekly) w.dungeonWeekly = data.dungeonWeekly;
+    this.refreshDungeonWeekly(w);
     if (data.dungeon !== undefined) w.dungeon = data.dungeon;
     if (Array.isArray(data.unlocks)) w.unlocks = data.unlocks;
     if (Array.isArray(data.pets)) w.pets = data.pets as Pet[];
@@ -627,8 +639,7 @@ export class WorldService {
    * 例：进2次副本1 + 1次副本2 = 3 次（满）。
    */
   enterDungeon(pw: PlayerWorld, dungeonId: number): OpResult {
-    const w = weekStr();
-    if (pw.dungeonWeekly.week !== w) pw.dungeonWeekly = { week: w, count: 0 };
+    this.refreshDungeonWeekly(pw);
     // 续打同副本：免费
     if (pw.dungeon && pw.dungeon.dungeonId === dungeonId) {
       return { ok: true, msg: '继续副本', data: { resumed: true, remaining: DUNGEON_WEEKLY_CAP - pw.dungeonWeekly.count } };
