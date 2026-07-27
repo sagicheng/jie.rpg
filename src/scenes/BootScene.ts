@@ -45,6 +45,9 @@ export class BootScene extends Phaser.Scene {
     // 加载 AI 生成的真实美术（清单见 src/config/assetManifest.ts）
     // 已生成的 key 会覆盖下方同名程序化占位贴图
     for (const a of ASSET_IMAGES) {
+      // 斩魄刀立绘（zan_*）共 72 张 ~13MB，改为「按需懒加载」：
+      // 仅在实际显示立绘时才加载当前刀的 2 张，避免启动一次性预载拖慢加载页
+      if (a.key.startsWith('zan_')) continue;
       this.load.image(a.key, a.path);
     }
 
@@ -137,6 +140,9 @@ export class BootScene extends Phaser.Scene {
     // 不再在此生成程序化占位，避免覆盖真图。
     // 注：元素共鸣图标(icon_火/风/水/土) 已由 assetManifest 加载独立美术，
     // 原 28x28 程序化占位已移除，不在此生成。
+
+    // 注：立绘粒子贴图(fx_fire/wind/water/earth) 已由美术手绘彩色透明 PNG 提供，
+    // 通过 assetManifest.ts 注册、BootScene.preload 加载（见上方 ASSET_IMAGES 循环），此处不再程序化生成。
 
     g.destroy();
   }

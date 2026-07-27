@@ -4,3 +4,9 @@ dist-server/
 .vite/
 *.log
 data.db*
+
+# AI 工作区记忆目录（不入库）
+.workbuddy/
+
+# AI 工作区记忆目录（不入库）
+.workbuddy/

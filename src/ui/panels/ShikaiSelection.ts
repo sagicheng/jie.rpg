@@ -17,6 +17,7 @@ import { FriendClient } from '../../api/FriendClient';
 import { GUILD_SKILLS, guildSkillCost } from '../../api/GuildSkills';
 
 import { SaveManager } from '../../core/SaveManager';
+import { ensureZanpakutoPortraits } from '../../core/portraitLoader';
 
 import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../../managers/BestiaryData';
 
@@ -141,6 +142,8 @@ export function showShikaiSelection(scene: GameScene): void {
       sel.on('pointerout', () => { sel.setColor('#ffcc44'); sel.setBackgroundColor('#33220088'); });
       sel.on('pointerdown', () => {
         GameState.zanpakuto = zan; if (isOnline()) { requestUnlock('shikai', zan); requestSetZanpakuto(zan); } else GameState.addUnlock('shikai');
+        // 选定即预载该刀立绘（始解/卍解两张），打开属性面板时即为即时显示
+        ensureZanpakutoPortraits(scene, zan);
         GameState.recalcStats();
         panel.destroy(true);
         scene.time.delayedCall(300, () => {

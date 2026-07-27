@@ -1581,7 +1581,7 @@ export class GameScene extends Phaser.Scene {
   /** 刷新当前打开的面板（worldSync 实时同步背包/金币/装备）。 */
   public refreshOpenPanels(): void {
     if (this.inventoryPanel) { closeInventory(this); renderInventoryPanel(this); }
-    if (this.statPanel) { closeStatPanel(this); renderStatPanel(this); }
+    if (this.statPanel) { closeStatPanel(this, false); renderStatPanel(this); }
     if (this.enhancePanel) { closeEnhancePanel(this); toggleEnhancePanel(this); }
     if (this.shopPanel && this.lastShopItems) { openShop(this, this.lastShopItems); }
     if (this.mallPanel) { openMall(this); }

@@ -17,6 +17,7 @@ import { FriendClient } from '../../api/FriendClient';
 import { GUILD_SKILLS, guildSkillCost } from '../../api/GuildSkills';
 
 import { SaveManager } from '../../core/SaveManager';
+import { ensureZanpakutoPortraits } from '../../core/portraitLoader';
 
 import { NAMED_ENEMIES, BESTIARY_TIERS, getBestiaryTierReached, getBestiaryTierProgress, BESTIARY_TITLES } from '../../managers/BestiaryData';
 
@@ -64,7 +65,7 @@ import { openArenaPanel } from './ArenaPanel';
 
 export function toggleStatPanel(scene: GameScene): void { if (scene.statPanel) { closeStatPanel(scene); return; } renderStatPanel(scene); }
 
-export function closeStatPanel(scene: GameScene): void {
+export function closeStatPanel(scene: GameScene, permanent: boolean = true): void {
   if (scene.statPanel) {
     const h = (scene as any)._statPanelUpdate;
     if (h) { scene.scene.get('UIScene').events.off('updateStats', h); (scene as any)._statPanelUpdate = null; }
@@ -74,6 +75,15 @@ export function closeStatPanel(scene: GameScene): void {
     const tw = (scene as any)._statPanelTweens;
     if (Array.isArray(tw)) tw.forEach((t: Phaser.Tweens.Tween) => t.stop());
     (scene as any)._statPanelTweens = null;
+    // 注销立绘水中悬浮的逐帧更新，避免泄漏
+    const fl = (scene as any)._statPanelFloat;
+    if (fl) { scene.events.off('update', fl); (scene as any)._statPanelFloat = null; }
+    // 立绘粒子发射器：仅「真正关闭面板」(permanent) 时才销毁；
+    // worldSync 刷新重建面板 (permanent=false) 时复用，否则正在飘落的粒子会被擦掉、从头重来（表现为「掉 1 秒就消失」）。
+    if (permanent) {
+      const em = (scene as any)._statPanelEmitter;
+      if (em) { em.stop(); em.destroy(); (scene as any)._statPanelEmitter = null; }
+    }
     scene.statPanel.destroy(true); scene.statPanel = null; scene.resumeFromMenu();
   }
 }
@@ -260,29 +270,87 @@ export function renderStatPanel(scene: GameScene): void {
     frameBg.fillStyle(0x0d0d1d, 0.7); frameBg.fillRoundedRect(frameX, frameY, frameW, frameH, 10);
     frameBg.lineStyle(1.5, 0xe8d5a3, 0.5); frameBg.strokeRoundedRect(frameX, frameY, frameW, frameH, 10); p.add(frameBg);
 
+    // 立绘粒子层（「下雪」式循环：框顶生成 → 向下飘落 → 底部淡出消失）
+    // 不同元素降不同物体（火=火星/风=落叶/水=雪花/土=尘砾），与刀之元素表现一致；贴图为美术手绘彩色透明 PNG（fx_*.png），按元素选图、已去除 tint 染色。
+    // 定位用「世界坐标 = 相机滚动 + 框屏幕中心」(等价第一版 p.add 容器局部坐标，已验证可正确显示)；
+    // 贴图不透明实心确保清晰可见。关键：发射器脱离面板重建周期——worldSync 刷新时复用(prevEmitter)，不再每秒销毁重来。
+    const elTex: Record<string, string> = { '火': 'fx_fire', '风': 'fx_wind', '水': 'fx_water', '土': 'fx_earth' };
+    const texKey = elTex[GameState.element || '火'] || 'fx_fire';
+    const fcx = frameX + frameW / 2, fcy = frameY + frameH / 2;   // 立绘框屏幕中心（scrollFactor=0 下世界=屏幕）
+    // 下落节拍：按「框高 / 期望周期」反推匀速，保证粒子从容从顶飘到底再消失（不再中途一闪即逝）
+    const fallSec = 17;                                  // 一整轮「顶→底→消失」周期(秒)，已大幅加长、雪感缓慢
+    const vFall = frameH / fallSec;                      // 平均下落速度 px/s（框高460≈27px/s）
+    // ⚠️ 定位用「世界坐标 = 相机滚动 + 框屏幕中心」，不依赖 scrollFactor(0)：
+    // 实测粒子确实继承 emitter 的 scrollFactor，但为彻底排除「相机滚动把世界坐标粒子推出屏幕外」这一变量，
+    // 这里直接把发射器放在世界坐标的框中心（= cam.scroll + 屏中心），确保任何滚动下都落在立绘框内可见。
+    const prevEmitter = (scene as any)._statPanelEmitter as Phaser.GameObjects.Particles.ParticleEmitter | undefined;
+    if (prevEmitter && prevEmitter.scene) {
+      // 面板因 worldSync 刷新重建时：复用旧发射器（仅重新定位），绝不销毁 → 在飘粒子不会被「擦掉」再从头来
+      prevEmitter.setPosition(cam.scrollX + fcx, cam.scrollY + fcy);
+      prevEmitter.emitting = true;
+      (scene as any)._statPanelEmitter = prevEmitter;
+    } else {
+      const portraitEmitter = scene.add.particles(
+        cam.scrollX + fcx,
+        cam.scrollY + fcy,
+        texKey,
+        {
+          x: { min: -frameW / 2 + 20, max: frameW / 2 - 20 },   // 水平铺满立绘框
+          y: { min: -frameH / 2 + 10, max: -frameH / 2 + 40 },  // 在框顶部薄带生成，从此往下落
+          speedY: { min: vFall * 1.2, max: vFall * 1.9 },      // 缓慢匀速下落（略带差异自然飘落）
+          speedX: { min: -10, max: 10 },                        // 轻微横向随风飘移
+          lifespan: (fallSec / 0.8) * 1000,                     // ≈最长寿命，确保粒子从容从顶飘到底再消失
+          scale: { start: 0.2, end: 0.1 },          // 源图 64×64，缩到约 32px 显示（框高460约占1/14，雪感精致）
+          alpha: { start: 0.6, end: 0.0 },                       // 更淡：降低整体不透明度，颜色更柔和（比 0.95 淡一档）
+          rotate: { start: 0, end: 360 },          // 翻滚，更像真实飘落物体
+          quantity: 2,                             // 每批 1 颗（数量更少，更克制）
+          frequency: 1800,                         // 约每 1.3s 一批（密度更低），配合长寿命形成稀疏雪幕
+          blendMode: 'NORMAL',
+          emitting: true,
+        }
+      );
+      portraitEmitter.setDepth(320);
+      (scene as any)._statPanelEmitter = portraitEmitter;
+    }
+
     // 视差外层 / 呼吸内层（嵌套容器，互不干扰）
     const parallaxBox = scene.add.container(frameX + frameW / 2, frameY + frameH / 2); p.add(parallaxBox);
     const illoBox = scene.add.container(0, 0); parallaxBox.add(illoBox);
 
     const zkName = GameState.zanpakuto;
     const isBankai = GameState.hasBankai, isShikai = GameState.hasShikai;
-    let artKey: string | null = null;
-    if (zkName) {
-      if (isBankai && scene.textures.exists(`zan_${zkName}_bankai`)) artKey = `zan_${zkName}_bankai`;
-      else if (scene.textures.exists(`zan_${zkName}_shikai`)) artKey = `zan_${zkName}_shikai`;
-    }
-    let illoImg: Phaser.GameObjects.Image | null = null;
-    if (artKey) {
-      illoImg = scene.add.image(0, 0, artKey).setOrigin(0.5);
-      const src = scene.textures.get(artKey).getSourceImage() as { width: number; height: number };
-      // 竖向框：以高度为主适配，保留刀竖直悬挂（刀柄在上、刀身在下的原始比例）
-      const sc = Math.min((frameW - 24) / src.width, (frameH - 36) / src.height, 1.4);
-      illoImg.setScale(sc);
-      illoBox.add(illoImg);
-    } else {
-      // 无立绘：中立占位文字（不显示元素图标，避免元素属性混入立绘区）
-      illoBox.add(scene.add.text(0, 0, zkName ? (isShikai ? '始解立绘待导入' : '立绘待导入') : '— 未觉醒 —',
-        { fontSize: '13px', color: '#6677aa', align: 'center', padding: { y: 2 } }).setOrigin(0.5));
+
+    // 目标纹理 key（按始解/卍解状态选择；不再依赖是否已预载，缺失则异步懒加载）
+    const desiredKey: string | null = zkName
+      ? (isBankai ? `zan_${zkName}_bankai` : `zan_${zkName}_shikai`)
+      : null;
+
+    // 渲染立绘内容：纹理就绪则显示图片，否则显示占位并触发懒加载后重绘
+    const renderPortrait = () => {
+      (illoBox as any).list.forEach((c: any) => scene.tweens.killTweensOf(c));
+      illoBox.removeAll(true);
+      if (desiredKey && scene.textures.exists(desiredKey)) {
+        const img = scene.add.image(0, 0, desiredKey).setOrigin(0.5);
+        const src = scene.textures.get(desiredKey).getSourceImage() as { width: number; height: number };
+        // 竖向框：以高度为主适配，保留刀竖直悬挂（刀柄在上、刀身在下的原始比例）
+        const sc = Math.min((frameW - 24) / src.width, (frameH - 36) / src.height, 1.4);
+        img.setScale(sc);
+        illoBox.add(img);
+        if (isBankai) {
+          spTweens.push(scene.tweens.add({ targets: img, angle: 1.2, duration: 6000, yoyo: true, repeat: -1, ease: 'Sine.inOut' }));
+        }
+      } else {
+        // 无立绘：中立占位文字（不显示元素图标，避免元素属性混入立绘区）
+        illoBox.add(scene.add.text(0, 0, zkName ? (isShikai ? '始解立绘载入中…' : '立绘载入中…') : '— 未觉醒 —',
+          { fontSize: '13px', color: '#6677aa', align: 'center', padding: { y: 2 } }).setOrigin(0.5));
+      }
+    };
+    renderPortrait();
+    if (desiredKey && !scene.textures.exists(desiredKey)) {
+      ensureZanpakutoPortraits(scene, zkName!, () => {
+        if (scene.statPanel !== p) return; // 面板已关闭或已重开，放弃本次重绘
+        renderPortrait();
+      });
     }
 
     // 铭牌（仅刀名 + 始解/卍解状态，不含元素）
@@ -291,27 +359,23 @@ export function renderStatPanel(scene: GameScene): void {
              : '尚无斩魄刀',
       { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }).setOrigin(0.5));
 
-    // ── 动效（T1 呼吸 + T4 视差 + T5 状态联动；已移除元素底光 T2'）──
-    const amp = !zkName ? 0 : isBankai ? 9 : isShikai ? 7 : 4;
-    const dur = isBankai ? 3000 : isShikai ? 3400 : 4500;
-    if (illoBox && amp > 0) {
-      spTweens.push(scene.tweens.add({ targets: illoBox, y: -amp, duration: dur, yoyo: true, repeat: -1, ease: 'Sine.inOut' }));
-      spTweens.push(scene.tweens.add({ targets: illoBox, scaleY: 1.03, duration: dur * 0.9, yoyo: true, repeat: -1, ease: 'Sine.inOut' }));
+    // ── 动效：水中悬浮（真·连续正弦浮动，无左右位移，柔和缓慢）──
+    // 关键：用「绝对游戏时间」驱动相位，而非累积 ft —— 避免面板被 worldSync 刷新重建 illoBox 时
+    // ft 归零导致立绘瞬移/跳变；相位锁定全局时钟，重建后从同一相位续上，丝滑无缝。
+    // 注册前先注销旧处理器，杜绝重复注册打架。
+    if (illoBox && zkName) {
+      const prevFl = (scene as any)._statPanelFloat;
+      if (prevFl) { scene.events.off('update', prevFl); (scene as any)._statPanelFloat = null; }
+      const floatPeriod = isBankai ? 9000 : 11000;   // 完整「上浮 + 下潜」一个周期(ms)
+      const floatAmp = isBankai ? 25 : 20;           // 上下浮动幅度（卍解25 / 始解20）
+      const onFloat = (time: number) => {
+        if (!illoBox.active) return;
+        // 连续正弦：底部/顶部均平滑折返（该处速度为0），无机械转折、无水平位移
+        illoBox.y = -Math.sin((time / floatPeriod) * Math.PI * 2) * floatAmp;
+      };
+      scene.events.on('update', onFloat);
+      (scene as any)._statPanelFloat = onFloat;
     }
-    if (isBankai && illoImg) {
-      spTweens.push(scene.tweens.add({ targets: illoImg, angle: 1.2, duration: 6000, yoyo: true, repeat: -1, ease: 'Sine.inOut' }));
-    }
-    // T4 鼠标视差
-    const cxS = frameX + frameW / 2, cyS = frameY + frameH / 2;
-    const onPointerMove = (pointer: Phaser.Input.Pointer) => {
-      if (!parallaxBox.active) return;
-      const dx = (pointer.x - cxS) / (GAME_WIDTH / 2), dy = (pointer.y - cyS) / (GAME_HEIGHT / 2);
-      const ax = isBankai ? 16 : 12, ay = isBankai ? 10 : 7;
-      scene.tweens.killTweensOf(parallaxBox);
-      scene.tweens.add({ targets: parallaxBox, x: cxS + dx * ax, y: cyS + dy * ay, duration: 300, ease: 'Sine.out' });
-    };
-    scene.input.on('pointermove', onPointerMove);
-    (scene as any)._statPanelPointerMove = onPointerMove;
 
     // ── 装备格（立绘右侧，3×3 小格）──
     const eq = Inventory.equipment;
