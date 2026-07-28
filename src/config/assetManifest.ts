@@ -237,4 +237,16 @@ export const ASSET_IMAGES: AssetImage[] = [
   { key: 'char_hollow_female', path: 'assets/characters/char_hollow_female.png' },
   { key: 'char_hell_male', path: 'assets/characters/char_hell_male.png' },
   { key: 'char_hell_female', path: 'assets/characters/char_hell_female.png' },
+
+  // 战斗 UI 皮肤（切图级，CC0 扁平风，tools/gen_skin.py 生成，可同名覆盖为 Kenney/Cocos 成品）
+  { key: 'ui_bar_frame', path: 'assets/ui/skin/ui_bar_frame.png' },
+  { key: 'ui_bar_fill',  path: 'assets/ui/skin/ui_bar_fill.png' },
+  { key: 'ui_btn_normal', path: 'assets/ui/skin/ui_btn_normal.png' },
+  { key: 'ui_btn_hover',  path: 'assets/ui/skin/ui_btn_hover.png' },
+  { key: 'ui_btn_down',   path: 'assets/ui/skin/ui_btn_down.png' },
+  { key: 'ui_card_ally',  path: 'assets/ui/skin/ui_card_ally.png' },
+  { key: 'ui_card_enemy', path: 'assets/ui/skin/ui_card_enemy.png' },
+  { key: 'ui_card_pet',   path: 'assets/ui/skin/ui_card_pet.png' },
+  { key: 'ui_tag_bg',     path: 'assets/ui/skin/ui_tag_bg.png' },
+  { key: 'ui_panel',      path: 'assets/ui/skin/ui_panel.png' },
 ];

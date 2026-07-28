@@ -13,13 +13,15 @@ import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../managers/Skills
 import { Kido, KidoNode } from '../managers/Kido';
 import { Inventory } from '../managers/Inventory';
 import type { Item } from '../managers/Inventory';
+import { SkinBar, SkinButton, cardFrame, panel, hpColor } from '../ui/BattleSkin';
 
 interface Card {
   root: Phaser.GameObjects.Container;
+  bg: Phaser.GameObjects.Image;        // 卡片底框（切图皮肤）
   name: Phaser.GameObjects.Text;
-  hpBar: Phaser.GameObjects.Graphics;
+  hpBar: SkinBar;                       // 切图血条（外框+填充，按 HP% 缩放/上色）
   hpText: Phaser.GameObjects.Text;
-  hl: Phaser.GameObjects.Graphics; // 待选目标高亮边框
+  hl: Phaser.GameObjects.Graphics; // 待选目标高亮边框（瞬态效果，保留 graphics）
 }
 
 interface Button {
@@ -322,9 +324,7 @@ export class PvpBattleScene extends Phaser.Scene {
     const px = (w - panelW) / 2;
     const py = (h - panelH) / 2;
 
-    const bg = this.add.graphics();
-    bg.fillStyle(0x0d0d1e, 0.94); bg.fillRoundedRect(px, py, panelW, panelH, 12);
-    bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(px, py, panelW, panelH, 12);
+    const bg = panel(this, px, py, panelW, panelH, 60);
     c.add(bg);
     c.add(this.add.text(px + panelW / 2, py + 18, title, { fontSize: '20px', color: '#c9a96e', fontStyle: 'bold' }).setOrigin(0.5));
 
@@ -484,57 +484,26 @@ export class PvpBattleScene extends Phaser.Scene {
   private makeCard(x: number, y: number, isAlly: boolean): Card {
     const w = 380, h = 96;
     const root = this.add.container(x, y).setDepth(10);
-    const bg = this.add.graphics();
-    bg.fillStyle(isAlly ? 0x16261a : 0x2a1616, 0.92);
-    bg.fillRoundedRect(-w / 2, -h / 2, w, h, 8);
-    bg.lineStyle(2, isAlly ? 0x44aa44 : 0xaa4444, 0.8);
-    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 8);
+    const bg = cardFrame(this, isAlly ? 'ally' : 'enemy').setOrigin(0.5);
     const name = this.add.text(-w / 2 + 16, -h / 2 + 12, '', { fontSize: '16px', color: isAlly ? '#aaffaa' : '#ffaaaa', fontStyle: 'bold' });
-    const hpBar = this.add.graphics();
-    const hpText = this.add.text(-w / 2 + 16, 28 + 4, '', { fontSize: '12px', color: '#dddddd' });
+    const hpBar = new SkinBar(this, { x: -174, y: 28, w: 348, h: 14, depth: 12, pad: 2 });
+    const hpText = this.add.text(-w / 2 + 16, 32, '', { fontSize: '12px', color: '#dddddd' });
     const hl = this.add.graphics();
-    root.add([bg, name, hpBar, hpText, hl]);
-    return { root, name, hpBar, hpText, hl };
+    root.add([bg, name, hpBar.frame, hpBar.fill, hpText, hl]);
+    return { root, bg, name, hpBar, hpText, hl };
   }
 
   private drawHpBar(card: Card, hp: number, maxHp: number): void {
-    const w = 348, x = -174, y = 28;
     const ratio = maxHp > 0 ? Phaser.Math.Clamp(hp / maxHp, 0, 1) : 0;
-    card.hpBar.clear();
-    card.hpBar.fillStyle(0x000000, 0.6);
-    card.hpBar.fillRect(x, y, w, 14);
-    card.hpBar.fillStyle(ratio > 0.3 ? 0x44dd44 : 0xdd4444, 1);
-    card.hpBar.fillRect(x, y, w * ratio, 14);
-    card.hpBar.lineStyle(1, 0xffffff, 0.3);
-    card.hpBar.strokeRect(x, y, w, 14);
+    card.hpBar.setRatio(ratio, hpColor(ratio));
     card.hpText.setText(`HP ${Math.max(0, Math.round(hp))} / ${Math.round(maxHp)}`);
   }
 
-  private makeButton(x: number, y: number, label: string, color: number, cb: () => void, w = 200, h = 56): Button {
-    const container = this.add.container(x, y).setDepth(20);
-    const bg = this.add.graphics();
-    const text = this.add.text(0, 0, label, { fontSize: '20px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
-    const draw = (enabled: boolean) => {
-      bg.clear();
-      bg.fillStyle(enabled ? color : 0x333344, 0.95);
-      bg.fillRoundedRect(-w / 2, -h / 2, w, h, 10);
-      bg.lineStyle(2, enabled ? 0xffffff : 0x555566, 0.6);
-      bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 10);
-    };
-    draw(true);
-    container.add([bg, text]);
-    container.setSize(w, h).setInteractive({ useHandCursor: true });
-    container.on('pointerdown', () => cb());
-    let enabled = true;
+  private makeButton(x: number, y: number, label: string, _color: number, cb: () => void, w = 200, h = 56): Button {
+    const sb = new SkinButton(this, { x, y, label, w, h, depth: 20, onClick: cb });
     return {
-      container,
-      setEnable: (b: boolean) => {
-        if (b === enabled) return;
-        enabled = b;
-        draw(b);
-        text.setColor(b ? '#ffffff' : '#888899');
-        container.setAlpha(b ? 1 : 0.55);
-      },
+      container: sb.root,
+      setEnable: (b: boolean) => sb.setEnabled(b),
     };
   }
 

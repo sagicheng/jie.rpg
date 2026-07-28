@@ -8,6 +8,7 @@ import Phaser from 'phaser';
 import { QUALITY_COLOR, QUALITY_CN } from '../core/constants';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
 import { GameState } from '../managers/GameState';
+import { SkinBar, SkinButton, hpColor } from '../ui/BattleSkin';
 import { ensureFormPortrait } from '../core/portraitLoader';
 import { EnemyData, calcDamage, calcMagicDamage, generateLoot } from '../managers/BattleData';
 import { Inventory } from '../managers/Inventory';
@@ -77,7 +78,7 @@ export class BattleScene extends Phaser.Scene {
   // 多敌人数据
   private enemies: EnemyData[] = [];
   private enemySprites: Phaser.GameObjects.Sprite[] = [];
-  private enemyHpBars: Phaser.GameObjects.Graphics[] = [];
+  private enemyHpBars: SkinBar[] = [];
   private enemyNameTexts: Phaser.GameObjects.Text[] = [];
   private enemyTypeTexts: Phaser.GameObjects.Text[] = [];
   private enemyInfoTexts: Phaser.GameObjects.Text[] = [];   // 每怪的 HP数值+状态标签
@@ -99,8 +100,8 @@ export class BattleScene extends Phaser.Scene {
   private _powerKeyHandler: ((e: KeyboardEvent) => void) | null = null;
   private readonly TURN_SECONDS = 20;
   private logText!: Phaser.GameObjects.Text;
-  private playerHpBar!: Phaser.GameObjects.Graphics;
-  private playerMpBar!: Phaser.GameObjects.Graphics;
+  private playerHpBar!: SkinBar;
+  private playerMpBar!: SkinBar;
   private playerInfoText!: Phaser.GameObjects.Text;          // 玩家 HP/MP数值+状态标签
   private enemyStatusSlots: StatusSlot[][] = [];            // 每怪的状态图标槽池（PNG + 回合数）
   private playerStatusSlots: StatusSlot[] = [];             // 玩家状态图标槽池
@@ -256,8 +257,9 @@ export class BattleScene extends Phaser.Scene {
       }).setOrigin(0.5);
       this.enemyTypeTexts.push(typeText);
 
-      // 独立血条 + 即时信息文本(HP数值/状态标签)
-      const hpBar = this.add.graphics();
+      // 独立血条（切图皮肤）+ 即时信息文本(HP数值/状态标签)
+      const bw = count <= 4 ? 100 : 70, bh = 7;
+      const hpBar = new SkinBar(this, { x: pos.x - bw / 2, y: pos.y + 40, w: bw, h: bh, depth: 30, pad: 1 });
       this.enemyHpBars.push(hpBar);
       const info = this.add.text(pos.x, pos.y + 47, '', {
         fontSize: '11px', color: '#ffbbbb', fontFamily: 'monospace', align: 'center',
@@ -277,8 +279,8 @@ export class BattleScene extends Phaser.Scene {
       fontSize: '14px', color: '#88aacc', padding: { y: 2 },
     }).setOrigin(0.5);
 
-    this.playerHpBar = this.add.graphics();
-    this.playerMpBar = this.add.graphics();
+    this.playerHpBar = new SkinBar(this, { x: GAME_WIDTH * 0.24 - 90, y: GAME_HEIGHT * 0.22 + 170, w: 180, h: 10, depth: 30, pad: 2 });
+    this.playerMpBar = new SkinBar(this, { x: GAME_WIDTH * 0.24 - 90, y: GAME_HEIGHT * 0.22 + 184, w: 180, h: 6, depth: 30, pad: 1 });
     this.playerInfoText = this.add.text(PX, GAME_HEIGHT * 0.22 + 170 + 24, '', {
       fontSize: '12px', color: '#aaccff', fontFamily: 'monospace', align: 'center',
     }).setOrigin(0.5, 0);
@@ -639,7 +641,7 @@ export class BattleScene extends Phaser.Scene {
     if (type && type.visible) {
       this.tweens.add({ targets: type, alpha: 0, duration: 300, onComplete: () => type.setVisible(false) });
     }
-    if (bar) bar.clear();
+    if (bar) bar.setVisible(false);
   }
 
   // ── Boss 战辅助（逻辑见 systems/BossMechanics.ts） ──
@@ -709,7 +711,8 @@ export class BattleScene extends Phaser.Scene {
     this.enemySprites.push(sprite);
     this.enemyNameTexts.push(this.add.text(pos.x, pos.y + (big ? -70 : -48), enemy.name, { fontSize: big ? '13px' : '11px', color: '#ff6666', fontFamily: 'serif', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5).setVisible(true));
     this.enemyTypeTexts.push(this.add.text(pos.x, pos.y + (big ? -54 : -36), enemy.type, { fontSize: '8px', color: '#994444', padding: { y: 1 } }).setOrigin(0.5).setVisible(true));
-    this.enemyHpBars.push(this.add.graphics());
+    const ebw = big ? 100 : 70;
+    this.enemyHpBars.push(new SkinBar(this, { x: pos.x - ebw / 2, y: pos.y + 40, w: ebw, h: 7, depth: 30, pad: 1 }));
     this.enemyInfoTexts.push(this.add.text(pos.x, pos.y + 47, '', { fontSize: '11px', color: '#ffbbbb', fontFamily: 'monospace', align: 'center' }).setOrigin(0.5, 0).setVisible(true));
     this.enemyStatusSlots.push(this.makeStatusSlotRow());
     this.tweens.add({ targets: sprite, alpha: 1, duration: 400 });
@@ -1595,21 +1598,11 @@ export class BattleScene extends Phaser.Scene {
 
     cmds.forEach((cmd, i) => {
       const bx = startX + i * (btnW + gap);
+      const cx = bx + btnW / 2, cy = btnY + btnH / 2;
       const isDisabled = cmd.disabled === true;
-      const bg = this.add.graphics();
-      bg.fillStyle(isDisabled ? 0x1a1a2e : 0x2a2a4e, 0.9);
-      bg.fillRoundedRect(bx, btnY, btnW, btnH, 8);
-      bg.lineStyle(1, isDisabled ? 0x333344 : 0x556688, 0.5);
-      bg.strokeRoundedRect(bx, btnY, btnW, btnH, 8);
-      this.commandContainer!.add(bg);
-      const txt = this.add.text(bx + btnW / 2, btnY + btnH / 2, cmd.label, { fontSize: '14px', color: isDisabled ? '#444' : '#cce', padding: { y: 2 } }).setOrigin(0.5);
-      this.commandContainer!.add(txt);
-      if (isDisabled) return;
-      const zone = this.add.zone(bx + btnW / 2, btnY + btnH / 2, btnW, btnH).setInteractive({ useHandCursor: true });
-      zone.on('pointerover', () => { bg.clear(); bg.fillStyle(0x3a3a6e, 1); bg.fillRoundedRect(bx, btnY, btnW, btnH, 8); bg.lineStyle(2, 0x7799cc, 1); bg.strokeRoundedRect(bx, btnY, btnW, btnH, 8); });
-      zone.on('pointerout', () => { bg.clear(); bg.fillStyle(0x2a2a4e, 0.9); bg.fillRoundedRect(bx, btnY, btnW, btnH, 8); bg.lineStyle(1, 0x556688, 0.5); bg.strokeRoundedRect(bx, btnY, btnW, btnH, 8); });
-      zone.on('pointerdown', () => this.runPlayerCmd(cmd));
-      this.commandContainer!.add(zone);
+      const btn = new SkinButton(this, { x: cx, y: cy, label: cmd.label, w: btnW, h: btnH, depth: 50, fontSize: 16, onClick: () => this.runPlayerCmd(cmd) });
+      btn.setEnabled(!isDisabled);
+      this.commandContainer!.add(btn.root);
     });
     this.startTurnTimer();
   }
@@ -1972,22 +1965,22 @@ export class BattleScene extends Phaser.Scene {
     const positions = this.getEnemyPositions(this.enemies.length);
     const count = this.enemies.length;
     this.enemyHpBars.forEach((bar, i) => {
-      bar.clear();
       const info = this.enemyInfoTexts[i];
       const slots = this.enemyStatusSlots[i];
       const enemy = this.enemies[i];
       if (!enemy || enemy.hp <= 0) {
         if (info) info.setText('');
         if (slots) slots.forEach(s => { s.img.setVisible(false); s.txt.setVisible(false); });
+        bar.setVisible(false);
         return;
       }
       const pos = positions[i];
       const bw = count <= 4 ? 100 : 70, bh = 7;
       const bx = pos.x - bw / 2, by = pos.y + 40;   // 血条置于精灵下方，避免遮挡
       const ratio = Math.max(0, enemy.hp / enemy.maxHp);
-      bar.fillStyle(0x331111, 1); bar.fillRect(bx, by, bw, bh);
       const color = ratio > 0.5 ? 0xcc4444 : ratio > 0.25 ? 0xcc8844 : 0xcc2222;
-      bar.fillStyle(color, 1); bar.fillRect(bx, by, bw * ratio, bh);
+      bar.setPosition(bx, by);
+      bar.setRatio(ratio, color);
       if (info) {
         const active = getActiveStatusList(this.enemyStatuses[i]);
         info.setPosition(pos.x, by + bh + 3);
@@ -1998,16 +1991,11 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private drawPlayerBars(): void {
-    const bx = GAME_WIDTH * 0.24 - 90, by = GAME_HEIGHT * 0.22 + 170, bw = 180;
-    this.playerHpBar.clear();
+    const by = GAME_HEIGHT * 0.22 + 170, bw = 180;
     const hpRatio = this.playerHp / this.playerMaxHp;
-    const hpColor = hpRatio > 0.5 ? 0x44cc44 : hpRatio > 0.25 ? 0xcccc44 : 0xcc4444;
-    this.playerHpBar.fillStyle(0x331111, 1); this.playerHpBar.fillRect(bx, by, bw, 10);
-    this.playerHpBar.fillStyle(hpColor, 1); this.playerHpBar.fillRect(bx, by, bw * hpRatio, 10);
-    this.playerMpBar.clear();
+    this.playerHpBar.setRatio(hpRatio, hpColor(hpRatio));
     const mpRatio = this.playerMp / this.playerMaxMp;
-    this.playerMpBar.fillStyle(0x111133, 1); this.playerMpBar.fillRect(bx, by + 14, bw, 6);
-    this.playerMpBar.fillStyle(0x4444cc, 1); this.playerMpBar.fillRect(bx, by + 14, bw * mpRatio, 6);
+    this.playerMpBar.setRatio(mpRatio, 0x4444cc);
 
     const active = getActiveStatusList(this.playerStatus);
     this.playerInfoText.setText(

@@ -24,14 +24,15 @@ import { Inventory } from '../managers/Inventory';
 import type { Item } from '../managers/Inventory';
 import type { EnemyData } from '../managers/BattleData';
 import { PET_SKILLS_CLIENT } from '../managers/PetSystem';
+import { SkinBar, SkinButton, cardFrame, tagBg, panel, hpColor, SKIN } from '../ui/BattleSkin';
 
 interface Card {
   root: Phaser.GameObjects.Container;
-  bg: Phaser.GameObjects.Graphics;  // 卡片底色（灵宠卡片重绘为紫调）
+  bg: Phaser.GameObjects.Image;       // 卡片底框（切图皮肤；灵宠卡片换 ui_card_pet 纹理）
   name: Phaser.GameObjects.Text;
-  hpBar: Phaser.GameObjects.Graphics;
+  hpBar: SkinBar;                     // 切图血条（外框+填充，按 HP% 缩放/上色）
   hpText: Phaser.GameObjects.Text;
-  hl: Phaser.GameObjects.Graphics; // 待选目标高亮边框
+  hl: Phaser.GameObjects.Graphics; // 待选目标高亮边框（瞬态效果，保留 graphics）
   statusIcons: Phaser.GameObjects.GameObject[]; // 异常状态 PNG 图标 + 回合数（每帧重绘）
 }
 
@@ -643,9 +644,7 @@ export class MultiBattleScene extends Phaser.Scene {
     const px = (w - panelW) / 2;
     const py = (h - panelH) / 2;
 
-    const bg = this.add.graphics();
-    bg.fillStyle(0x0d0d1e, 0.94); bg.fillRoundedRect(px, py, panelW, panelH, 12);
-    bg.lineStyle(2, 0xc9a96e, 0.7); bg.strokeRoundedRect(px, py, panelW, panelH, 12);
+    const bg = panel(this, px, py, panelW, panelH, 60);
     c.add(bg);
     c.add(this.add.text(px + panelW / 2, py + 18, title, { fontSize: '20px', color: '#c9a96e', fontStyle: 'bold' }).setOrigin(0.5));
 
@@ -920,14 +919,10 @@ export class MultiBattleScene extends Phaser.Scene {
         card.root.disableInteractive();
       }
       card.name.setText(`${c.name}${c.alive ? '' : '（倒下）'}`);
-      // 出战灵宠卡片：紫调描边 + 🐾 标识，与人物区分
+      // 出战灵宠卡片：换紫调皮肤 + 🐾 标识，与人物区分
       if (c.isPet) {
         card.name.setText(`🐾 ${c.name}${c.alive ? '' : '（倒下）'}`);
-        card.bg.clear();
-        card.bg.fillStyle(0x241a36, 0.95);
-        card.bg.fillRoundedRect(-190, -48, 380, 96, 8);
-        card.bg.lineStyle(2, c.alive ? 0xaa7cff : 0x66508c, 0.9);
-        card.bg.strokeRoundedRect(-190, -48, 380, 96, 8);
+        card.bg.setTexture(SKIN.cardPet);
       }
       this.drawHpBar(card, c.hp, c.maxHp);
       this.drawStatusIcons(card, c);
@@ -951,30 +946,18 @@ export class MultiBattleScene extends Phaser.Scene {
   private makeCard(x: number, y: number, isPlayer: boolean): Card {
     const w = 380, h = 96;
     const root = this.add.container(x, y).setDepth(10);
-    const bg = this.add.graphics();
-    bg.fillStyle(isPlayer ? 0x16261a : 0x2a1616, 0.92);
-    bg.fillRoundedRect(-w / 2, -h / 2, w, h, 8);
-    bg.lineStyle(2, isPlayer ? 0x44aa44 : 0xaa4444, 0.8);
-    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 8);
-    const barY = 28;
+    const bg = cardFrame(this, isPlayer ? 'ally' : 'enemy').setOrigin(0.5);
     const name = this.add.text(-w / 2 + 16, -h / 2 + 12, '', { fontSize: '16px', color: isPlayer ? '#aaffaa' : '#ffaaaa', fontStyle: 'bold' });
-    const hpBar = this.add.graphics();
-    const hpText = this.add.text(-w / 2 + 16, barY + 4, '', { fontSize: '12px', color: '#dddddd' });
+    const hpBar = new SkinBar(this, { x: -174, y: 28, w: 348, h: 14, depth: 12, pad: 2 });
+    const hpText = this.add.text(-w / 2 + 16, 32, '', { fontSize: '12px', color: '#dddddd' });
     const hl = this.add.graphics(); // 待选目标高亮（默认隐藏）
-    root.add([bg, name, hpBar, hpText, hl]);
+    root.add([bg, name, hpBar.frame, hpBar.fill, hpText, hl]);
     return { root, bg, name, hpBar, hpText, hl, statusIcons: [] };
   }
 
   private drawHpBar(card: Card, hp: number, maxHp: number): void {
-    const w = 348, x = -174, y = 28;
     const ratio = maxHp > 0 ? Phaser.Math.Clamp(hp / maxHp, 0, 1) : 0;
-    card.hpBar.clear();
-    card.hpBar.fillStyle(0x000000, 0.6);
-    card.hpBar.fillRect(x, y, w, 14);
-    card.hpBar.fillStyle(ratio > 0.3 ? 0x44dd44 : 0xdd4444, 1);
-    card.hpBar.fillRect(x, y, w * ratio, 14);
-    card.hpBar.lineStyle(1, 0xffffff, 0.3);
-    card.hpBar.strokeRect(x, y, w, 14);
+    card.hpBar.setRatio(ratio, hpColor(ratio));
     card.hpText.setText(`HP ${Math.max(0, Math.round(hp))} / ${Math.round(maxHp)}`);
   }
 
@@ -1022,11 +1005,7 @@ export class MultiBattleScene extends Phaser.Scene {
     if (contentStartX + totalW > maxRight) contentStartX = Math.max(nameRight + 4, maxRight - totalW);
     const plateX = contentStartX, plateY = iconY - (ICON + 8) / 2;
     const plateW = totalW, plateH = ICON + 8;
-    const plate = this.add.graphics();
-    plate.fillStyle(0x000000, 0.55);
-    plate.fillRoundedRect(plateX, plateY, plateW, plateH, 4);
-    plate.lineStyle(1, 0x7799cc, 0.5);
-    plate.strokeRoundedRect(plateX, plateY, plateW, plateH, 4);
+    const plate = tagBg(this, plateX + plateW / 2, plateY + plateH / 2).setDisplaySize(plateW, plateH).setDepth(11);
     card.root.add(plate);
     card.statusIcons.push(plate);
 
@@ -1052,32 +1031,12 @@ export class MultiBattleScene extends Phaser.Scene {
     });
   }
 
-  private makeButton(x: number, y: number, label: string, color: number, cb: () => void, w = 200, h = 56): Button {
-    const container = this.add.container(x, y).setDepth(20);
-    const bg = this.add.graphics();
-    const text = this.add.text(0, 0, label, { fontSize: '20px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
-    const draw = (enabled: boolean) => {
-      bg.clear();
-      bg.fillStyle(enabled ? color : 0x333344, 0.95);
-      bg.fillRoundedRect(-w / 2, -h / 2, w, h, 10);
-      bg.lineStyle(2, enabled ? 0xffffff : 0x555566, 0.6);
-      bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 10);
-    };
-    draw(true);
-    container.add([bg, text]);
-    container.setSize(w, h).setInteractive({ useHandCursor: true });
-    let enabled = true;
-    container.on('pointerdown', () => { if (enabled) cb(); });
+  private makeButton(x: number, y: number, label: string, _color: number, cb: () => void, w = 200, h = 56): Button {
+    const sb = new SkinButton(this, { x, y, label, w, h, depth: 20, onClick: cb });
     return {
-      container,
-      setEnable: (b: boolean) => {
-        if (b === enabled) return;
-        enabled = b;
-        draw(b);
-        text.setColor(b ? '#ffffff' : '#888899');
-        container.setAlpha(b ? 1 : 0.55);
-      },
-      setVisible: (b: boolean) => { container.setVisible(b); },
+      container: sb.root,
+      setEnable: (b: boolean) => sb.setEnabled(b),
+      setVisible: (b: boolean) => sb.setVisible(b),
     };
   }
 
