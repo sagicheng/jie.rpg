@@ -22,7 +22,90 @@ export const SKIN = {
   cardPet: 'ui_card_pet',
   tagBg: 'ui_tag_bg',
   panel: 'ui_panel',
+  cardHl: 'ui_card_hl',
+  menuRow: 'ui_menu_row',
+  menuRowDis: 'ui_menu_row_dis',
+  menuBack: 'ui_menu_back',
+  floatGlow: 'ui_float_glow',
 };
+
+/** 伤害飘字类型 → 配色（沿用原 graphics 的红黄绿/鬼道紫逻辑，并扩展质感） */
+export type FloatType = 'dmg' | 'heal' | 'crit' | 'kido' | 'miss';
+const FLOAT_COLOR: Record<FloatType, string> = {
+  dmg: '#ff6a6a',
+  heal: '#5aff8a',
+  crit: '#ffd23f',
+  kido: '#b07bff',
+  miss: '#9aa0b5',
+};
+
+/**
+ * 伤害 / 治疗飘字特效：在指定世界坐标上浮淡出。
+ * - 伤害显示 `-N`，治疗显示 `+N`，Miss 显示「Miss」
+ * - 暴击(crit) / 治疗 / 鬼道 带径向辉光底（ui_float_glow + setTint）
+ * - 上浮 + 轻微横向漂移 + 缩放弹入，duration 850~1100ms 后自销毁
+ */
+export function floatDamage(
+  scene: Phaser.Scene, x: number, y: number,
+  value: number | string, type: FloatType = 'dmg',
+  opts: { big?: boolean } = {},
+): void {
+  const isMiss = value === 'Miss' || value === 'MISS';
+  const num = typeof value === 'number' ? Math.round(Math.abs(value)) : 0;
+  const label = isMiss ? 'Miss' : (type === 'heal' ? `+${num}` : `-${num}`);
+  const color = isMiss ? FLOAT_COLOR.miss : FLOAT_COLOR[type];
+  const big = opts.big || type === 'crit';
+  const fontSize = big ? 40 : 24;
+  const startScale = big ? 1.3 : 1.0;
+
+  const root = scene.add.container(x, y).setDepth(950);
+  if (big || type === 'heal' || type === 'kido') {
+    const glow = scene.add.image(0, 0, SKIN.floatGlow)
+      .setTint(Phaser.Display.Color.HexStringToColor(color).color)
+      .setDisplaySize(big ? 140 : 96, big ? 76 : 54)
+      .setAlpha(0.55)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    root.add(glow);
+  }
+  const t = scene.add.text(0, 0, label, {
+    fontFamily: 'Arial Black, sans-serif',
+    fontSize: `${fontSize}px`, color, fontStyle: 'bold',
+    stroke: '#160c28', strokeThickness: big ? 6 : 4,
+  }).setOrigin(0.5).setScale(startScale);
+  root.add(t);
+
+  const driftX = (Math.random() - 0.5) * 26;
+  scene.tweens.add({
+    targets: root, y: y - (big ? 92 : 64), x: x + driftX,
+    alpha: { from: 1, to: 0 },
+    duration: big ? 1100 : 850, ease: 'Cubic.easeOut',
+    onComplete: () => root.destroy(),
+  });
+  scene.tweens.add({
+    targets: t, scale: { from: startScale * 1.18, to: startScale },
+    duration: 220, ease: 'Back.easeOut',
+  });
+}
+
+/** 卡牌「待选目标」高亮辉光框（中心透明，黄色描边；默认隐藏，调用方 setVisible 控制） */
+export function cardHl(scene: Phaser.Scene, x = 0, y = 0): Phaser.GameObjects.Image {
+  return scene.add.image(x, y, SKIN.cardHl).setOrigin(0.5, 0.5).setDisplaySize(384, 104).setVisible(false);
+}
+
+/** 子菜单行背景（普通 / 禁用 两态，按显示尺寸缩放） */
+export function menuRow(
+  scene: Phaser.Scene, x: number, y: number, w: number, h: number, disabled = false,
+): Phaser.GameObjects.Image {
+  const key = disabled ? SKIN.menuRowDis : SKIN.menuRow;
+  return scene.add.image(x, y, key).setOrigin(0.5, 0.5).setDisplaySize(w, h);
+}
+
+/** 子菜单返回行背景（红调） */
+export function menuBack(
+  scene: Phaser.Scene, x: number, y: number, w: number, h: number,
+): Phaser.GameObjects.Image {
+  return scene.add.image(x, y, SKIN.menuBack).setOrigin(0.5, 0.5).setDisplaySize(w, h);
+}
 
 /** HP 数值按百分比分档上色（沿用原 graphics 的红黄绿逻辑） */
 export function hpColor(ratio: number): number {

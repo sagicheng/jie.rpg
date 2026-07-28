@@ -24,7 +24,7 @@ import { Inventory } from '../managers/Inventory';
 import type { Item } from '../managers/Inventory';
 import type { EnemyData } from '../managers/BattleData';
 import { PET_SKILLS_CLIENT } from '../managers/PetSystem';
-import { SkinBar, SkinButton, cardFrame, tagBg, panel, hpColor, SKIN } from '../ui/BattleSkin';
+import { SkinBar, SkinButton, cardFrame, tagBg, panel, cardHl, menuRow, menuBack, floatDamage, hpColor, SKIN } from '../ui/BattleSkin';
 
 interface Card {
   root: Phaser.GameObjects.Container;
@@ -32,7 +32,8 @@ interface Card {
   name: Phaser.GameObjects.Text;
   hpBar: SkinBar;                     // 切图血条（外框+填充，按 HP% 缩放/上色）
   hpText: Phaser.GameObjects.Text;
-  hl: Phaser.GameObjects.Graphics; // 待选目标高亮边框（瞬态效果，保留 graphics）
+  hl: Phaser.GameObjects.Image;      // 待选目标高亮辉光框（切图皮肤）
+  lastHp: number;                    // 上一帧 HP，用于检测伤害飘字
   statusIcons: Phaser.GameObjects.GameObject[]; // 异常状态 PNG 图标 + 回合数（每帧重绘）
 }
 
@@ -651,11 +652,7 @@ export class MultiBattleScene extends Phaser.Scene {
     let y = py + pad + titleH;
     entries.forEach((en) => {
       const ry = y;
-      const rowBg = this.add.graphics();
-      rowBg.fillStyle(en.disabled ? 0x1a1a2e : 0x2a2a4e, 0.95);
-      rowBg.fillRoundedRect(px + pad, ry, panelW - pad * 2, rowH, 8);
-      rowBg.lineStyle(1, en.disabled ? 0x333344 : 0x556688, 0.5);
-      rowBg.strokeRoundedRect(px + pad, ry, panelW - pad * 2, rowH, 8);
+      const rowBg = menuRow(this, px + pad + (panelW - pad * 2) / 2, ry + rowH / 2, panelW - pad * 2, rowH, en.disabled);
       c.add(rowBg);
       c.add(this.add.text(px + pad + 14, ry + 8, en.label, { fontSize: '15px', color: en.disabled ? '#556' : '#dde', fontStyle: 'bold' }).setOrigin(0, 0.5));
       if (en.sub) c.add(this.add.text(px + pad + 14, ry + 25, en.sub, { fontSize: '11px', color: '#889', wordWrap: { width: panelW - pad * 2 - 28 } }).setOrigin(0, 0.5));
@@ -668,9 +665,7 @@ export class MultiBattleScene extends Phaser.Scene {
     });
 
     const by = py + pad + titleH + listH + 6;
-    const backBg = this.add.graphics();
-    backBg.fillStyle(0x3a2a2a, 0.95); backBg.fillRoundedRect(px + pad, by, panelW - pad * 2, backH, 8);
-    backBg.lineStyle(1, 0xaa6666, 0.6); backBg.strokeRoundedRect(px + pad, by, panelW - pad * 2, backH, 8);
+    const backBg = menuBack(this, px + pad + (panelW - pad * 2) / 2, by + backH / 2, panelW - pad * 2, backH);
     c.add(backBg);
     c.add(this.add.text(px + panelW / 2, by + backH / 2, '← 返回', { fontSize: '15px', color: '#e0b0b0', fontStyle: 'bold' }).setOrigin(0.5));
     const bz = this.add.zone(px + pad, by, panelW - pad * 2, backH).setOrigin(0, 0).setInteractive({ useHandCursor: true });
@@ -927,13 +922,16 @@ export class MultiBattleScene extends Phaser.Scene {
       this.drawHpBar(card, c.hp, c.maxHp);
       this.drawStatusIcons(card, c);
       card.root.setAlpha(c.alive ? 1 : 0.4);
+      // 伤害 / 治疗飘字：检测 HP 变化（首帧 lastHp=-1 跳过，避免进战斗瞬间误报）
+      if (card.lastHp >= 0 && c.hp !== card.lastHp) {
+        const delta = c.hp - card.lastHp;
+        const wx = card.root.x, wy = card.root.y - 56;
+        floatDamage(this, wx, wy, delta, delta < 0 ? 'dmg' : 'heal', { big: Math.abs(delta) > 200 });
+      }
+      card.lastHp = c.hp;
       // 高亮：多怪且有待选目标时，存活敌人边框发光提示「点我释放」
       const highlight = !isPlayer && !!this.pendingTarget && c.alive;
-      card.hl.clear();
-      if (highlight) {
-        card.hl.lineStyle(3, 0xffe066, 1);
-        card.hl.strokeRoundedRect(-190, -50, 380, 100, 10);
-      }
+      card.hl.setVisible(highlight);
     });
     for (const [id, card] of map) {
       if (![...src.values()].some((c: any) => (c.sessionId || c.id) === id)) {
@@ -950,9 +948,9 @@ export class MultiBattleScene extends Phaser.Scene {
     const name = this.add.text(-w / 2 + 16, -h / 2 + 12, '', { fontSize: '16px', color: isPlayer ? '#aaffaa' : '#ffaaaa', fontStyle: 'bold' });
     const hpBar = new SkinBar(this, { x: -174, y: 28, w: 348, h: 14, depth: 12, pad: 2 });
     const hpText = this.add.text(-w / 2 + 16, 32, '', { fontSize: '12px', color: '#dddddd' });
-    const hl = this.add.graphics(); // 待选目标高亮（默认隐藏）
+    const hl = cardHl(this).setDisplaySize(384, 104); // 待选目标高亮辉光框（切图皮肤）
     root.add([bg, name, hpBar.frame, hpBar.fill, hpText, hl]);
-    return { root, bg, name, hpBar, hpText, hl, statusIcons: [] };
+    return { root, bg, name, hpBar, hpText, hl, lastHp: -1, statusIcons: [] };
   }
 
   private drawHpBar(card: Card, hp: number, maxHp: number): void {
@@ -1044,14 +1042,8 @@ export class MultiBattleScene extends Phaser.Scene {
     if (this.resultPanel) return;
     const w = this.scale.width, h = this.scale.height;
     const c = this.add.container(w / 2, h / 2).setDepth(50);
-    const bg = this.add.graphics();
-    bg.fillStyle(0x000000, 0.7);
-    bg.fillRect(-w / 2, -h / 2, w, h);
-    const panel = this.add.graphics();
-    panel.fillStyle(0x1a1a2e, 0.98);
-    panel.fillRoundedRect(-260, -170, 520, 340, 14);
-    panel.lineStyle(2, 0xc9a96e, 0.8);
-    panel.strokeRoundedRect(-260, -170, 520, 340, 14);
+    const bg = this.add.rectangle(-w / 2, -h / 2, w, h, 0x000000, 0.7).setOrigin(0, 0);
+    const panelBg = panel(this, -260, -170, 520, 340, 50);
     const t = this.add.text(0, -90, title, {
       fontSize: '40px', color: title.includes('胜利') ? '#88ff88' : title.includes('脱') ? '#ffdd66' : '#ff8866', fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -1067,7 +1059,7 @@ export class MultiBattleScene extends Phaser.Scene {
       this.broadcastTeamExit();      // 队长返回 → 广播全队一起退出战斗
       this.scene.stop();
     });
-    c.add([bg, panel, t, btn]);
+    c.add([bg, panelBg, t, btn]);
     this.resultPanel = c;
   }
 

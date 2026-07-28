@@ -105,4 +105,45 @@ save("ui_tag_bg.png", make_rounded(32, 32, 8, hex2rgba(TAG_TOP), hex2rgba(TAG_BO
 # 面板（子菜单背景，480x320，18px 圆角，九宫格）
 save("ui_panel.png", make_rounded(480, 320, 18, hex2rgba(PANEL_TOP), hex2rgba(PANEL_BOT), hex2rgba(PANEL_BD), 2))
 
+
+def make_glow_border(w, h, radius, border_hex, levels=4):
+    """发光描边（中心透明）：多层递减 alpha 的描边模拟辉光。用于卡牌待选高亮。"""
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    r, g, b = hex2rgba(border_hex)[:3]
+    d = ImageDraw.Draw(img)
+    for i in range(levels):
+        a = int(220 * (1 - i / levels)) + 20
+        d.rounded_rectangle(
+            [i, i, w - 1 - i, h - 1 - i], radius=max(1, radius - i),
+            outline=(r, g, b, a), width=1,
+        )
+    return img
+
+
+def make_radial(w, h, color_hex, max_alpha=255):
+    """径向渐变辉光（中心不透明→边缘透明）。用于暴击/治疗飘字底光。"""
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    r, g, b = hex2rgba(color_hex)[:3]
+    cx, cy = w / 2, h / 2
+    maxd = ((cx * cx + cy * cy) ** 0.5) or 1
+    px = img.load()
+    for y in range(h):
+        for x in range(w):
+            d = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+            a = int(max_alpha * max(0, 1 - d / maxd))
+            px[x, y] = (r, g, b, a)
+    return img
+
+
+# 卡牌「待选目标」高亮辉光框（384x104，中心透明，黄色描边辉光）
+save("ui_card_hl.png", make_glow_border(384, 104, 14, "#ffe066", levels=5))
+
+# 子菜单行背景（540x40，8px 圆角）— 普通态 / 禁用态 / 返回行
+save("ui_menu_row.png", make_rounded(540, 40, 8, hex2rgba(BTN_NORMAL_TOP), hex2rgba(BTN_NORMAL_BOT), hex2rgba(BTN_NORMAL_BD), 1))
+save("ui_menu_row_dis.png", make_rounded(540, 40, 8, hex2rgba(DARK_BOT), hex2rgba("#0c0f15"), hex2rgba("#2a3342"), 1))
+save("ui_menu_back.png", make_rounded(540, 40, 8, hex2rgba("#3a2a2a"), hex2rgba("#2a1c1c"), hex2rgba("#aa6666"), 1))
+
+# 飘字底光（128x72 径向辉光，白色，运行时按类型 setTint 上色）
+save("ui_float_glow.png", make_radial(128, 72, "#ffffff", max_alpha=200))
+
 print("完成。共生成皮肤切图。可直接被 Phaser 加载为图片纹理。")

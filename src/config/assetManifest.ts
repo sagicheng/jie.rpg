@@ -249,4 +249,9 @@ export const ASSET_IMAGES: AssetImage[] = [
   { key: 'ui_card_pet',   path: 'assets/ui/skin/ui_card_pet.png' },
   { key: 'ui_tag_bg',     path: 'assets/ui/skin/ui_tag_bg.png' },
   { key: 'ui_panel',      path: 'assets/ui/skin/ui_panel.png' },
+  { key: 'ui_card_hl',    path: 'assets/ui/skin/ui_card_hl.png' },
+  { key: 'ui_menu_row',   path: 'assets/ui/skin/ui_menu_row.png' },
+  { key: 'ui_menu_row_dis', path: 'assets/ui/skin/ui_menu_row_dis.png' },
+  { key: 'ui_menu_back',  path: 'assets/ui/skin/ui_menu_back.png' },
+  { key: 'ui_float_glow', path: 'assets/ui/skin/ui_float_glow.png' },
 ];

@@ -8,7 +8,7 @@ import Phaser from 'phaser';
 import { QUALITY_COLOR, QUALITY_CN } from '../core/constants';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
 import { GameState } from '../managers/GameState';
-import { SkinBar, SkinButton, hpColor } from '../ui/BattleSkin';
+import { SkinBar, SkinButton, hpColor, floatDamage, panel, menuRow } from '../ui/BattleSkin';
 import { ensureFormPortrait } from '../core/portraitLoader';
 import { EnemyData, calcDamage, calcMagicDamage, generateLoot } from '../managers/BattleData';
 import { Inventory } from '../managers/Inventory';
@@ -773,11 +773,7 @@ export class BattleScene extends Phaser.Scene {
     skills.forEach((sk, i) => {
       const y = GAME_HEIGHT - 120 - i * (btnH + 6);
       const canUse = this.playerMp >= sk.mp;
-      const bg = this.add.graphics();
-      bg.fillStyle(canUse ? 0x2a2a4e : 0x1a1a2e, 0.9);
-      bg.fillRoundedRect(GAME_WIDTH / 2 - btnW / 2, y, btnW, btnH, 8);
-      bg.lineStyle(1, canUse ? 0x556688 : 0x333344, 0.5);
-      bg.strokeRoundedRect(GAME_WIDTH / 2 - btnW / 2, y, btnW, btnH, 8);
+      const bg = menuRow(this, GAME_WIDTH / 2, y + btnH / 2, btnW, btnH, !canUse);
       this.subMenuContainer!.add(bg);
       const phaseTag = sk.phase === '始解' ? '[始]' : sk.phase === '卍解' ? '[卍]' : '';
       const typeTag = sk.skillType === 'heal' ? '[愈]' : sk.skillType === 'control' ? '[控]' : (sk.damageType === 'physical' ? '[物]' : '[魔]');
@@ -830,11 +826,7 @@ export class BattleScene extends Phaser.Scene {
       const mp = Kido.getNodeMp(sk.id);
       const canUse = this.playerMp >= mp;
       const healType = sk.effect.type === 'heal' || sk.effect.type === 'shield' || sk.effect.type === 'revive';
-      const bg = this.add.graphics();
-      bg.fillStyle(canUse ? 0x2a1a4e : 0x1a1a2e, 0.9);
-      bg.fillRoundedRect(GAME_WIDTH / 2 - btnW / 2, y, btnW, btnH, 8);
-      bg.lineStyle(1, canUse ? 0x8866cc : 0x333344, 0.5);
-      bg.strokeRoundedRect(GAME_WIDTH / 2 - btnW / 2, y, btnW, btnH, 8);
+      const bg = menuRow(this, GAME_WIDTH / 2, y + btnH / 2, btnW, btnH, !canUse);
       this.subMenuContainer!.add(bg);
       const schoolTag = sk.school === 'hado' ? '[破]' : sk.school === 'bakudo' ? '[缚]' : '[回]';
       const kidoName = sk.number ? `${sk.number}·${sk.name}` : sk.name;
@@ -1282,9 +1274,7 @@ export class BattleScene extends Phaser.Scene {
       const def = item.id ? CONSUMABLES[item.id] : null;
       const descText = def ? def.desc : (effect?.type === 'heal_hp' ? `回复${effect.hpAmount}HP` : (item.desc || '消耗品'));
 
-      const bg = this.add.graphics();
-      bg.fillStyle(0x2a2a4e, 0.9); bg.fillRoundedRect(GAME_WIDTH / 2 - btnW / 2, y, btnW, btnH, 8);
-      bg.lineStyle(1, 0x556688, 0.5); bg.strokeRoundedRect(GAME_WIDTH / 2 - btnW / 2, y, btnW, btnH, 8);
+      const bg = menuRow(this, GAME_WIDTH / 2, y + btnH / 2, btnW, btnH, false);
       this.subMenuContainer!.add(bg);
       this.subMenuContainer!.add(this.add.text(GAME_WIDTH / 2, y + 12,
         `${item.name} ×${item.quantity}`, { fontSize: '14px', color: '#88ee88', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5));
@@ -1789,12 +1779,8 @@ export class BattleScene extends Phaser.Scene {
 
     const panelH = 280 + allLoot.length * 30 + (newTitles.length ? 28 + newTitles.length * 22 : 0);
     const container = this.add.container(0, 0).setDepth(100);
-    const panel = this.add.graphics();
-    panel.fillStyle(0x1a1a2e, 0.95);
-    panel.fillRoundedRect(GAME_WIDTH / 2 - 180, 220, 360, panelH, 12);
-    panel.lineStyle(2, 0xc9a96e, 0.7);
-    panel.strokeRoundedRect(GAME_WIDTH / 2 - 180, 220, 360, panelH, 12);
-    container.add(panel);
+    const pnl = panel(this, GAME_WIDTH / 2 - 180, 220, 360, panelH, 100);
+    container.add(pnl);
     container.add(this.add.text(GAME_WIDTH / 2, 248, '胜 利', {
       fontSize: '24px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 2 },
     }).setOrigin(0.5));
@@ -1852,12 +1838,8 @@ export class BattleScene extends Phaser.Scene {
     this.clearCommands();
     this.logText.setText('战斗不能...');
     const container = this.add.container(0, 0).setDepth(100);
-    const panel = this.add.graphics();
-    panel.fillStyle(0x1a1a2e, 0.95);
-    panel.fillRoundedRect(GAME_WIDTH / 2 - 140, 300, 280, 180, 12);
-    panel.lineStyle(2, 0x993333, 0.7);
-    panel.strokeRoundedRect(GAME_WIDTH / 2 - 140, 300, 280, 180, 12);
-    container.add(panel);
+    const pnl = panel(this, GAME_WIDTH / 2 - 140, 300, 280, 180, 100);
+    container.add(pnl);
     container.add(this.add.text(GAME_WIDTH / 2, 340, '战斗不能', {
       fontSize: '24px', color: '#cc4444', fontStyle: 'bold', padding: { y: 2 },
     }).setOrigin(0.5));
@@ -1914,6 +1896,34 @@ export class BattleScene extends Phaser.Scene {
   update(): void {
     this.drawAllEnemyHp();
     this.drawPlayerBars();
+    this.tickFloat();
+  }
+
+  /** HP 差值检测 → 统一触发伤害/治疗飘字（覆盖攻击/鬼道/状态tick/道具等所有变动） */
+  private _prevPlayerHp?: number;
+  private _prevEnemyHp: number[] = [];
+  private tickFloat(): void {
+    if (this._prevPlayerHp === undefined) this._prevPlayerHp = this.playerHp;
+    const pd = this.playerHp - this._prevPlayerHp;
+    if (Math.abs(pd) >= 1) {
+      floatDamage(this, GAME_WIDTH * 0.24, GAME_HEIGHT * 0.22 - 70, Math.round(pd), pd < 0 ? 'dmg' : 'heal', { big: Math.abs(pd) > 200 });
+      this._prevPlayerHp = this.playerHp;
+    }
+    if (this._prevEnemyHp.length !== this.enemies.length) {
+      this._prevEnemyHp = this.enemies.map((e) => e.hp);
+    }
+    this.enemies.forEach((en, i) => {
+      const prev = this._prevEnemyHp[i];
+      if (prev === undefined) { this._prevEnemyHp[i] = en.hp; return; }
+      const d = en.hp - prev;
+      if (Math.abs(d) >= 1) {
+        const sp = this.enemySprites[i];
+        const x = sp ? sp.x : GAME_WIDTH / 2;
+        const y = sp ? sp.y - 60 : GAME_HEIGHT / 2;
+        floatDamage(this, x, y, Math.round(d), d < 0 ? 'dmg' : 'heal', { big: Math.abs(d) > 200 });
+        this._prevEnemyHp[i] = en.hp;
+      }
+    });
   }
 
   /** 创建一个状态图标槽（PNG 图标 + 右下角回合数） */
