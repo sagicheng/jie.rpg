@@ -223,7 +223,7 @@ export class GameScene extends Phaser.Scene {
     this.dialogueBox = new DialogueBox(this);
     this.physics.world.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT * 2);
 
-    this.player = this.physics.add.sprite(GameState.x, GameState.y, 'player')
+    this.player = this.physics.add.sprite(GameState.x, GameState.y, 'player_' + GameState.gender)
       .setDepth(10).setCollideWorldBounds(true);
     // 显示尺寸固定 40x60；碰撞体按"当前纹理实际尺寸"比例自适应（换透明底 PNG 尺寸变了也不错位）
     this.player.setDisplaySize(40, 60);
@@ -321,6 +321,54 @@ export class GameScene extends Phaser.Scene {
       if (this.isInDialogue || this.statPanel || this.inventoryPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.questLogPanel) return;
       this.launchMultiBattle();
     });
+
+    // 测试用解锁：E=始解 R=完现术 G=圣文字  A=虚化 S=狱解（raw DOM 事件，100% 可靠）
+    const unlockHandler = (e: KeyboardEvent) => {
+      // 文本框聚焦时不触发（聊天输入等）
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const k = e.key.toLowerCase();
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      console.log('[unlock] key pressed:', k); // 调试：确认 DOM 事件到达
+      let label = '', unlockKey = '';
+      if (k === 'e') { label = '始解'; unlockKey = 'shikai'; }
+      else if (k === 'r') { label = '完现术'; unlockKey = 'fullbring'; }
+      else if (k === 'g') { label = '圣文字'; unlockKey = 'schrift'; }
+      else if (k === 'a') { label = '虚化'; unlockKey = 'hollow'; }
+      else if (k === 's') { label = '狱解'; unlockKey = 'hell'; }
+      else return;
+      if (!unlockKey) return;
+      console.log('[unlock] target:', unlockKey, 'hasUnlock:', GameState.hasUnlock(unlockKey)); // 调试
+      if (!GameState.hasUnlock(unlockKey)) {
+        GameState.addUnlock(unlockKey);
+        console.log('[unlock] added:', unlockKey); // 调试
+      }
+      const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `${label} 已解锁！`, {
+        fontSize: '22px', color: '#88ff88', fontStyle: 'bold',
+        backgroundColor: '#112211cc', padding: { x: 20, y: 12 },
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+      this.tweens.add({ targets: t, alpha: 0, delay: 2000, duration: 500, onComplete: () => t.destroy() });
+    };
+    console.log('[unlock] DOM handler registered for E/R/G/A/S keys'); // 调试：确认 handler 注册成功
+    document.addEventListener('keydown', unlockHandler);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      document.removeEventListener('keydown', unlockHandler);
+    });
+
+    // 开发调试：全局暴露 GameState，一键解锁存到原始数组（绕过 Vite 多 chunk 双实例）
+    (window as any).__gs = GameState;
+    (window as any).__unlockAll = () => {
+      const keys = ['shikai', 'bankai', 'hollow', 'fullbring', 'schrift', 'hell'];
+      (window as any).__unlocked = keys; // 存到 window 原始数组
+      keys.forEach((k: string) => { if (!GameState.hasUnlock(k)) GameState.addUnlock(k); });
+      const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '全部力量体系已解锁！', {
+        fontSize: '26px', color: '#ffff88', fontStyle: 'bold',
+        backgroundColor: '#221100cc', padding: { x: 24, y: 14 },
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+      this.tweens.add({ targets: t, alpha: 0, delay: 2500, duration: 500, onComplete: () => t.destroy() });
+      console.log('✅ 全部力量体系已解锁：' + keys.join(', '));
+    };
+    console.log('💡 调试命令就绪：在控制台输入 __unlockAll() 一键解锁全部力量体系');
 
     // 战斗结束（scene resume）时清除「战斗中」标记，并弹出权威战斗奖励报告（避免被战斗场景遮挡）
     this.events.on(Phaser.Scenes.Events.RESUME, () => {
@@ -1622,7 +1670,7 @@ export class GameScene extends Phaser.Scene {
       if (sid === this.mySessionId) return;
       let rp = this.remotePlayers.get(sid);
       if (!rp) {
-        const sprite = this.add.sprite(p.x, p.y, 'player').setDepth(8).setAlpha(0.9).setDisplaySize(40, 60);
+        const sprite = this.add.sprite(p.x, p.y, 'player_' + (p.gender || GameState.gender)).setDepth(8).setAlpha(0.9).setDisplaySize(40, 60);
         sprite.setTint(Phaser.Display.Color.HexStringToColor(p.color || '#ffffff').color);
         const tag = this.add.text(p.x, p.y - sprite.displayHeight / 2 - 10, '', {
           fontSize: '13px', color: '#ffffff', fontStyle: 'bold',

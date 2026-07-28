@@ -9,6 +9,7 @@
  * 纹理就绪后通过 onReady 回调继续渲染。
  */
 import Phaser from 'phaser';
+import { GameState } from '../managers/GameState';
 
 export function ensureZanpakutoPortraits(
   scene: Phaser.Scene,
@@ -26,6 +27,31 @@ export function ensureZanpakutoPortraits(
 
   const fire = () => onReady?.();
   // 罕见情况：恰有其它加载进行中，等其结束后再启动本次加载，避免重入报错
+  if (loader.isLoading()) {
+    loader.once('complete', () => { loader.once('complete', fire); loader.start(); });
+  } else {
+    loader.once('complete', fire);
+    loader.start();
+  }
+}
+
+/**
+ * 力量形态立绘（虚化/狱解）懒加载：仅加载「当前性别」那一张。
+ * key 对齐 assets/characters/char_${which}_${gender}.png。
+ * 与斩魄刀立绘同理，按需触发、不进启动预载。
+ */
+export function ensureFormPortrait(
+  scene: Phaser.Scene,
+  which: 'hollow' | 'hell',
+  onReady?: (key: string) => void,
+): void {
+  const key = `char_${which}_${GameState.gender}`;
+  if (scene.textures.exists(key)) { onReady?.(key); return; }
+
+  const loader = scene.load as Phaser.Loader.LoaderPlugin;
+  loader.image(key, `assets/characters/${key}.png`);
+
+  const fire = () => onReady?.(key);
   if (loader.isLoading()) {
     loader.once('complete', () => { loader.once('complete', fire); loader.start(); });
   } else {

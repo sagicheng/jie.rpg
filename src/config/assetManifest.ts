@@ -16,7 +16,8 @@ export interface AssetImage {
 }
 
 export const ASSET_IMAGES: AssetImage[] = [
-  { key: 'player', path: 'assets/characters/player.png' },
+  { key: 'player_male', path: 'assets/characters/player_male.png' },
+  { key: 'player_female', path: 'assets/characters/player_female.png' },
   { key: 'enemy', path: 'assets/monsters/enemy.png' },
   { key: 'bg_battle', path: 'assets/backgrounds/bg_battle.png' },
   { key: 'bg_town', path: 'assets/backgrounds/bg_town.png' },
@@ -230,4 +231,10 @@ export const ASSET_IMAGES: AssetImage[] = [
   { key: 'fx_wind',  path: 'assets/particles/fx_wind.png' },
   { key: 'fx_water', path: 'assets/particles/fx_water.png' },
   { key: 'fx_earth', path: 'assets/particles/fx_earth.png' },
+
+  // 力量形态立绘 (虚化/狱解 × 男女 = 4张) — 战斗释放瞬间按需懒加载，不进启动预载
+  { key: 'char_hollow_male', path: 'assets/characters/char_hollow_male.png' },
+  { key: 'char_hollow_female', path: 'assets/characters/char_hollow_female.png' },
+  { key: 'char_hell_male', path: 'assets/characters/char_hell_male.png' },
+  { key: 'char_hell_female', path: 'assets/characters/char_hell_female.png' },
 ];

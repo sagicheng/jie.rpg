@@ -145,7 +145,7 @@ export class DungeonMapScene extends Phaser.Scene {
     this.createMap();
     this.physics.world.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT * 2);
 
-    this.player = this.physics.add.sprite(GAME_WIDTH * 1.5, GAME_HEIGHT * 1.0, 'player')
+    this.player = this.physics.add.sprite(GAME_WIDTH * 1.5, GAME_HEIGHT * 1.0, 'player_' + GameState.gender)
       .setDepth(10).setCollideWorldBounds(true);
     this.player.body!.setSize(24, 32);
     this.player.body!.setOffset(4, 0);
@@ -356,7 +356,7 @@ export class DungeonMapScene extends Phaser.Scene {
       if (sid === selfSid) return;
       let rp = this.dungeonRemotePlayers.get(sid);
       if (!rp) {
-        const sprite = this.add.sprite(p.x, p.y, 'player').setDepth(9).setAlpha(0.92);
+        const sprite = this.add.sprite(p.x, p.y, 'player_' + (p.gender || GameState.gender)).setDepth(9).setAlpha(0.92);
         sprite.setTint(Phaser.Display.Color.HexStringToColor(p.color || '#ffffff').color);
         const tag = this.add.text(p.x, p.y - 46, p.name || '队友', {
           fontSize: '13px', color: '#ffffff', fontStyle: 'bold',

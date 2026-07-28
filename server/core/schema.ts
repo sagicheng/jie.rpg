@@ -81,6 +81,14 @@ export class CombatPlayer extends Schema {
   @type('number') maxMp = 0;
   /** 权威异常状态（DoT / 控制 / 减益） */
   @type(CombatStatus) status = new CombatStatus();
+
+  // ── 形态激活状态（权威同步） ──
+  @type('boolean') hollowUsed = false;
+  @type('boolean') hollowActive = false;
+  @type('number') hollowTurnsLeft = 0;
+  @type('boolean') hellUsed = false;
+  @type('boolean') hellActive = false;
+  @type('number') hellTurnsLeft = 0;
 }
 
 /** 战斗房间：敌人 */

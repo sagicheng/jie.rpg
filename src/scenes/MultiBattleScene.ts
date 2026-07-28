@@ -16,6 +16,8 @@
  */
 import Phaser from 'phaser';
 import { getClient } from '../core/Net';
+import { GameState } from '../managers/GameState';
+import { ensureFormPortrait } from '../core/portraitLoader';
 import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../managers/Skills';
 import { Kido, KidoNode } from '../managers/Kido';
 import { Inventory } from '../managers/Inventory';
@@ -118,6 +120,8 @@ export class MultiBattleScene extends Phaser.Scene {
 
   // 服务端权威战斗奖励（battleReward 消息），透传给 GameScene.onMultiBattleEnd 供结算报告
   private lastReward: { exp: number; gold: number; loot: string[]; leveled: boolean } | null = null;
+  /** DOM 力量快捷键处理器引用（用于 SHUTDOWN 清理）。 */
+  private _powerKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor() {
     super({ key: 'MultiBattleScene' });
@@ -174,11 +178,11 @@ export class MultiBattleScene extends Phaser.Scene {
 
     // 战斗信息播报已移至右下角，与左下角 chatHud 不重叠，故保留聊天 HUD 可见（用户要求）。
 
-    // ——— 两步固定选择指令栏（梦幻/飘流式：先人物 6 项，后灵宠 3 项）———
+    // ——— 两步固定选择指令栏（梦幻/飘流式：先人物，后灵宠）———
     const by = h - 70;
-    const bw = 140, bh = 48, bgap = 6;
+    let bw = 140, bh = 48, bgap = 6;
 
-    // STEP1 人物指令（6 项）
+    // STEP1 人物指令
     const charDefs: { label: string; type: string; color: number; act: () => void }[] = [
       { label: '攻击', type: 'attack', color: 0x2e7d32, act: () => this.onCharAttack() },
       { label: '技能', type: 'skill', color: 0x1565c0, act: () => this.openSkillMenu() },
@@ -187,6 +191,24 @@ export class MultiBattleScene extends Phaser.Scene {
       { label: '防御', type: 'defend', color: 0x455a64, act: () => this.stageChar({ type: 'defend' }) },
       { label: '逃跑', type: 'escape', color: 0xc62828, act: () => this.stageChar({ type: 'escape' }) },
     ];
+    // 开发调试按钮：从 window.__unlocked 读取（绕过 Vite 多 chunk GameState 双实例）
+    const unlocked: string[] = (window as any).__unlocked || [];
+    const hasUnlock = (k: string) => unlocked.includes(k) || GameState.hasUnlock(k);
+    if (hasUnlock('bankai')) {
+      charDefs.push({ label: '卍解', type: 'bankai', color: 0x4a148c, act: () => this.stageChar({ type: 'bankai', id: 'bankai' }) });
+      console.log('[MultiBattle] 卍解按钮已添加');
+    }
+    if (hasUnlock('hollow')) {
+      charDefs.push({ label: '虚化', type: 'hollow', color: 0x9933cc, act: () => this.stageChar({ type: 'hollow' }) });
+      console.log('[MultiBattle] 虚化按钮已添加');
+    }
+    if (hasUnlock('hell')) {
+      charDefs.push({ label: '狱解', type: 'hell', color: 0xcc3300, act: () => this.stageChar({ type: 'hell' }) });
+      console.log('[MultiBattle] 狱解按钮已添加');
+    }
+    console.log(`[MultiBattle] charDefs total=${charDefs.length} hasBankai=${hasUnlock('bankai')} hasHollow=${hasUnlock('hollow')} hasHell=${hasUnlock('hell')}`);
+    // 按钮多时适当缩小宽度，确保放得下
+    if (charDefs.length > 6) bw = 120;
     const charTotalW = bw * charDefs.length + bgap * (charDefs.length - 1);
     const charStartX = (w - charTotalW) / 2 + bw / 2;
     charDefs.forEach((c, i) => {
@@ -224,9 +246,42 @@ export class MultiBattleScene extends Phaser.Scene {
       this.scene.stop();
     });
 
+    // 力量快捷键：Z=虚化 X=狱解（改用 document DOM 事件，避开 Phaser 场景路由问题）
+    this._powerKeyHandler = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      // 复用与按钮创建相同的 hasUnlock（绕过 Vite 多 chunk GameState 双实例）
+      const unlocked: string[] = (window as any).__unlocked || [];
+      const hasUnlock = (k: string) => unlocked.includes(k) || GameState.hasUnlock(k);
+      // Z=虚化
+      if (key === 'z') {
+        console.log(`[MultiBattle] Z pressed, commandStep=${this.commandStep}, stagedChar=${!!this.stagedChar}, room=${!!this.room?.state}, hasHollow=${hasUnlock('hollow')}`);
+        if (this.commandStep !== 1 || this.stagedChar || !this.room?.state) { this.flashMessage('人物指令阶段才可使用'); return; }
+        if (!hasUnlock('hollow')) { this.flashMessage('虚化尚未解锁'); return; }
+        const me = this.room.state.players.get(this.mySessionId);
+        if (me?.hollowUsed) { this.flashMessage('虚化已在本场战斗中使用'); return; }
+        if (me?.hollowActive) { this.flashMessage('虚化已激活'); return; }
+        console.log('[MultiBattle] 虚化已提交');
+        this.stageChar({ type: 'hollow' });
+      }
+      // X=狱解
+      if (key === 'x') {
+        console.log(`[MultiBattle] X pressed, commandStep=${this.commandStep}, stagedChar=${!!this.stagedChar}, room=${!!this.room?.state}, hasHell=${hasUnlock('hell')}`);
+        if (this.commandStep !== 1 || this.stagedChar || !this.room?.state) { this.flashMessage('人物指令阶段才可使用'); return; }
+        if (!hasUnlock('hell')) { this.flashMessage('狱解尚未解锁'); return; }
+        const me = this.room.state.players.get(this.mySessionId);
+        if (me?.hellUsed) { this.flashMessage('狱解已在本场战斗中使用'); return; }
+        if (me?.hellActive) { this.flashMessage('狱解已激活'); return; }
+        console.log('[MultiBattle] 狱解已提交');
+        this.stageChar({ type: 'hell' });
+      }
+    };
+    document.addEventListener('keydown', this._powerKeyHandler);
+
     this.connect();
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this._powerKeyHandler) { document.removeEventListener('keydown', this._powerKeyHandler); this._powerKeyHandler = null; }
       if (this.menu) { this.menu.destroy(true); this.menu = null; this.menuOpen = false; }
       if (this.room) { this.room.leave(); this.room = null; }
       // 恢复被本场战斗暂停的底层场景（地图 → GameScene；副本 → DungeonMapScene）
@@ -323,6 +378,10 @@ export class MultiBattleScene extends Phaser.Scene {
               target.onMultiBattleEnd('victory', this.monsterId, this.enemyData, this.lastReward);
             }
           }
+        });
+        // 服务端广播形态激活（虚化/狱解）：所有客户端播放全屏立绘特效（包含触发者自身）
+        room.onMessage('formActivated', (data: { actorSid: string; form: string }) => {
+          this.showFormPortrait(data.form as 'hollow' | 'hell');
         });
         this.renderState();
         // 组队战斗：只有触发者(撞怪的人)负责发 startbattle，被拉进来的队员静默等待
@@ -661,6 +720,39 @@ export class MultiBattleScene extends Phaser.Scene {
       fontSize: '16px', color: '#ffcc66', backgroundColor: '#000000aa', padding: { x: 12, y: 6 },
     }).setOrigin(0.5).setDepth(70);
     this.time.delayedCall(1000, () => t.destroy());
+  }
+
+  /**
+   * 释放力量瞬间居中弹出立绘（虚化/狱解），按当前性别自动选男/女那张。
+   * 缩放+淡入（~350ms）后悬停，1150ms 后 300ms 淡出；外圈暗红/狱炎光环烘托觉醒感。
+   */
+  private showFormPortrait(which: 'hollow' | 'hell'): void {
+    ensureFormPortrait(this, which, (key) => {
+      if (!this.scene.isActive()) return;
+      const w = this.scale.width, h = this.scale.height, cx = w / 2, cy = h / 2;
+      const haloColor = which === 'hollow' ? 0xff3355 : 0xff2200;
+
+      const halo = this.add.graphics().setScrollFactor(0).setDepth(199).setAlpha(0);
+      halo.fillStyle(haloColor, 0.18);
+      halo.fillCircle(cx, cy, 380);
+      halo.fillStyle(haloColor, 0.12);
+      halo.fillCircle(cx, cy, 270);
+
+      const img = this.add.image(cx, cy, key)
+        .setScrollFactor(0).setDepth(200).setOrigin(0.5).setAlpha(0);
+      const finalScale = 900 / img.height;
+      img.setScale(finalScale * 0.85);
+
+      this.tweens.add({ targets: img, alpha: 1, scaleX: finalScale, scaleY: finalScale, duration: 350, ease: 'Back.Out' });
+      this.tweens.add({ targets: halo, alpha: 1, duration: 350 });
+
+      this.time.delayedCall(1150, () => {
+        this.tweens.add({
+          targets: [img, halo], alpha: 0, duration: 300,
+          onComplete: () => { img.destroy(); halo.destroy(); },
+        });
+      });
+    });
   }
 
   /** 指令阶段倒计时：服务端 roundExpiresAt 驱动，超时自动开战。 */

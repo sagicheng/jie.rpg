@@ -47,7 +47,8 @@ export class BootScene extends Phaser.Scene {
     for (const a of ASSET_IMAGES) {
       // 斩魄刀立绘（zan_*）共 72 张 ~13MB，改为「按需懒加载」：
       // 仅在实际显示立绘时才加载当前刀的 2 张，避免启动一次性预载拖慢加载页
-      if (a.key.startsWith('zan_')) continue;
+      // 力量形态立绘（char_*，虚化/狱解×男女）同样按需懒加载，跳过启动预载
+      if (a.key.startsWith('zan_') || a.key.startsWith('char_')) continue;
       this.load.image(a.key, a.path);
     }
 
@@ -61,15 +62,17 @@ export class BootScene extends Phaser.Scene {
     // 已用真实美术的 key 不再生成程序化占位
     const REAL_KEYS = new Set(ASSET_IMAGES.map(a => a.key));
 
-    // 玩家角色 (32x48)
-    if (!REAL_KEYS.has('player')) {
-      g.clear();
-      g.fillStyle(0x4a90d9, 1);
-      g.fillRoundedRect(0, 0, 32, 48, 4);
-      g.fillStyle(0xffcc88, 1);
-      g.fillRoundedRect(8, 4, 16, 16, 4);
-      g.generateTexture('player', 32, 48);
-      g.clear();
+    // 玩家角色 (32x48) — 按性别生成程序化占位（真实美术已覆盖时跳过）
+    for (const gk of ['player_male', 'player_female']) {
+      if (!REAL_KEYS.has(gk)) {
+        g.clear();
+        g.fillStyle(gk === 'player_male' ? 0x4a90d9 : 0xd94a9a, 1);
+        g.fillRoundedRect(0, 0, 32, 48, 4);
+        g.fillStyle(0xffcc88, 1);
+        g.fillRoundedRect(8, 4, 16, 16, 4);
+        g.generateTexture(gk, 32, 48);
+        g.clear();
+      }
     }
 
     // NPC (32x48)

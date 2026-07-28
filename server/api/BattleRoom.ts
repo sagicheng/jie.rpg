@@ -217,6 +217,7 @@ export class BattleRoom extends Room<BattleRoomState> {
       if (type === 'skill' && (!data.id || !lo.skills.has(data.id))) return;
       if (type === 'kido' && (!data.id || !lo.kidos.has(data.id))) return;
       if (type === 'item' && (!data.id || !lo.items.has(data.id))) return;
+      // hollow / hell 无需额外校验——执行阶段才查解锁与使用标志
     }
 
     this.pendingActions.set(actorSid, {
@@ -353,6 +354,7 @@ export class BattleRoom extends Room<BattleRoomState> {
       if (this.checkVictory() || this.checkDefeat()) return;
       this.state.round += 1;
       this.defending.clear();
+      this.tickForms();
       this.startCommandPhase();
       return;
     }
@@ -450,6 +452,22 @@ export class BattleRoom extends Room<BattleRoomState> {
         const skName = PET_SKILLS[action.skillId!]?.name || action.skillId!;
         this.logMsg(p.name, `${p.name}「${skName}」→ ${e.name} -${r.damage}${r.crit ? '（暴击！）' : ''}`);
         if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+        break;
+      }
+      case 'hollow': {
+        if (p.hollowUsed || p.hollowActive) { this.scheduleExecuteNext(); return; }
+        p.hollowActive = true; p.hollowTurnsLeft = 4; p.hollowUsed = true;
+        p.maxMp = Math.round(p.maxMp * 1.5);
+        p.mp = p.maxMp;
+        this.logMsg(p.name, `${p.name} 虚化！MP上限激增！`);
+        this.broadcast('formActivated', { actorSid: sid, form: 'hollow' });
+        break;
+      }
+      case 'hell': {
+        if (p.hellUsed || p.hellActive) { this.scheduleExecuteNext(); return; }
+        p.hellActive = true; p.hellTurnsLeft = 3; p.hellUsed = true;
+        this.logMsg(p.name, `${p.name} 狱解！业火焚身——伤害倍增！`);
+        this.broadcast('formActivated', { actorSid: sid, form: 'hell' });
         break;
       }
       case 'defend':
@@ -611,6 +629,21 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (s.poison > 0) dot += isPlayer ? Math.max(1, Math.round(maxHp * 0.03)) : s.poisonDmg;
     if (s.parasite > 0) dot += Math.max(1, Math.round(maxHp * 0.05));
     return dot;
+  }
+
+  /** 每回合结束：衰减形态持续回合（虚化4回合/狱解3回合，到期自动结束）。 */
+  private tickForms(): void {
+    this.state.players.forEach((p) => {
+      if (!p.alive) return;
+      if (p.hollowActive) {
+        p.hollowTurnsLeft--;
+        if (p.hollowTurnsLeft <= 0) { p.hollowActive = false; this.logMsg('system', `${p.name} 虚化结束`); }
+      }
+      if (p.hellActive) {
+        p.hellTurnsLeft--;
+        if (p.hellTurnsLeft <= 0) { p.hellActive = false; this.logMsg('system', `${p.name} 狱解结束`); }
+      }
+    });
   }
 
   /** 衰减所有状态 1 回合（到期归零，回滚） */
