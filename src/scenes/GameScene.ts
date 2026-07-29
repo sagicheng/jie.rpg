@@ -78,7 +78,7 @@ export class GameScene extends Phaser.Scene {
   private mySessionId = '';
   public authToken = '';
   public characterId = 0;
-  private remotePlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; tag: Phaser.GameObjects.Text; tx: number; ty: number; name: string; title: string }> = new Map();
+  private remotePlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; tag: Phaser.GameObjects.Text; tx: number; ty: number; name: string; title: string; gender: string }> = new Map();
   // 队伍状态（多人组队·Stage D+）
   private teamId = '';
   private teamMembers: Array<{ sid: string; name: string }> = [];
@@ -205,6 +205,18 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  preload(): void {
+    // 主角色行走精灵表（down/side/up × 男女），每向 8 帧，80×120
+    for (const f of ['down', 'side', 'up']) {
+      for (const g of ['male', 'female']) {
+        const key = `walk_${f}_${g}`;
+        if (!this.textures.exists(key)) {
+          this.load.spritesheet(key, `assets/characters/walk_${f}_${g}.png`, { frameWidth: 80, frameHeight: 120 });
+        }
+      }
+    }
+  }
+
   create(): void {
     this.npcList = [];
     this.enemies = [];
@@ -223,11 +235,23 @@ export class GameScene extends Phaser.Scene {
     this.dialogueBox = new DialogueBox(this);
     this.physics.world.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT * 2);
 
-    this.player = this.physics.add.sprite(GameState.x, GameState.y, 'player_' + GameState.gender)
+    this.player = this.physics.add.sprite(GameState.x, GameState.y, 'walk_down_' + GameState.gender)
       .setDepth(10).setCollideWorldBounds(true);
     // 显示尺寸固定 40x60；碰撞体按"当前纹理实际尺寸"比例自适应（换透明底 PNG 尺寸变了也不错位）
     this.player.setDisplaySize(40, 60);
     this.fitBody(this.player, 0.7, 0.9, 0.15, 0.04);
+
+    // 行走动画（两种性别各一套，精灵表 walk_${facing}_${gender}，每向 8 帧，80×120）
+    const mkWalk = (key: string, tex: string) => {
+      if (!this.anims.exists(key)) {
+        this.anims.create({ key, frames: this.anims.generateFrameNumbers(tex, { start: 0, end: 7 }), frameRate: 10, repeat: -1 });
+      }
+    };
+    for (const g of ['male', 'female'] as const) {
+      mkWalk(`walk_down_${g}`, `walk_down_${g}`);
+      mkWalk(`walk_side_${g}`, `walk_side_${g}`);
+      mkWalk(`walk_up_${g}`,   `walk_up_${g}`);
+    }
 
     // 怪物分组：用物理重叠检测替代中心点距离判定，接触即触发战斗（更稳、更符合直觉）
     this.enemyGroup = this.physics.add.group();
@@ -629,6 +653,16 @@ export class GameScene extends Phaser.Scene {
     }
     this.player.setVelocity(vx, vy);
 
+    // 主角色行走动画：按移动向量选朝向（down/side/up），侧身左右用 flipX
+    if (vx !== 0 || vy !== 0) {
+      const facing = Math.abs(vx) > Math.abs(vy) ? 'side' : (vy > 0 ? 'down' : 'up');
+      this.player.anims.play('walk_' + facing + '_' + GameState.gender, true);
+      this.player.setFlipX(Math.abs(vx) > Math.abs(vy) && vx > 0);
+    } else {
+      this.player.anims.stop();
+      this.player.setTexture('walk_down_' + GameState.gender).setFrame(0);
+    }
+
     // 组队非队长：服务端权威位置覆盖本地物理，视觉上紧跟队长
     if (isTeamNonLeader && this.gameRoom) {
       const meState = this.gameRoom.state?.players?.get(this.mySessionId);
@@ -637,7 +671,6 @@ export class GameScene extends Phaser.Scene {
         this.player.setVelocity(0, 0);
       }
     }
-    if (vx < 0) this.player.setFlipX(true); else if (vx > 0) this.player.setFlipX(false);
     this.checkNPCProximity(); this.checkZoneExit(); this.checkDungeonPortal();
     this.updateMiniMap();
     // 物理重叠是主要战斗触发，但为防偶发漏检，保留一帧一次的距离兜底
@@ -650,8 +683,18 @@ export class GameScene extends Phaser.Scene {
     // 联机：每帧拉取服务端状态并平滑插值远程玩家（含名字）
     this.syncRemotePlayers();
     this.remotePlayers.forEach(rp => {
+      const dx = rp.tx - rp.sprite.x, dy = rp.ty - rp.sprite.y;
       rp.sprite.x = Phaser.Math.Linear(rp.sprite.x, rp.tx, 0.2);
       rp.sprite.y = Phaser.Math.Linear(rp.sprite.y, rp.ty, 0.2);
+      // 远程玩家行走动画：按「目标-当前」向量选朝向与翻转（与本地玩家同逻辑）
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        const facing = Math.abs(dx) > Math.abs(dy) ? 'side' : (dy > 0 ? 'down' : 'up');
+        rp.sprite.anims.play('walk_' + facing + '_' + rp.gender, true);
+        rp.sprite.setFlipX(Math.abs(dx) > Math.abs(dy) && dx > 0);
+      } else {
+        rp.sprite.anims.stop();
+        rp.sprite.setTexture('walk_down_' + rp.gender).setFrame(0);
+      }
       rp.tag.setPosition(Math.round(rp.sprite.x), Math.round(rp.sprite.y - rp.sprite.displayHeight / 2 - 10));
     });
     // 联机：每帧按服务端怪物状态机同步显示（防重入战斗）
@@ -1670,7 +1713,7 @@ export class GameScene extends Phaser.Scene {
       if (sid === this.mySessionId) return;
       let rp = this.remotePlayers.get(sid);
       if (!rp) {
-        const sprite = this.add.sprite(p.x, p.y, 'player_' + (p.gender || GameState.gender)).setDepth(8).setAlpha(0.9).setDisplaySize(40, 60);
+        const sprite = this.add.sprite(p.x, p.y, 'walk_down_' + (p.gender || GameState.gender)).setDepth(8).setAlpha(0.9).setDisplaySize(40, 60);
         sprite.setTint(Phaser.Display.Color.HexStringToColor(p.color || '#ffffff').color);
         const tag = this.add.text(p.x, p.y - sprite.displayHeight / 2 - 10, '', {
           fontSize: '13px', color: '#ffffff', fontStyle: 'bold',
@@ -1678,7 +1721,7 @@ export class GameScene extends Phaser.Scene {
           backgroundColor: '#00000066', padding: { x: 5, y: 2 },
           align: 'center',
         }).setOrigin(0.5, 1).setDepth(50);
-        rp = { sprite, tag, tx: p.x, ty: p.y, name: '', title: '' };
+        rp = { sprite, tag, tx: p.x, ty: p.y, name: '', title: '', gender: p.gender || GameState.gender };
         this.remotePlayers.set(sid, rp);
       }
       rp.tx = p.x; rp.ty = p.y;                 // 目标坐标（避免每帧硬跳）

@@ -1377,6 +1377,7 @@ export class BattleScene extends Phaser.Scene {
     this.playerMdef = Math.round(this.playerMdef * 1.3);
     this.playerSpd = Math.round(this.playerSpd * 1.3);
     this.logText.setText('卍 解！全属性大幅提升（5回合）！');
+    this.showFormPortrait('bankai');                 // 卍解立绘演出（参照虚化，复用主角色静态图）
     this.cameras.main.flash(600, 0, 100, 200);
     this.cameras.main.shake(300, 0.01);
     this.time.delayedCall(1500, () => this.startEnemyPhase());
@@ -1414,11 +1415,13 @@ export class BattleScene extends Phaser.Scene {
    * 释放力量瞬间居中弹出立绘（虚化/狱解），按当前性别自动选男/女那张。
    * 缩放+淡入（~350ms）后悬停，于 1500ms 敌方回合前淡出；外圈暗红/狱炎光环烘托觉醒感。
    */
-  private showFormPortrait(which: 'hollow' | 'hell'): void {
+  private showFormPortrait(which: 'hollow' | 'hell' | 'bankai'): void {
     ensureFormPortrait(this, which, (key) => {
       if (!this.scene.isActive()) return;
       const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
-      const haloColor = which === 'hollow' ? 0xff3355 : 0xff2200;
+      const haloColor = which === 'hollow' ? 0xff3355
+        : which === 'hell'   ? 0xff2200
+        :                      0x66ccff;   // bankai 青白光环
 
       const halo = this.add.graphics().setScrollFactor(0).setDepth(199).setAlpha(0);
       halo.fillStyle(haloColor, 0.18);

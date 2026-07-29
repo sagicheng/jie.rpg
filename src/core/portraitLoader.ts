@@ -42,10 +42,12 @@ export function ensureZanpakutoPortraits(
  */
 export function ensureFormPortrait(
   scene: Phaser.Scene,
-  which: 'hollow' | 'hell',
+  which: 'hollow' | 'hell' | 'bankai',
   onReady?: (key: string) => void,
 ): void {
-  const key = `char_${which}_${GameState.gender}`;
+  const key = which === 'bankai'
+    ? `player_${GameState.gender}`            // 卍解：复用主角色静态立绘（placeholder），正式美术到位后改回 char_bankai_*
+    : `char_${which}_${GameState.gender}`;
   if (scene.textures.exists(key)) { onReady?.(key); return; }
 
   const loader = scene.load as Phaser.Loader.LoaderPlugin;
