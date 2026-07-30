@@ -6,7 +6,9 @@ import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';
 
-import { GAME_WIDTH, GAME_HEIGHT, ZANPAKUTO_GROWTH } from '../../config/config';
+import { GAME_WIDTH, GAME_HEIGHT } from '../../config/config';
+
+import { zanpakutoName } from '../../config/zanpakuto';
 
 import { GameState } from '../../managers/GameState';
 
@@ -117,7 +119,7 @@ export function renderStatPanel(scene: GameScene): void {
     const infoBg = scene.add.graphics(); infoBg.fillStyle(0x1a1a36, 0.6); infoBg.fillRoundedRect(lx, hdrY, colW, 58, 6); infoBg.lineStyle(1, 0x334466, 0.4); infoBg.strokeRoundedRect(lx, hdrY, colW, 58, 6); p.add(infoBg);
     const gSym = GameState.gender === 'female' ? '♀' : '♂';
     p.add(scene.add.text(lx + 16, hdrY + 8, `${GameState.playerName}  ${gSym}  Lv.${GameState.level}`, { fontSize: '16px', color: '#e8d5a3', fontStyle: 'bold', padding: { y: 2 } }));
-    p.add(scene.add.text(lx + 16, hdrY + 32, `金币: ${GameState.gold}    斩魄刀: ${GameState.zanpakuto || '无'}`, { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }));
+    p.add(scene.add.text(lx + 16, hdrY + 32, `金币: ${GameState.gold}    斩魄刀: ${GameState.zpId ? zanpakutoName(GameState.zpId) : '无'}`, { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }));
     // 当前元素共鸣图标（独立美术，替代原程序化占位）
     const elIconKey = GameState.element ? `icon_${GameState.element}` : null;
     if (elIconKey && scene.textures.exists(elIconKey)) {
@@ -325,7 +327,7 @@ export function renderStatPanel(scene: GameScene): void {
     const parallaxBox = scene.add.container(frameX + frameW / 2, frameY + frameH / 2); p.add(parallaxBox);
     const illoBox = scene.add.container(0, 0); parallaxBox.add(illoBox);
 
-    const zkName = GameState.zanpakuto;
+    const zkName = GameState.zpId;
     const isBankai = GameState.hasBankai, isShikai = GameState.hasShikai;
 
     // 目标纹理 key（按始解/卍解状态选择；不再依赖是否已预载，缺失则异步懒加载）
@@ -363,7 +365,7 @@ export function renderStatPanel(scene: GameScene): void {
 
     // 铭牌（仅刀名 + 始解/卍解状态，不含元素）
     p.add(scene.add.text(frameX + frameW / 2, frameY + frameH - 14,
-      zkName ? `${zkName}  始解${isShikai ? '✓' : '✗'} 卍解${isBankai ? '✓' : '✗'}`
+      zkName ? `${zanpakutoName(zkName)}  始解${isShikai ? '✓' : '✗'} 卍解${isBankai ? '✓' : '✗'}`
              : '尚无斩魄刀',
       { fontSize: '12px', color: '#8899bb', padding: { y: 1 } }).setOrigin(0.5));
 

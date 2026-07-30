@@ -6,7 +6,9 @@ import type { GameScene } from '../../scenes/GameScene';
 
 import Phaser from 'phaser';
 
-import { GAME_WIDTH, GAME_HEIGHT, ZANPAKUTO_GROWTH } from '../../config/config';
+import { GAME_WIDTH, GAME_HEIGHT } from '../../config/config';
+
+import { zanpakutoName, zanpakutoGrowth } from '../../config/zanpakuto';
 
 import { GameState } from '../../managers/GameState';
 
@@ -102,11 +104,11 @@ export function showShikaiSelection(scene: GameScene): void {
       panel.add(card);
 
       // \u540d\u79f0
-      panel.add(scene.add.text(zx + 12, zy + 8, zan, {
+      panel.add(scene.add.text(zx + 12, zy + 8, zanpakutoName(zan), {
         fontSize: '16px', color: '#ffe8b0', fontStyle: 'bold', padding: { y: 2 } }));
 
       // \u6210\u957f\u7387\u63cf\u8ff0
-      const growth = ZANPAKUTO_GROWTH[zan] || {};
+      const growth = zanpakutoGrowth(zan) || {};
       const topStats = Object.entries(growth)
         .filter(([k]) => k !== 'statusAcc')
         .sort((a, b) => (b[1] as number) - (a[1] as number))
@@ -141,7 +143,7 @@ export function showShikaiSelection(scene: GameScene): void {
       sel.on('pointerover', () => { sel.setColor('#ffff88'); sel.setBackgroundColor('#443300aa'); });
       sel.on('pointerout', () => { sel.setColor('#ffcc44'); sel.setBackgroundColor('#33220088'); });
       sel.on('pointerdown', () => {
-        GameState.zanpakuto = zan; if (isOnline()) { requestUnlock('shikai', zan); requestSetZanpakuto(zan); } else GameState.addUnlock('shikai');
+        GameState.zpId = zan; if (isOnline()) { requestUnlock('shikai', zan); requestSetZanpakuto(zan); } else GameState.addUnlock('shikai');
         // 选定即预载该刀立绘（始解/卍解两张），打开属性面板时即为即时显示
         ensureZanpakutoPortraits(scene, zan);
         GameState.recalcStats();

@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0xaaaabb,
     npcs: [
-      { x: 0.45, y: 0.35, name: '朽木露琪亚', role: 'merchant', dialogue: [
-        { speaker: '朽木露琪亚', text: '灵术院的装备都是毕业生留下的。你也要毕业了吧？', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.45, y: 0.35, id: 'npc_m09', name: '露华集', role: 'merchant', dialogue: [
+        { speaker: '露华集', text: '灵术院的装备都是毕业生留下的。你也要毕业了吧？', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(5, '灵术院', ['academy_hat', 'academy_armor', 'academy_bracer', 'academy_boots', 'academy_belt', 'academy_ring', 'academy_necklace', 'academy_charm', 'academy_pendant']) },
-      { x: 0.7, y: 0.5, name: '朽木白哉', role: 'quest', dialogue: [
-        { speaker: '朽木白哉', text: '卍解的最终试炼。通过它，你就不再是学徒了。准备好了吗？', choices: [
+      { x: 0.7, y: 0.5, id: 'npc_m07', name: '白斋主', role: 'quest', dialogue: [
+        { speaker: '白斋主', text: '卍解的最终试炼。通过它，你就不再是学徒了。准备好了吗？', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '稍等', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, name: '穿界门', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.2, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
         { speaker: '穿界门', text: '灵术院的传送门。北边通往虚圈。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '灵术院炼器师', role: 'enhance', dialogue: [{ speaker: '灵术院炼器师', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.2, y: 0.7, name: '雏森桃', role: 'side_quest', dialogue: [
+      { x: 0.55, y: 0.38, id: 'npc_f09', name: '灵院炼', role: 'enhance', dialogue: [{ speaker: '灵院炼', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.2, y: 0.7, id: 'npc_s36', name: '桃影', role: 'side_quest', dialogue: [
         { speaker: '雏森桃', text: '我的鬼道练习材料不够了。帮我采集药草和灵脉。' },
       ]},
-      { x: 0.65, y: 0.8, name: '吉良井鹤', role: 'side_quest', dialogue: [
-        { speaker: '吉良井鹤', text: '灵术院地下室有叛逆死神潜伏。帮我清理几只。' },
+      { x: 0.65, y: 0.8, id: 'npc_q05', name: '霜行', role: 'side_quest', dialogue: [
+        { speaker: '霜行', text: '灵术院地下室有叛逆死神潜伏。帮我清理几只。' },
       ]},
-      { x: 0.15, y: 0.5, name: '浦原喜助', role: 'lore', dialogue: [
-        { speaker: '浦原喜助', text: '卍解完成了吗？很好。接下来——虚化。' },
-        { speaker: '浦原喜助', text: '北边的穿界门通往虚圈。虚化就在那里觉醒。但虚化是禁忌之术……谨慎使用。' },
+      { x: 0.15, y: 0.5, id: 'npc_m01', name: '云行商', role: 'lore', dialogue: [
+        { speaker: '云行商', text: '卍解完成了吗？很好。接下来——虚化。' },
+        { speaker: '云行商', text: '北边的穿界门通往虚圈。虚化就在那里觉醒。但虚化是禁忌之术……谨慎使用。' },
       ]},
-      { x: 0.8, y: 0.65, name: '山本元柳斋', role: 'lore', dialogue: [
-        { speaker: '山本元柳斋', text: '你已完成卍解。但前方的敌人——虚圈的破面——不是普通虚可比的。' },
-        { speaker: '山本元柳斋', text: '虚化是唯一能对抗破面的力量。去虚圈吧。' },
+      { x: 0.8, y: 0.65, id: 'npc_s23', name: '炎叟', role: 'lore', dialogue: [
+        { speaker: '炎叟', text: '你已完成卍解。但前方的敌人——虚圈的破面——不是普通虚可比的。' },
+        { speaker: '炎叟', text: '虚化是唯一能对抗破面的力量。去虚圈吧。' },
       ]},
+
     ],
     enemies: [
 

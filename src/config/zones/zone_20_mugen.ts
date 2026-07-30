@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x2a1118,
     npcs: [
-      { x: 0.45, y: 0.35, name: '地狱狱卒', role: 'merchant', dialogue: [
-        { speaker: '地狱狱卒', text: '无间——地狱最深处。这里的装备连咎人都害怕。', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.45, y: 0.35, id: 'npc_m18', name: '炼狱商', role: 'merchant', dialogue: [
+        { speaker: '炼狱商', text: '无间——地狱最深处。这里的装备连咎人都害怕。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(10, '无间', ['muken_hat', 'muken_armor', 'muken_bracer', 'muken_boots', 'muken_belt', 'muken_ring', 'muken_necklace', 'muken_charm', 'muken_pendant']) },
-      { x: 0.7, y: 0.5, name: '守门人', role: 'quest', dialogue: [
-        { speaker: '守门人', text: '狱解的第二阶段试炼——在无间的黑暗中释放你的狱炎。', choices: [
+      { x: 0.7, y: 0.5, id: 'npc_q15', name: '守门者', role: 'quest', dialogue: [
+        { speaker: '守门者', text: '狱解的第二阶段试炼——在无间的黑暗中释放你的狱炎。', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '稍等', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, name: '地狱之门', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.2, id: 'sys_hell_return', name: '地狱之门', role: 'return_point', dialogue: [
         { speaker: '地狱之门', text: '无间的传送据点。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '无间炼器师', role: 'enhance', dialogue: [{ speaker: '无间炼器师', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.2, y: 0.7, name: '被囚的灵魂', role: 'side_quest', dialogue: [
-        { speaker: '被囚的灵魂', text: '无间的混沌兽太强了……帮我清理几只，我告诉你终焉之渊的秘密。' },
+      { x: 0.55, y: 0.38, id: 'npc_f20', name: '无间炼', role: 'enhance', dialogue: [{ speaker: '无间炼', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.2, y: 0.7, id: 'npc_s34', name: '囚灵', role: 'side_quest', dialogue: [
+        { speaker: '囚灵', text: '无间的混沌兽太强了……帮我清理几只，我告诉你终焉之渊的秘密。' },
       ]},
-      { x: 0.65, y: 0.8, name: '地狱看守', role: 'side_quest', dialogue: [
-        { speaker: '地狱看守', text: '地狱犬的牙齿是上好的材料。帮我击败几只地狱犬。' },
+      { x: 0.65, y: 0.8, id: 'npc_m17', name: '守关翁', role: 'side_quest', dialogue: [
+        { speaker: '守关翁', text: '地狱犬的牙齿是上好的材料。帮我击败几只地狱犬。' },
       ]},
-      { x: 0.15, y: 0.5, name: '朽木露琪亚(残影)', role: 'lore', dialogue: [
-        { speaker: '朽木露琪亚(残影)', text: '无间……蓝染曾经被封印在这里。现在这里只剩下混沌。' },
-        { speaker: '朽木露琪亚(残影)', text: '东边的终焉之渊——地狱的终点。最终的试炼在那里等着你。' },
+      { x: 0.15, y: 0.5, id: 'npc_q16', name: '残影·雪', role: 'lore', dialogue: [
+        { speaker: '残影·雪', text: '无间……蓝染曾经被封印在这里。现在这里只剩下混沌。' },
+        { speaker: '残影·雪', text: '东边的终焉之渊——地狱的终点。最终的试炼在那里等着你。' },
       ]},
-      { x: 0.8, y: 0.65, name: '黑崎一护(残影)', role: 'lore', dialogue: [
-        { speaker: '黑崎一护(残影)', text: '你走到这里了……始解、卍解、虚化、完现术、圣文字、狱解。' },
-        { speaker: '黑崎一护(残影)', text: '终焉之渊在东边。那里有所有灵魂的终点——终焉之兽。打败它，你就完成了试炼。' },
+      { x: 0.8, y: 0.65, id: 'npc_s01', name: '残影·护', role: 'lore', dialogue: [
+        { speaker: '残影·护', text: '你走到这里了……始解、卍解、虚化、完现术、圣文字、狱解。' },
+        { speaker: '残影·护', text: '终焉之渊在东边。那里有所有灵魂的终点——终焉之兽。打败它，你就完成了试炼。' },
       ]},
+
     ],
     enemies: [
 

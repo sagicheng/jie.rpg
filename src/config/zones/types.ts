@@ -1,5 +1,6 @@
 // 区域配置数据类型 — Bleach 原著世界观 21 区域
 export interface ZoneNPC {
+  id: string;
   x: number; y: number;
   name: string;
   role: 'merchant' | 'return_point' | 'quest' | 'lore' | 'craft' | 'side_quest' | 'enhance' | 'quest_board';

@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x445588,
     npcs: [
-      { x: 0.45, y: 0.35, name: '银城空吾', role: 'merchant', dialogue: [
-        { speaker: '银城空吾', text: 'XCUTION基地的装备——完现术强化的最高水平。', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.45, y: 0.35, id: 'npc_m13', name: '银镜坊', role: 'merchant', dialogue: [
+        { speaker: '银镜坊', text: 'XCUTION基地的装备——完现术强化的最高水平。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(7, 'XCUTION', ['xcution_hat', 'xcution_armor', 'xcution_bracer', 'xcution_boots', 'xcution_belt', 'xcution_ring', 'xcution_necklace', 'xcution_charm', 'xcution_pendant']) },
-      { x: 0.7, y: 0.5, name: '毒峰莉露卡', role: 'quest', dialogue: [
-        { speaker: '毒峰莉露卡', text: '完现术的第二阶段——你需要将物质的灵魂完全融合。来试试！', choices: [
+      { x: 0.7, y: 0.5, id: 'npc_q11', name: '花铃', role: 'quest', dialogue: [
+        { speaker: '花铃', text: '完现术的第二阶段——你需要将物质的灵魂完全融合。来试试！', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '稍等', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, name: '穿界门', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.2, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
         { speaker: '穿界门', text: 'XCUTION基地的传送门。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: 'XCUTION工匠', role: 'enhance', dialogue: [{ speaker: 'XCUTION工匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.2, y: 0.7, name: '贾姬', role: 'side_quest', dialogue: [
-        { speaker: '贾姬', text: '完现术修行需要灵木。帮我收集，我教你"泥娃娃"的技巧。' },
+      { x: 0.55, y: 0.38, id: 'npc_f14', name: 'XC匠', role: 'enhance', dialogue: [{ speaker: 'XC匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.2, y: 0.7, id: 'npc_s29', name: '电光', role: 'side_quest', dialogue: [
+        { speaker: '电光', text: '完现术修行需要灵木。帮我收集，我教你"泥娃娃"的技巧。' },
       ]},
-      { x: 0.65, y: 0.8, name: '雪绪', role: 'side_quest', dialogue: [
+      { x: 0.65, y: 0.8, id: 'npc_s30', name: '雪绪', role: 'side_quest', dialogue: [
         { speaker: '雪绪', text: '完现者(敌)越来越强了。帮我击败几只精英，我给你游戏特权。' },
       ]},
-      { x: 0.15, y: 0.5, name: '茶渡泰虎', role: 'lore', dialogue: [
-        { speaker: '茶渡泰虎', text: '我的右臂——"巨人的一击"。完现术让我的力量更稳定了。' },
-        { speaker: '茶渡泰虎', text: '东边的完现术总本山——那里有最终试炼。完成后再去无形帝国。' },
+      { x: 0.15, y: 0.5, id: 'npc_s31', name: '铁臂', role: 'lore', dialogue: [
+        { speaker: '铁臂', text: '我的右臂——"巨人的一击"。完现术让我的力量更稳定了。' },
+        { speaker: '铁臂', text: '东边的完现术总本山——那里有最终试炼。完成后再去无形帝国。' },
       ]},
-      { x: 0.8, y: 0.65, name: '月岛秀九郎(残影)', role: 'lore', dialogue: [
-        { speaker: '月岛秀九郎(残影)', text: '完现术的本质——灵魂注入物质。你的斩魄刀也是灵魂的具现化。' },
-        { speaker: '月岛秀九郎(残影)', text: '无形帝国的灭却师……他们用"圣文字"而不是斩魄刀。完全不同的力量体系。' },
+      { x: 0.8, y: 0.65, id: 'npc_q12', name: '残影·墨', role: 'lore', dialogue: [
+        { speaker: '残影·墨', text: '完现术的本质——灵魂注入物质。你的斩魄刀也是灵魂的具现化。' },
+        { speaker: '残影·墨', text: '无形帝国的灭却师……他们用"圣文字"而不是斩魄刀。完全不同的力量体系。' },
       ]},
+
     ],
     enemies: [
 

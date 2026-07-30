@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x445577,
     npcs: [
-      { x: 0.45, y: 0.35, name: '友哈巴赫(残影)', role: 'merchant', dialogue: [
-        { speaker: '友哈巴赫(残影)', text: '银架城的宝库——全知全能所见的一切珍宝。拿去吧。', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.45, y: 0.35, id: 'npc_m16', name: '孤影集', role: 'merchant', dialogue: [
+        { speaker: '孤影集', text: '银架城的宝库——全知全能所见的一切珍宝。拿去吧。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(9, '银架', ['silbern_hat', 'silbern_armor', 'silbern_bracer', 'silbern_boots', 'silbern_belt', 'silbern_ring', 'silbern_necklace', 'silbern_charm', 'silbern_pendant']) },
-      { x: 0.7, y: 0.5, name: '哈斯沃德', role: 'quest', dialogue: [
-        { speaker: '哈斯沃德', text: '圣文字的最终试炼——在银架城接受友哈巴赫大人的圣别。准备好了吗？', choices: [
+      { x: 0.7, y: 0.5, id: 'npc_m14', name: '天衡阁', role: 'quest', dialogue: [
+        { speaker: '天衡阁', text: '圣文字的最终试炼——在银架城接受友哈巴赫大人的圣别。准备好了吗？', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, name: '影之领域', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.2, id: 'sys_portal_shadow', name: '影之领域', role: 'return_point', dialogue: [
         { speaker: '影之领域', text: '银架城的传送门。北边通往地狱。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '银架城锻造师', role: 'enhance', dialogue: [{ speaker: '银架城锻造师', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.2, y: 0.7, name: '优哈巴哈的书记', role: 'side_quest', dialogue: [
+      { x: 0.55, y: 0.38, id: 'npc_f18', name: '银架工', role: 'enhance', dialogue: [{ speaker: '银架工', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.2, y: 0.7, id: 'npc_s41', name: '书记官', role: 'side_quest', dialogue: [
         { speaker: '优哈巴哈的书记', text: '圣文字的记录需要灵脉墨水。帮我采集，我给你查看权限。' },
       ]},
-      { x: 0.65, y: 0.8, name: '杰拉德', role: 'side_quest', dialogue: [
+      { x: 0.65, y: 0.8, id: 'npc_s40', name: '奇迹使', role: 'side_quest', dialogue: [
         { speaker: '杰拉德', text: '奇迹需要信仰。帮我击败几只星十字骑士·长，证明你的信仰。' },
       ]},
-      { x: 0.15, y: 0.5, name: '石田龙弦', role: 'lore', dialogue: [
+      { x: 0.15, y: 0.5, id: 'npc_s39', name: '龙弦医', role: 'lore', dialogue: [
         { speaker: '石田龙弦', text: '银架城——无形帝国的核心。友哈巴赫的力量源泉在这里。' },
         { speaker: '石田龙弦', text: '北边的地狱——所有灵魂的终点。地狱之门在等你。' },
       ]},
-      { x: 0.8, y: 0.65, name: '石田雨龙', role: 'lore', dialogue: [
-        { speaker: '石田雨龙', text: '圣文字的力量源于灵魂深处。完成后，去地狱——那是所有灵魂的终点。' },
-        { speaker: '石田雨龙', text: '地狱之门的钥匙在你手中。斩魄刀、虚化、完现术、圣文字——四力合一，门就会开。' },
+      { x: 0.8, y: 0.65, id: 'npc_s28', name: '雨龙', role: 'lore', dialogue: [
+        { speaker: '雨龙', text: '圣文字的力量源于灵魂深处。完成后，去地狱——那是所有灵魂的终点。' },
+        { speaker: '雨龙', text: '地狱之门的钥匙在你手中。斩魄刀、虚化、完现术、圣文字——四力合一，门就会开。' },
       ]},
+
     ],
     enemies: [
 

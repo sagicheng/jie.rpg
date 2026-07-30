@@ -32,49 +32,11 @@ export const STAT_PER_POINT: Record<string, number> = {
   HP: 15, MP: 5, ATK: 1, DEF: 1, MATK: 1, MDEF: 1, SPD: 1,
 };
 
-/** 斩魄刀成长倾向 — 每元素5把有技能刀(定位各异) + 1把锻体刀(纯平A,无技能,高全属性) */
-export const ZANPAKUTO_GROWTH: Record<string, Record<string, number>> = {
-  // ═══ 火系 ═══
-  流刃若火: { HP: 0.8, MP: 1.1, ATK: 1.6, DEF: 0.6, MATK: 1.2, MDEF: 0.6, SPD: 0.9 },
-  飞梅:     { HP: 0.8, MP: 1.3, ATK: 1.0, DEF: 0.7, MATK: 1.6, MDEF: 0.8, SPD: 0.8 },
-  红姬:     { HP: 1.0, MP: 1.2, ATK: 1.2, DEF: 1.0, MATK: 1.3, MDEF: 0.9, SPD: 0.9 },
-  剡月:     { HP: 0.9, MP: 1.0, ATK: 1.8, DEF: 0.5, MATK: 0.8, MDEF: 0.5, SPD: 1.0 },
-  雀蜂:     { HP: 0.7, MP: 0.9, ATK: 1.5, DEF: 0.5, MATK: 0.8, MDEF: 0.5, SPD: 1.7 },
-  疋杀地蔵: { HP: 0.9, MP: 1.3, ATK: 1.0, DEF: 0.7, MATK: 1.5, MDEF: 0.9, SPD: 0.9, statusAcc: 0.10 },  // 毒系控制
-  天狗丸:   { HP: 1.1, MP: 1.0, ATK: 1.4, DEF: 0.9, MATK: 1.0, MDEF: 0.9, SPD: 0.8 },
-  馘大蛇:   { HP: 0.7, MP: 0.9, ATK: 1.6, DEF: 0.6, MATK: 0.9, MDEF: 0.6, SPD: 1.2 },
-  严灵丸:   { HP: 2.0, MP: 1.6, ATK: 1.8, DEF: 1.8, MATK: 1.8, MDEF: 1.8, SPD: 1.6 },
-  // ═══ 风系 ═══
-  斩月:     { HP: 1.0, MP: 0.9, ATK: 1.6, DEF: 0.7, MATK: 0.7, MDEF: 0.7, SPD: 1.3 },
-  千本樱:   { HP: 0.9, MP: 0.9, ATK: 1.3, DEF: 0.7, MATK: 0.9, MDEF: 0.7, SPD: 1.5 },
-  神枪:     { HP: 0.8, MP: 0.8, ATK: 1.7, DEF: 0.5, MATK: 0.6, MDEF: 0.5, SPD: 1.9 },
-  花天狂骨: { HP: 1.0, MP: 1.2, ATK: 1.2, DEF: 0.8, MATK: 1.3, MDEF: 0.8, SPD: 1.1 },
-  藤孔雀:   { HP: 0.9, MP: 1.3, ATK: 1.1, DEF: 0.7, MATK: 1.4, MDEF: 0.8, SPD: 1.2, statusAcc: 0.10 },  // 束缚控制
-  逆抚:     { HP: 0.8, MP: 1.2, ATK: 1.0, DEF: 0.7, MATK: 1.5, MDEF: 0.9, SPD: 1.3, statusAcc: 0.15 },  // 混乱控制
-  断地风:   { HP: 1.0, MP: 0.9, ATK: 1.5, DEF: 0.8, MATK: 0.8, MDEF: 0.7, SPD: 1.1 },
-  铁浆蜻蛉: { HP: 0.9, MP: 1.0, ATK: 1.3, DEF: 0.8, MATK: 1.0, MDEF: 0.8, SPD: 1.4 },
-  风死:     { HP: 1.9, MP: 1.5, ATK: 1.9, DEF: 1.7, MATK: 1.7, MDEF: 1.7, SPD: 1.7 },
-  // ═══ 水系 ═══
-  冰轮丸:   { HP: 1.0, MP: 1.3, ATK: 1.0, DEF: 0.8, MATK: 1.5, MDEF: 1.0, SPD: 0.8, statusAcc: 0.15 },  // 冰冻控制
-  袖白雪:   { HP: 1.0, MP: 1.2, ATK: 1.2, DEF: 0.7, MATK: 1.5, MDEF: 0.9, SPD: 1.0, statusAcc: 0.10 },  // 冰冻控制
-  镜花水月: { HP: 0.9, MP: 1.5, ATK: 0.8, DEF: 0.7, MATK: 1.7, MDEF: 1.0, SPD: 1.0, statusAcc: 0.10 },  // 幻术控制
-  双鱼理:   { HP: 1.1, MP: 1.2, ATK: 0.8, DEF: 1.0, MATK: 1.2, MDEF: 1.6, SPD: 0.7 },
-  肉雫唼:   { HP: 1.3, MP: 1.5, ATK: 0.7, DEF: 0.9, MATK: 1.4, MDEF: 1.3, SPD: 0.8 },
-  金沙罗:   { HP: 0.9, MP: 1.4, ATK: 0.9, DEF: 0.7, MATK: 1.6, MDEF: 1.0, SPD: 0.9 },
-  捩花:     { HP: 1.0, MP: 1.1, ATK: 1.3, DEF: 0.8, MATK: 1.2, MDEF: 0.9, SPD: 1.0 },
-  瓠丸:     { HP: 1.2, MP: 1.4, ATK: 0.7, DEF: 0.9, MATK: 1.3, MDEF: 1.2, SPD: 0.8 },
-  清虫:     { HP: 2.0, MP: 1.6, ATK: 1.8, DEF: 1.8, MATK: 1.8, MDEF: 1.8, SPD: 1.6 },
-  // ═══ 土系 ═══
-  天谴:     { HP: 1.4, MP: 0.9, ATK: 1.2, DEF: 1.4, MATK: 0.8, MDEF: 1.2, SPD: 0.7, statusAcc: 0.10 },  // 眩晕控制
-  蛇尾丸:   { HP: 1.2, MP: 0.9, ATK: 1.5, DEF: 1.0, MATK: 0.8, MDEF: 0.9, SPD: 1.1 },
-  鬼灯丸:   { HP: 1.2, MP: 0.8, ATK: 1.6, DEF: 1.1, MATK: 0.7, MDEF: 1.0, SPD: 0.8 },
-  灰猫:     { HP: 1.0, MP: 1.1, ATK: 1.1, DEF: 0.9, MATK: 1.2, MDEF: 1.0, SPD: 1.1 },
-  侘助:     { HP: 1.3, MP: 0.9, ATK: 0.9, DEF: 1.5, MATK: 0.7, MDEF: 1.4, SPD: 0.6 },
-  土鯰:     { HP: 1.1, MP: 0.9, ATK: 1.2, DEF: 1.2, MATK: 0.8, MDEF: 1.2, SPD: 0.9 },
-  五形头:   { HP: 1.5, MP: 0.8, ATK: 0.8, DEF: 1.6, MATK: 0.6, MDEF: 1.5, SPD: 0.5 },
-  裂岩:     { HP: 1.1, MP: 0.9, ATK: 1.5, DEF: 1.0, MATK: 0.7, MDEF: 0.9, SPD: 0.9 },
-  崩山:     { HP: 2.1, MP: 1.5, ATK: 1.8, DEF: 2.0, MATK: 1.7, MDEF: 2.0, SPD: 1.5 },  // ★锻体
-};
+import { ZANPAKUTO_LIST } from './zanpakuto';
+/** 斩魄刀成长倾向（id→growth） */
+export const ZANPAKUTO_GROWTH: Record<string, Record<string,number>> = Object.fromEntries(
+  ZANPAKUTO_LIST.map(z => [z.id, z.growth])
+);
 
 /** 区域名称 */
 export const ZONE_NAMES: Record<number, string> = {

@@ -64,7 +64,7 @@ export function toggleBestiaryPanel(scene: GameScene): void { if (scene.bestiary
 export function closeBestiaryPanel(scene: GameScene): void { if (scene.titlePanel) { scene.titlePanel.destroy(true); scene.titlePanel = null; } if (scene.bestiaryPanel) { scene.bestiaryPanel.destroy(true); scene.bestiaryPanel = null; scene.resumeFromMenu(); } }
 
 export function closeTitlePanel(scene: GameScene): void {
-  if (scene.titlePanel) { scene.titlePanel.destroy(true); scene.titlePanel = null; }
+  if (scene.titlePanel) { scene.titlePanel.destroy(true); scene.titlePanel = null; scene.resumeFromMenu(); }
   if ((scene as any).titleWheelHandler) { scene.input.off('wheel', (scene as any).titleWheelHandler); (scene as any).titleWheelHandler = null; }
   if ((scene as any).titleMoveHandler) { scene.input.off('pointermove', (scene as any).titleMoveHandler); (scene as any).titleMoveHandler = null; }
   if ((scene as any).titleUpHandler) { scene.input.off('pointerup', (scene as any).titleUpHandler); (scene as any).titleUpHandler = null; }
@@ -74,6 +74,7 @@ export function toggleTitlePanel(scene: GameScene): void { if (scene.titlePanel)
 
 export function renderTitlePanel(scene: GameScene): void {
     closeTitlePanel(scene);
+    scene.pauseForMenu();
     const cam=scene.cameras.main;
     const c=scene.add.container(Math.round(cam.scrollX),Math.round(cam.scrollY)).setDepth(320);scene.titlePanel=c;
     const vw=GAME_WIDTH,vh=GAME_HEIGHT,mw=560,mh=470,mx=(vw-mw)/2,my=(vh-mh)/2;

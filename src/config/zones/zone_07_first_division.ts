@@ -7,40 +7,41 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x888877,
     npcs: [
-      { x: 0.7, y: 0.5, name: '朽木白哉', role: 'merchant', dialogue: [
-        { speaker: '朽木白哉', text: '朽木家的装备都是精工打造。不便宜，但值得。', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.7, y: 0.5, id: 'npc_m07', name: '白斋主', role: 'merchant', dialogue: [
+        { speaker: '白斋主', text: '朽木家的装备都是精工打造。不便宜，但值得。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(4, '护廷', ['bronze_hat', 'bronze_armor', 'bronze_bracer', 'bronze_boots', 'bronze_belt', 'silver_ring', 'crystal_necklace', 'bronze_charm', 'wind_pendant']) },
-      { x: 0.45, y: 0.25, name: '山本元柳斋', role: 'lore', dialogue: [
-        { speaker: '山本元柳斋', text: '年轻人，你手中的斩魄刀已经完成了始解。但真正的力量——卍解——需要更深的觉悟。' },
-        { speaker: '山本元柳斋', text: '卍解的力量足以毁灭一切。必须在静灵庭通过极限试炼才能掌握。' },
+      { x: 0.45, y: 0.25, id: 'npc_s23', name: '炎叟', role: 'lore', dialogue: [
+        { speaker: '炎叟', text: '年轻人，你手中的斩魄刀已经完成了始解。但真正的力量——卍解——需要更深的觉悟。' },
+        { speaker: '炎叟', text: '卍解的力量足以毁灭一切。必须在静灵庭通过极限试炼才能掌握。' },
       ]},
-      { x: 0.2, y: 0.7, name: '日番谷冬狮郎', role: 'quest', dialogue: [
-        { speaker: '日番谷冬狮郎', text: '你完成了始解？很好。现在面对卍解的试炼——在极限中突破自己。', choices: [
+      { x: 0.2, y: 0.7, id: 'npc_s21', name: '冬凌', role: 'quest', dialogue: [
+        { speaker: '冬凌', text: '你完成了始解？很好。现在面对卍解的试炼——在极限中突破自己。', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.85, y: 0.85, name: '穿界门', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.85, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
         { speaker: '穿界门', text: '静灵庭的传送门。通往虚圈的门在技术开发局方向。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '一番队锻造师', role: 'enhance', dialogue: [{ speaker: '一番队锻造师', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.8, y: 0.2, name: '松本乱菊', role: 'side_quest', dialogue: [
-        { speaker: '松本乱菊', text: '修行好累……帮我收集5株药草和2个灵木，我请你喝酒。' },
+      { x: 0.55, y: 0.38, id: 'npc_f07', name: '一番锻', role: 'enhance', dialogue: [{ speaker: '一番锻', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.8, y: 0.2, id: 'npc_s22', name: '菊舞', role: 'side_quest', dialogue: [
+        { speaker: '菊舞', text: '修行好累……帮我收集5株药草和2个灵木，我请你喝酒。' },
       ]},
-      { x: 0.35, y: 0.15, name: '更木剑八', role: 'side_quest', dialogue: [
-        { speaker: '更木剑八', text: '喂！跟我打一场！……不过先帮我找几个强敌热热身。' },
+      { x: 0.35, y: 0.15, id: 'npc_q06', name: '碎岳', role: 'side_quest', dialogue: [
+        { speaker: '碎岳', text: '喂！跟我打一场！……不过先帮我找几个强敌热热身。' },
       ]},
-      { x: 0.1, y: 0.45, name: '京乐春水', role: 'lore', dialogue: [
-        { speaker: '京乐春水', text: '卍解啊……那可是相当危险的东西。总队长大人就从来不随便展示。' },
-        { speaker: '京乐春水', text: '虚圈在东边。去那里之前，先确保你的卍解已经稳定。' },
+      { x: 0.1, y: 0.45, id: 'npc_s19', name: '春涧', role: 'lore', dialogue: [
+        { speaker: '春涧', text: '卍解啊……那可是相当危险的东西。总队长大人就从来不随便展示。' },
+        { speaker: '春涧', text: '虚圈在东边。去那里之前，先确保你的卍解已经稳定。' },
       ]},
-      { x: 0.55, y: 0.75, name: '卯之花烈', role: 'lore', dialogue: [
-        { speaker: '卯之花烈', text: '卍解是斩魄刀的完全解放。它会让你的灵压成倍增长。' },
-        { speaker: '卯之花烈', text: '但代价是巨大的消耗。技术开发局在东边——涅茧利有关于虚化的研究。' },
+      { x: 0.55, y: 0.75, id: 'npc_s20', name: '花静', role: 'lore', dialogue: [
+        { speaker: '花静', text: '卍解是斩魄刀的完全解放。它会让你的灵压成倍增长。' },
+        { speaker: '花静', text: '但代价是巨大的消耗。技术开发局在东边——涅茧利有关于虚化的研究。' },
       ]},
+
     ],
     enemies: [
 

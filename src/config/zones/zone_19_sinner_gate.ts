@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x1a1118,
     npcs: [
-      { x: 0.4, y: 0.3, name: '地狱看守', role: 'merchant', dialogue: [
-        { speaker: '地狱看守', text: '这里是灵魂的终点。用尽了生命和力量的残骸……都是上好的材料。', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.4, y: 0.3, id: 'npc_m17', name: '守关翁', role: 'merchant', dialogue: [
+        { speaker: '守关翁', text: '这里是灵魂的终点。用尽了生命和力量的残骸……都是上好的材料。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(10, '狱', ['abyss_hat', 'abyss_armor', 'abyss_bracer', 'abyss_boots', 'abyss_belt', 'dark_ring', 'abyss_necklace', 'abyss_charm', 'void_pendant']) },
-      { x: 0.2, y: 0.65, name: '井上织姬(残影)', role: 'quest', dialogue: [
-        { speaker: '井上织姬(残影)', text: '四力已经集齐。地狱最深处——终焉之兽在等你。击败它，完成你的试炼。', choices: [
+      { x: 0.2, y: 0.65, id: 'npc_q14', name: '残影·祈', role: 'quest', dialogue: [
+        { speaker: '残影·祈', text: '四力已经集齐。地狱最深处——终焉之兽在等你。击败它，完成你的试炼。', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.55, y: 0.55, name: '终焉之渊', role: 'return_point', dialogue: [
+      { x: 0.55, y: 0.55, id: 'sys_abyss_return', name: '终焉之渊', role: 'return_point', dialogue: [
         { speaker: '地狱之门', text: '千年来从未开启的门——但你需要回去。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '咎人铁匠', role: 'enhance', dialogue: [{ speaker: '咎人铁匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.8, y: 0.25, name: '地狱狱卒', role: 'side_quest', dialogue: [
-        { speaker: '地狱狱卒', text: '咎人越狱了！帮我抓回5个，我给你地狱的秘宝。' },
+      { x: 0.55, y: 0.38, id: 'npc_f19', name: '咎人锻', role: 'enhance', dialogue: [{ speaker: '咎人锻', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.8, y: 0.25, id: 'npc_m18', name: '炼狱商', role: 'side_quest', dialogue: [
+        { speaker: '炼狱商', text: '咎人越狱了！帮我抓回5个，我给你地狱的秘宝。' },
       ]},
-      { x: 0.35, y: 0.15, name: '被囚的灵魂', role: 'side_quest', dialogue: [
-        { speaker: '被囚的灵魂', text: '我在这里太久了……帮我找一些矿脉，我想为自己刻一块墓碑。' },
+      { x: 0.35, y: 0.15, id: 'npc_s34', name: '囚灵', role: 'side_quest', dialogue: [
+        { speaker: '囚灵', text: '我在这里太久了……帮我找一些矿脉，我想为自己刻一块墓碑。' },
       ]},
-      { x: 0.15, y: 0.4, name: '茶渡泰虎(残影)', role: 'lore', dialogue: [
-        { speaker: '茶渡泰虎(残影)', text: '一护曾经面对过终焉的力量。你呢——你能承受吗？' },
-        { speaker: '茶渡泰虎(残影)', text: '地狱是所有灵魂的归宿。虚、死神、灭却师……最终都在这里。东边的无间更深。' },
+      { x: 0.15, y: 0.4, id: 'npc_s32', name: '残影·铁', role: 'lore', dialogue: [
+        { speaker: '残影·铁', text: '一护曾经面对过终焉的力量。你呢——你能承受吗？' },
+        { speaker: '残影·铁', text: '地狱是所有灵魂的归宿。虚、死神、灭却师……最终都在这里。东边的无间更深。' },
       ]},
-      { x: 0.7, y: 0.8, name: '守门人', role: 'lore', dialogue: [
-        { speaker: '守门人', text: '狱解——地狱的最终力量。它会让你的伤害翻倍，但每回合消耗生命。' },
-        { speaker: '守门人', text: '无间在东边。终焉之渊在更深处。那里有最终的敌人。' },
+      { x: 0.7, y: 0.8, id: 'npc_q15', name: '守门者', role: 'lore', dialogue: [
+        { speaker: '守门者', text: '狱解——地狱的最终力量。它会让你的伤害翻倍，但每回合消耗生命。' },
+        { speaker: '守门者', text: '无间在东边。终焉之渊在更深处。那里有最终的敌人。' },
       ]},
+
     ],
     enemies: [
 

@@ -62,34 +62,34 @@ const POINT_SCALE = 0.20;
 // ═══════════════════════════════════════════
 const HADO_NODES: KidoNode[] = [
   // ===== T1 (0点解锁) =====
-  { id: 'hado_t1_01', name: '冲', number: '之一', school: 'hado', tier: 1, column: 0, maxPoints: 3, mp: 8, basePower: 1.4, desc: '单体灵力冲击', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t1_02', name: '白雷', number: '之四', school: 'hado', tier: 1, column: 1, maxPoints: 3, mp: 12, basePower: 1.9, desc: '单体雷击', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t1_03', name: '缀雷电', number: '之十一', school: 'hado', tier: 1, column: 2, maxPoints: 3, mp: 14, basePower: 2.0, desc: '雷电地脉传导，无视防御', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t1_04', name: '灵压感知', school: 'hado', tier: 1, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级MATK+2%', effect: { type: 'passive_stat', stat: 'matk_pct', amount: 0.02 } },
+  { id: 'hado_t1_01', name: '灵冲', number: '之一', school: 'hado', tier: 1, column: 0, maxPoints: 3, mp: 8, basePower: 1.4, desc: '单体灵力冲击', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t1_02', name: '雷闪', number: '之四', school: 'hado', tier: 1, column: 1, maxPoints: 3, mp: 12, basePower: 1.9, desc: '单体雷击', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t1_03', name: '链雷', number: '之十一', school: 'hado', tier: 1, column: 2, maxPoints: 3, mp: 14, basePower: 2.0, desc: '雷电地脉传导，无视防御', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t1_04', name: '灵识', school: 'hado', tier: 1, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级MATK+2%', effect: { type: 'passive_stat', stat: 'matk_pct', amount: 0.02 } },
 
   // ===== T2 (5点解锁) =====
-  { id: 'hado_t2_01', name: '赤火炮', number: '之三十一', school: 'hado', tier: 2, column: 0, maxPoints: 3, mp: 22, basePower: 1.6, desc: '全体灵力弹', effect: { type: 'damage', target: 'all', scalePerPoint: 0.18 } },
-  { id: 'hado_t2_02', name: '苍火坠', number: '之三十三', school: 'hado', tier: 2, column: 1, maxPoints: 3, mp: 18, basePower: 2.4, desc: '单体灵力爆破', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t2_03', name: '废炎', number: '之五十四', school: 'hado', tier: 2, column: 2, maxPoints: 3, mp: 20, basePower: 2.2, desc: '火焰吞噬，无视防御', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t2_04', name: '灵力集中', school: 'hado', tier: 2, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级破道暴击率+2%', effect: { type: 'passive_school', stat: 'crit', amount: 0.02, school: 'hado' } },
+  { id: 'hado_t2_01', name: '焰弹', number: '之三十一', school: 'hado', tier: 2, column: 0, maxPoints: 3, mp: 22, basePower: 1.6, desc: '全体灵力弹', effect: { type: 'damage', target: 'all', scalePerPoint: 0.18 } },
+  { id: 'hado_t2_02', name: '苍焰弹', number: '之三十三', school: 'hado', tier: 2, column: 1, maxPoints: 3, mp: 18, basePower: 2.4, desc: '单体灵力爆破', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t2_03', name: '废火', number: '之五十四', school: 'hado', tier: 2, column: 2, maxPoints: 3, mp: 20, basePower: 2.2, desc: '火焰吞噬，无视防御', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t2_04', name: '灵集中', school: 'hado', tier: 2, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级破道暴击率+2%', effect: { type: 'passive_school', stat: 'crit', amount: 0.02, school: 'hado' } },
 
   // ===== T3 (10点解锁) =====
-  { id: 'hado_t3_01', name: '雷吼炮', number: '之六十三', school: 'hado', tier: 3, column: 0, maxPoints: 3, mp: 30, basePower: 2.0, desc: '全体雷电轰击', effect: { type: 'damage', target: 'all', scalePerPoint: 0.18 } },
-  { id: 'hado_t3_02', name: '双莲苍火坠', number: '之七十三', school: 'hado', tier: 3, column: 1, maxPoints: 3, mp: 34, basePower: 2.8, desc: '双发苍火坠·单体', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t3_03', name: '斩华轮', number: '之七十八', school: 'hado', tier: 3, column: 2, maxPoints: 3, mp: 28, basePower: 2.2, desc: '斩击灵力全体攻击', effect: { type: 'damage', target: 'all', scalePerPoint: 0.18 } },
-  { id: 'hado_t3_04', name: '灵子集中', school: 'hado', tier: 3, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级破道伤害+3%', effect: { type: 'passive_school', stat: 'dmg', amount: 0.03, school: 'hado' } },
+  { id: 'hado_t3_01', name: '雷吼', number: '之六十三', school: 'hado', tier: 3, column: 0, maxPoints: 3, mp: 30, basePower: 2.0, desc: '全体雷电轰击', effect: { type: 'damage', target: 'all', scalePerPoint: 0.18 } },
+  { id: 'hado_t3_02', name: '双莲火', number: '之七十三', school: 'hado', tier: 3, column: 1, maxPoints: 3, mp: 34, basePower: 2.8, desc: '双发苍火坠·单体', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t3_03', name: '斩光', number: '之七十八', school: 'hado', tier: 3, column: 2, maxPoints: 3, mp: 28, basePower: 2.2, desc: '斩击灵力全体攻击', effect: { type: 'damage', target: 'all', scalePerPoint: 0.18 } },
+  { id: 'hado_t3_04', name: '灵子集', school: 'hado', tier: 3, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级破道伤害+3%', effect: { type: 'passive_school', stat: 'dmg', amount: 0.03, school: 'hado' } },
 
   // ===== T4 (15点解锁) =====
-  { id: 'hado_t4_01', name: '黑棺', number: '之九十', school: 'hado', tier: 4, column: 0, maxPoints: 2, mp: 55, basePower: 4.5, desc: '单体毁灭级灵力打击', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t4_02', name: '千手皎天汰炮', number: '之九十一', school: 'hado', tier: 4, column: 1, maxPoints: 2, mp: 62, basePower: 3.2, desc: '全体光弹连射', effect: { type: 'damage', target: 'all', scalePerPoint: 0.18 } },
-  { id: 'hado_t4_03', name: '一刀火葬', number: '之九十六', school: 'hado', tier: 4, column: 2, maxPoints: 2, mp: 58, basePower: 3.8, desc: '单体献祭级攻击(消耗HP)', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t4_04', name: '破弃之型', school: 'hado', tier: 4, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级瞬发鬼道伤害+4%', effect: { type: 'passive_school', stat: 'instant_dmg', amount: 0.04, school: 'hado' } },
+  { id: 'hado_t4_01', name: '黑柩', number: '之九十', school: 'hado', tier: 4, column: 0, maxPoints: 2, mp: 55, basePower: 4.5, desc: '单体毁灭级灵力打击', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t4_02', name: '千光炮', number: '之九十一', school: 'hado', tier: 4, column: 1, maxPoints: 2, mp: 62, basePower: 3.2, desc: '全体光弹连射', effect: { type: 'damage', target: 'all', scalePerPoint: 0.18 } },
+  { id: 'hado_t4_03', name: '焚身', number: '之九十六', school: 'hado', tier: 4, column: 2, maxPoints: 2, mp: 58, basePower: 3.8, desc: '单体献祭级攻击(消耗HP)', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t4_04', name: '破式', school: 'hado', tier: 4, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级瞬发鬼道伤害+4%', effect: { type: 'passive_school', stat: 'instant_dmg', amount: 0.04, school: 'hado' } },
 
   // ===== T5 (20点解锁·终极) =====
-  { id: 'hado_t5_01', name: '天地灰尽', school: 'hado', tier: 5, column: 0, maxPoints: 1, mp: 80, basePower: 5.5, isMastery: true, desc: '单体终结技', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t5_02', name: '五龙转灭', number: '之九十九', school: 'hado', tier: 5, column: 1, maxPoints: 1, mp: 65, basePower: 4.0, isMastery: true, desc: '五条灵龙毁灭单体', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t5_03', name: '灵王之力', school: 'hado', tier: 5, column: 2, maxPoints: 1, mp: 100, basePower: 6.0, isMastery: true, desc: '单体最强灵力轰击', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
-  { id: 'hado_t5_04', name: '崩玉共鸣', school: 'hado', tier: 5, column: 3, maxPoints: 1, mp: 0, basePower: 0, passive: true, isMastery: true, desc: '最终伤害+15%', effect: { type: 'passive_school', stat: 'dmg_bonus', amount: 0.15, school: 'hado' } },
+  { id: 'hado_t5_01', name: '天焚', school: 'hado', tier: 5, column: 0, maxPoints: 1, mp: 80, basePower: 5.5, isMastery: true, desc: '单体终结技', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t5_02', name: '五龙灭', number: '之九十九', school: 'hado', tier: 5, column: 1, maxPoints: 1, mp: 65, basePower: 4.0, isMastery: true, desc: '五条灵龙毁灭单体', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t5_03', name: '灵王力', school: 'hado', tier: 5, column: 2, maxPoints: 1, mp: 100, basePower: 6.0, isMastery: true, desc: '单体最强灵力轰击', effect: { type: 'damage', target: 'single', scalePerPoint: 0.18 } },
+  { id: 'hado_t5_04', name: '共鸣破', school: 'hado', tier: 5, column: 3, maxPoints: 1, mp: 0, basePower: 0, passive: true, isMastery: true, desc: '最终伤害+15%', effect: { type: 'passive_school', stat: 'dmg_bonus', amount: 0.15, school: 'hado' } },
 ];
 
 // ═══════════════════════════════════════════
@@ -97,34 +97,34 @@ const HADO_NODES: KidoNode[] = [
 // ═══════════════════════════════════════════
 const BAKUDO_NODES: KidoNode[] = [
   // ===== T1 =====
-  { id: 'bakudo_t1_01', name: '塞', number: '之一', school: 'bakudo', tier: 1, column: 0, maxPoints: 3, mp: 10, basePower: 0, desc: '单体封印技能1回合', effect: { type: 'control', subtype: 'seal', turns: 1, target: 'single', rate: 0.60 } },
-  { id: 'bakudo_t1_02', name: '这绳', number: '之四', school: 'bakudo', tier: 1, column: 1, maxPoints: 3, mp: 12, basePower: 0, desc: '单体减速2回合', effect: { type: 'control', subtype: 'slow', turns: 2, target: 'single', rate: 0.65 } },
-  { id: 'bakudo_t1_03', name: '斥', number: '之八', school: 'bakudo', tier: 1, column: 2, maxPoints: 3, mp: 14, basePower: 0, desc: '单体击退+眩晕', effect: { type: 'control', subtype: 'stun', turns: 1, target: 'single', rate: 0.50 } },
+  { id: 'bakudo_t1_01', name: '封', number: '之一', school: 'bakudo', tier: 1, column: 0, maxPoints: 3, mp: 10, basePower: 0, desc: '单体封印技能1回合', effect: { type: 'control', subtype: 'seal', turns: 1, target: 'single', rate: 0.60 } },
+  { id: 'bakudo_t1_02', name: '缚绳', number: '之四', school: 'bakudo', tier: 1, column: 1, maxPoints: 3, mp: 12, basePower: 0, desc: '单体减速2回合', effect: { type: 'control', subtype: 'slow', turns: 2, target: 'single', rate: 0.65 } },
+  { id: 'bakudo_t1_03', name: '斥退', number: '之八', school: 'bakudo', tier: 1, column: 2, maxPoints: 3, mp: 14, basePower: 0, desc: '单体击退+眩晕', effect: { type: 'control', subtype: 'stun', turns: 1, target: 'single', rate: 0.50 } },
   { id: 'bakudo_t1_04', name: '铁壁', school: 'bakudo', tier: 1, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级DEF+2%', effect: { type: 'passive_stat', stat: 'def_pct', amount: 0.02 } },
 
   // ===== T2 =====
-  { id: 'bakudo_t2_01', name: '赤烟遁', number: '之二十一', school: 'bakudo', tier: 2, column: 0, maxPoints: 3, mp: 18, basePower: 0, desc: '全体烟幕·减速', effect: { type: 'control', subtype: 'slow', turns: 2, target: 'all', rate: 0.55 } },
-  { id: 'bakudo_t2_02', name: '嘴突三闪', number: '之三十', school: 'bakudo', tier: 2, column: 1, maxPoints: 3, mp: 22, basePower: 0, desc: '三道光牢定身1回合', effect: { type: 'control', subtype: 'bind', turns: 1, target: 'single', rate: 0.65 } },
-  { id: 'bakudo_t2_03', name: '圆闸扇', number: '之三十九', school: 'bakudo', tier: 2, column: 2, maxPoints: 3, mp: 22, basePower: 0, desc: '圆形灵子护盾2回合', effect: { type: 'shield', turns: 2, scalePerPoint: 0.25 } },
-  { id: 'bakudo_t2_04', name: '束缚强化', school: 'bakudo', tier: 2, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级控制成功率+2%', effect: { type: 'passive_school', stat: 'ctrl_rate', amount: 0.02, school: 'bakudo' } },
+  { id: 'bakudo_t2_01', name: '烟遁', number: '之二十一', school: 'bakudo', tier: 2, column: 0, maxPoints: 3, mp: 18, basePower: 0, desc: '全体烟幕·减速', effect: { type: 'control', subtype: 'slow', turns: 2, target: 'all', rate: 0.55 } },
+  { id: 'bakudo_t2_02', name: '三闪缚', number: '之三十', school: 'bakudo', tier: 2, column: 1, maxPoints: 3, mp: 22, basePower: 0, desc: '三道光牢定身1回合', effect: { type: 'control', subtype: 'bind', turns: 1, target: 'single', rate: 0.65 } },
+  { id: 'bakudo_t2_03', name: '圆盾', number: '之三十九', school: 'bakudo', tier: 2, column: 2, maxPoints: 3, mp: 22, basePower: 0, desc: '圆形灵子护盾2回合', effect: { type: 'shield', turns: 2, scalePerPoint: 0.25 } },
+  { id: 'bakudo_t2_04', name: '缚强化', school: 'bakudo', tier: 2, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级控制成功率+2%', effect: { type: 'passive_school', stat: 'ctrl_rate', amount: 0.02, school: 'bakudo' } },
 
   // ===== T3 =====
-  { id: 'bakudo_t3_01', name: '六杖光牢', number: '之六十一', school: 'bakudo', tier: 3, column: 0, maxPoints: 3, mp: 22, basePower: 0, desc: '六片光牢禁锢2回合', effect: { type: 'control', subtype: 'bind', turns: 2, target: 'single', rate: 0.75 } },
-  { id: 'bakudo_t3_02', name: '百步栏杆', number: '之六十二', school: 'bakudo', tier: 3, column: 1, maxPoints: 3, mp: 24, basePower: 0, desc: '全体减速+概率定身', effect: { type: 'control', subtype: 'slow', turns: 2, target: 'all', rate: 0.65 } },
-  { id: 'bakudo_t3_03', name: '倒山晶', number: '之七十三', school: 'bakudo', tier: 3, column: 2, maxPoints: 3, mp: 28, basePower: 0, desc: '倒金字塔全队护盾', effect: { type: 'shield', turns: 2, scalePerPoint: 0.25 } },
+  { id: 'bakudo_t3_01', name: '六光牢', number: '之六十一', school: 'bakudo', tier: 3, column: 0, maxPoints: 3, mp: 22, basePower: 0, desc: '六片光牢禁锢2回合', effect: { type: 'control', subtype: 'bind', turns: 2, target: 'single', rate: 0.75 } },
+  { id: 'bakudo_t3_02', name: '百步缚', number: '之六十二', school: 'bakudo', tier: 3, column: 1, maxPoints: 3, mp: 24, basePower: 0, desc: '全体减速+概率定身', effect: { type: 'control', subtype: 'slow', turns: 2, target: 'all', rate: 0.65 } },
+  { id: 'bakudo_t3_03', name: '倒山盾', number: '之七十三', school: 'bakudo', tier: 3, column: 2, maxPoints: 3, mp: 28, basePower: 0, desc: '倒金字塔全队护盾', effect: { type: 'shield', turns: 2, scalePerPoint: 0.25 } },
   { id: 'bakudo_t3_04', name: '不动心', school: 'bakudo', tier: 3, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级被暴击伤害-3%', effect: { type: 'passive_stat', stat: 'crit_def', amount: 0.03 } },
 
   // ===== T4 =====
-  { id: 'bakudo_t4_01', name: '五柱铁贯', number: '之七十五', school: 'bakudo', tier: 4, column: 0, maxPoints: 2, mp: 32, basePower: 0, desc: '五根铁柱禁锢4回合', effect: { type: 'control', subtype: 'bind', turns: 4, target: 'single', rate: 0.80 } },
+  { id: 'bakudo_t4_01', name: '五柱缚', number: '之七十五', school: 'bakudo', tier: 4, column: 0, maxPoints: 2, mp: 32, basePower: 0, desc: '五根铁柱禁锢4回合', effect: { type: 'control', subtype: 'bind', turns: 4, target: 'single', rate: 0.80 } },
   { id: 'bakudo_t4_02', name: '九曜缚', number: '之七十九', school: 'bakudo', tier: 4, column: 1, maxPoints: 2, mp: 34, basePower: 0, desc: '九个黑洞完全禁锢5回合', effect: { type: 'control', subtype: 'bind', turns: 5, target: 'single', rate: 0.75 } },
   { id: 'bakudo_t4_03', name: '断空', number: '之八十一', school: 'bakudo', tier: 4, column: 2, maxPoints: 2, mp: 28, basePower: 0, desc: '防御壁·抵挡下次伤害', effect: { type: 'shield', turns: 1, scalePerPoint: 0.30 } },
   { id: 'bakudo_t4_04', name: '反镜', school: 'bakudo', tier: 4, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级反弹伤害+3%', effect: { type: 'passive_stat', stat: 'thorns', amount: 0.03 } },
 
   // ===== T5 =====
-  { id: 'bakudo_t5_01', name: '四兽塞门', school: 'bakudo', tier: 5, column: 0, maxPoints: 1, mp: 80, basePower: 0, isMastery: true, desc: '最强封印·四兽之门', effect: { type: 'control', subtype: 'bind', turns: 4, target: 'single', rate: 0.95 } },
-  { id: 'bakudo_t5_02', name: '时间停止', school: 'bakudo', tier: 5, column: 1, maxPoints: 1, mp: 90, basePower: 0, isMastery: true, desc: '全体时封1回合', effect: { type: 'control', subtype: 'freeze', turns: 1, target: 'all', rate: 0.85 } },
+  { id: 'bakudo_t5_01', name: '四兽封', school: 'bakudo', tier: 5, column: 0, maxPoints: 1, mp: 80, basePower: 0, isMastery: true, desc: '最强封印·四兽之门', effect: { type: 'control', subtype: 'bind', turns: 4, target: 'single', rate: 0.95 } },
+  { id: 'bakudo_t5_02', name: '时停', school: 'bakudo', tier: 5, column: 1, maxPoints: 1, mp: 90, basePower: 0, isMastery: true, desc: '全体时封1回合', effect: { type: 'control', subtype: 'freeze', turns: 1, target: 'all', rate: 0.85 } },
   { id: 'bakudo_t5_03', name: '神盾', school: 'bakudo', tier: 5, column: 2, maxPoints: 1, mp: 70, basePower: 0, isMastery: true, desc: '吸收大量伤害的绝对屏障', effect: { type: 'shield', turns: 3, scalePerPoint: 0.50 } },
-  { id: 'bakudo_t5_04', name: '镜花水月', school: 'bakudo', tier: 5, column: 3, maxPoints: 1, mp: 0, basePower: 0, passive: true, isMastery: true, desc: '概率闪避所有攻击', effect: { type: 'passive_stat', stat: 'dodge', amount: 0.15 } },
+  { id: 'bakudo_t5_04', name: '幻月界', school: 'bakudo', tier: 5, column: 3, maxPoints: 1, mp: 0, basePower: 0, passive: true, isMastery: true, desc: '概率闪避所有攻击', effect: { type: 'passive_stat', stat: 'dodge', amount: 0.15 } },
 ];
 
 // ═══════════════════════════════════════════
@@ -132,34 +132,34 @@ const BAKUDO_NODES: KidoNode[] = [
 // ═══════════════════════════════════════════
 const KAIDO_NODES: KidoNode[] = [
   // ===== T1 =====
-  { id: 'kaido_t1_01', name: '治', school: 'kaido', tier: 1, column: 0, maxPoints: 3, mp: 10, basePower: 60, desc: '单体HP小回复', effect: { type: 'heal', target: 'single', amount: 60 } },
-  { id: 'kaido_t1_02', name: '中治', school: 'kaido', tier: 1, column: 1, maxPoints: 3, mp: 16, basePower: 150, desc: '单体HP中回复+解1异常', effect: { type: 'heal', target: 'single', amount: 150 } },
-  { id: 'kaido_t1_03', name: '大治', school: 'kaido', tier: 1, column: 2, maxPoints: 3, mp: 24, basePower: 100, desc: '全队HP回复', effect: { type: 'heal', target: 'all', amount: 100 } },
-  { id: 'kaido_t1_04', name: '生机勃勃', school: 'kaido', tier: 1, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级HP上限+2%', effect: { type: 'passive_stat', stat: 'hp_pct', amount: 0.02 } },
+  { id: 'kaido_t1_01', name: '小愈', school: 'kaido', tier: 1, column: 0, maxPoints: 3, mp: 10, basePower: 60, desc: '单体HP小回复', effect: { type: 'heal', target: 'single', amount: 60 } },
+  { id: 'kaido_t1_02', name: '中愈', school: 'kaido', tier: 1, column: 1, maxPoints: 3, mp: 16, basePower: 150, desc: '单体HP中回复+解1异常', effect: { type: 'heal', target: 'single', amount: 150 } },
+  { id: 'kaido_t1_03', name: '大愈', school: 'kaido', tier: 1, column: 2, maxPoints: 3, mp: 24, basePower: 100, desc: '全队HP回复', effect: { type: 'heal', target: 'all', amount: 100 } },
+  { id: 'kaido_t1_04', name: '生机', school: 'kaido', tier: 1, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级HP上限+2%', effect: { type: 'passive_stat', stat: 'hp_pct', amount: 0.02 } },
 
   // ===== T2 =====
   { id: 'kaido_t2_01', name: '灵复', school: 'kaido', tier: 2, column: 0, maxPoints: 3, mp: 32, basePower: 0, desc: '复活单体(50%HP)', effect: { type: 'revive', hpPercent: 50 } },
-  { id: 'kaido_t2_02', name: '结界·生', school: 'kaido', tier: 2, column: 1, maxPoints: 3, mp: 28, basePower: 50, desc: '全队3回合持续回复', effect: { type: 'heal', target: 'all', amount: 50 } },
-  { id: 'kaido_t2_03', name: '解毒', school: 'kaido', tier: 2, column: 2, maxPoints: 3, mp: 18, basePower: 0, desc: '全队解除异常', effect: { type: 'cleanse', target: 'all' } },
-  { id: 'kaido_t2_04', name: '治疗强化', school: 'kaido', tier: 2, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级回道效果+3%', effect: { type: 'passive_school', stat: 'heal', amount: 0.03, school: 'kaido' } },
+  { id: 'kaido_t2_02', name: '结界·愈', school: 'kaido', tier: 2, column: 1, maxPoints: 3, mp: 28, basePower: 50, desc: '全队3回合持续回复', effect: { type: 'heal', target: 'all', amount: 50 } },
+  { id: 'kaido_t2_03', name: '净毒', school: 'kaido', tier: 2, column: 2, maxPoints: 3, mp: 18, basePower: 0, desc: '全队解除异常', effect: { type: 'cleanse', target: 'all' } },
+  { id: 'kaido_t2_04', name: '愈强化', school: 'kaido', tier: 2, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级回道效果+3%', effect: { type: 'passive_school', stat: 'heal', amount: 0.03, school: 'kaido' } },
 
   // ===== T3 =====
-  { id: 'kaido_t3_01', name: '圣疗', school: 'kaido', tier: 3, column: 0, maxPoints: 3, mp: 48, basePower: 400, desc: '全队HP大回复+清异常', effect: { type: 'heal', target: 'all', amount: 400 } },
+  { id: 'kaido_t3_01', name: '圣愈', school: 'kaido', tier: 3, column: 0, maxPoints: 3, mp: 48, basePower: 400, desc: '全队HP大回复+清异常', effect: { type: 'heal', target: 'all', amount: 400 } },
   { id: 'kaido_t3_02', name: '回生', school: 'kaido', tier: 3, column: 1, maxPoints: 2, mp: 55, basePower: 0, desc: '复活单体(80%HP)', effect: { type: 'revive', hpPercent: 80 } },
   { id: 'kaido_t3_03', name: '甘露', school: 'kaido', tier: 3, column: 2, maxPoints: 3, mp: 30, basePower: 60, desc: '全队持续回复(5回合)', effect: { type: 'heal', target: 'all', amount: 60 } },
-  { id: 'kaido_t3_04', name: '祈祷', school: 'kaido', tier: 3, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级被治疗量+3%', effect: { type: 'passive_stat', stat: 'heal_recv', amount: 0.03 } },
+  { id: 'kaido_t3_04', name: '祈愈', school: 'kaido', tier: 3, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级被治疗量+3%', effect: { type: 'passive_stat', stat: 'heal_recv', amount: 0.03 } },
 
   // ===== T4 =====
-  { id: 'kaido_t4_01', name: '天神救赎', school: 'kaido', tier: 4, column: 0, maxPoints: 2, mp: 65, basePower: 700, desc: '全队巨额回复', effect: { type: 'heal', target: 'all', amount: 700 } },
-  { id: 'kaido_t4_02', name: '永恒回生', school: 'kaido', tier: 4, column: 1, maxPoints: 1, mp: 80, basePower: 0, desc: '复活单体(100%HP)', effect: { type: 'revive', hpPercent: 100 } },
+  { id: 'kaido_t4_01', name: '天愈', school: 'kaido', tier: 4, column: 0, maxPoints: 2, mp: 65, basePower: 700, desc: '全队巨额回复', effect: { type: 'heal', target: 'all', amount: 700 } },
+  { id: 'kaido_t4_02', name: '永愈', school: 'kaido', tier: 4, column: 1, maxPoints: 1, mp: 80, basePower: 0, desc: '复活单体(100%HP)', effect: { type: 'revive', hpPercent: 100 } },
   { id: 'kaido_t4_03', name: '圣域', school: 'kaido', tier: 4, column: 2, maxPoints: 2, mp: 50, basePower: 80, desc: '全队持续回复+净化3回合', effect: { type: 'heal', target: 'all', amount: 80 } },
   { id: 'kaido_t4_04', name: '庇护', school: 'kaido', tier: 4, column: 3, maxPoints: 3, mp: 0, basePower: 0, passive: true, desc: '每级SPD+3%', effect: { type: 'passive_stat', stat: 'spd_pct', amount: 0.03 } },
 
   // ===== T5 =====
-  { id: 'kaido_t5_01', name: '创世之光', school: 'kaido', tier: 5, column: 0, maxPoints: 1, mp: 100, basePower: 1200, isMastery: true, desc: '全队满血+全净化', effect: { type: 'heal', target: 'all', amount: 1200 } },
+  { id: 'kaido_t5_01', name: '创愈光', school: 'kaido', tier: 5, column: 0, maxPoints: 1, mp: 100, basePower: 1200, isMastery: true, desc: '全队满血+全净化', effect: { type: 'heal', target: 'all', amount: 1200 } },
   { id: 'kaido_t5_02', name: '轮回', school: 'kaido', tier: 5, column: 1, maxPoints: 1, mp: 90, basePower: 0, isMastery: true, desc: '全队复活(50%HP)', effect: { type: 'revive', hpPercent: 50 } },
-  { id: 'kaido_t5_03', name: '不死领域', school: 'kaido', tier: 5, column: 2, maxPoints: 1, mp: 80, basePower: 0, isMastery: true, desc: '全队数回合不死', effect: { type: 'shield', turns: 3, scalePerPoint: 0.50 } },
-  { id: 'kaido_t5_04', name: '生命之源', school: 'kaido', tier: 5, column: 3, maxPoints: 1, mp: 0, basePower: 0, passive: true, isMastery: true, desc: 'HP上限+20%', effect: { type: 'passive_stat', stat: 'hp_pct', amount: 0.20 } },
+  { id: 'kaido_t5_03', name: '不灭域', school: 'kaido', tier: 5, column: 2, maxPoints: 1, mp: 80, basePower: 0, isMastery: true, desc: '全队数回合不死', effect: { type: 'shield', turns: 3, scalePerPoint: 0.50 } },
+  { id: 'kaido_t5_04', name: '生命源', school: 'kaido', tier: 5, column: 3, maxPoints: 1, mp: 0, basePower: 0, passive: true, isMastery: true, desc: 'HP上限+20%', effect: { type: 'passive_stat', stat: 'hp_pct', amount: 0.20 } },
 ];
 
 // ═══════════════════════════════════════════

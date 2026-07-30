@@ -97,7 +97,6 @@ export class BattleScene extends Phaser.Scene {
   private turnCountdownText?: Phaser.GameObjects.Text;
   private _cmdRetry = false;
   private escKeyRef?: Phaser.Input.Keyboard.Key;
-  private _powerKeyHandler: ((e: KeyboardEvent) => void) | null = null;
   private readonly TURN_SECONDS = 20;
   private logText!: Phaser.GameObjects.Text;
   private playerHpBar!: SkinBar;
@@ -165,8 +164,6 @@ export class BattleScene extends Phaser.Scene {
     this._cmdRetry = false;
     // 场景复用（重开/再进战）后必须清空回合计时字段，否则会指向上一场已销毁的 Text/Timer 对象导致崩溃
     this.turnTimer = undefined;
-    // 清理上一场的 DOM 事件监听
-    if (this._powerKeyHandler) { document.removeEventListener('keydown', this._powerKeyHandler); this._powerKeyHandler = null; }
     this.turnCountdownEvent = undefined;
     this.turnCountdownText = undefined;
     this.escKeyRef = undefined;
@@ -333,60 +330,6 @@ export class BattleScene extends Phaser.Scene {
           this.startTurn();
         });
       }
-    });
-    // 六 大力量快捷键（改用 document DOM 事件，彻底避⚔️开 Phaser 场景路由问题）
-    this._powerKeyHandler = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      // 调试解锁：E=始解 R=完现术 G=圣文字（任意场景可用）
-      if (key === 'e' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        if (!GameState.hasUnlock('shikai')) {
-          GameState.addUnlock('shikai');
-          this.logText.setText('始解已解锁！可查看 N 图鉴获知斩魄刀名称');
-        } else {
-          this.logText.setText('始解已解锁，无需重复');
-        }
-        return;
-      }
-      if (key === 'r' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        if (!GameState.hasUnlock('fullbring')) {
-          GameState.addUnlock('fullbring');
-          this.logText.setText('完现术已解锁！全属性+10%');
-        } else {
-          this.logText.setText('完现术已解锁，无需重复');
-        }
-        return;
-      }
-      if (key === 'g' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        if (!GameState.hasUnlock('schrift')) {
-          GameState.addUnlock('schrift');
-          this.logText.setText('圣文字已解锁！全属性+10%');
-        } else {
-          this.logText.setText('圣文字已解锁，无需重复');
-        }
-        return;
-      }
-      // 战斗激活：Q=卍解 Z=虚化 X=狱解（仅 playerTurn）
-      if (this.phase !== 'playerTurn') return;
-      if (key === 'q') {
-        if (!GameState.hasUnlock('bankai')) { this.logText.setText('卍解尚未解锁'); return; }
-        if (this.bankaiUsed) { this.logText.setText('卍解已在本场战斗中使用'); return; }
-        if (this.bankaiActive) { this.logText.setText('卍解已激活(' + this.bankaiTurnsLeft + ')'); return; }
-        this.activateBankai();
-      } else if (key === 'z') {
-        if (!GameState.hasUnlock('hollow')) { this.logText.setText('虚化尚未解锁'); return; }
-        if (this.hollowUsed) { this.logText.setText('虚化已在本场战斗中使用'); return; }
-        if (this.hollowActive) { this.logText.setText('虚化已激活(' + this.hollowTurnsLeft + ')'); return; }
-        this.activateHollow();
-      } else if (key === 'x') {
-        if (!GameState.hasUnlock('hell')) { this.logText.setText('狱解尚未解锁'); return; }
-        if (this.hellUsed) { this.logText.setText('狱解已在本场战斗中使用'); return; }
-        if (this.hellActive) { this.logText.setText('狱解已激活(' + this.hellTurnsLeft + ')'); return; }
-        this.activateHell();
-      }
-    };
-    document.addEventListener('keydown', this._powerKeyHandler);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      if (this._powerKeyHandler) { document.removeEventListener('keydown', this._powerKeyHandler); this._powerKeyHandler = null; }
     });
   }
 
@@ -762,7 +705,7 @@ export class BattleScene extends Phaser.Scene {
     this.clearCommands();
     this.subMenuContainer = this.add.container(0, 0).setDepth(51);
     const skills = getAvailableSkills(
-      GameState.zanpakuto, GameState.element, GameState.hasShikai, GameState.hasBankai, this.bankaiActive, this.hollowActive, this.hellActive
+      GameState.zpId, GameState.element, GameState.hasShikai, GameState.hasBankai, this.bankaiActive, this.hollowActive, this.hellActive
     );
     if (skills.length === 0) {
       this.logText.setText('没有可用技能');

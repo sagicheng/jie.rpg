@@ -7,53 +7,53 @@ import { shop } from './shop';
     backgroundImage: 'bg_zone_01',
     backgroundMode: 'cover',
     npcs: [
-      { x: 0.4, y: 0.45, name: '浦原喜助', role: 'merchant', dialogue: [
-        { speaker: '浦原喜助', text: '哟，新来的灵魂啊。我这店里什么都有——从义魂丸到斩魄刀保养工具。', choices: [
+      { x: 0.4, y: 0.45, id: 'npc_m01', name: '云行商', role: 'merchant', dialogue: [
+        { speaker: '云行商', text: '哟，新来的灵魂啊。我这店里什么都有——从义魂丸到斩魄刀保养工具。', choices: [
           { text: '交易', callback: 'openShop' }, { text: '聊聊', callback: 'closeDialogue' },
         ]},
       ],
       shop: shop(1, '义魂', ['cloth_hat', 'cloth_armor', 'cloth_bracer', 'cloth_boots', 'cloth_belt', 'iron_ring', 'hemp_necklace', 'wood_charm', 'cloth_pendant']) },
-      { x: 0.7, y: 0.5, name: '黑崎一护(残影)', role: 'lore', dialogue: [
-        { speaker: '黑崎一护(残影)', text: '你也能看见虚吗？那就说明你有死神的力量。去流魂街找斩魄刀吧。' },
-        { speaker: '黑崎一护(残影)', text: '我曾经的同伴们——露琪亚、茶渡、井上……他们都在尸魂界。' },
+      { x: 0.7, y: 0.5, id: 'npc_s01', name: '残影·护', role: 'lore', dialogue: [
+        { speaker: '残影·护', text: '你也能看见虚吗？那就说明你有死神的力量。去流魂街找斩魄刀吧。' },
+        { speaker: '残影·护', text: '我曾经的同伴们——露琪亚、茶渡、井上……他们都在尸魂界。' },
       ]},
-      { x: 0.85, y: 0.8, name: '有泽龙贵', role: 'quest', dialogue: [
-        { speaker: '有泽龙贵', text: '最近镇上虚的出没越来越频繁了。你能帮忙清理一些吗？', choices: [
+      { x: 0.85, y: 0.8, id: 'npc_q01', name: '云隐', role: 'quest', dialogue: [
+        { speaker: '云隐', text: '最近镇上虚的出没越来越频繁了。你能帮忙清理一些吗？', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '暂时没空', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.9, y: 0.3, name: '穿界门', role: 'return_point', dialogue: [
+      { x: 0.9, y: 0.3, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
         { speaker: '穿界门', text: '浦原商店地下的穿界门——通往尸魂界的通道。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.62, y: 0.42, name: '任务公告板', role: 'quest_board', dialogue: [
+      { x: 0.62, y: 0.42, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
         { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, name: '浦原铁匠', role: 'enhance', dialogue: [{ speaker: '浦原铁匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.15, y: 0.25, name: '紬屋雨', role: 'side_quest', dialogue: [
-        { speaker: '紬屋雨', text: '浦原店长让我收集药材……你能帮我采集5株药草吗？' },
+      { x: 0.55, y: 0.38, id: 'npc_f01', name: '浦原锻', role: 'enhance', dialogue: [{ speaker: '浦原锻', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.15, y: 0.25, id: 'npc_s02', name: '雨雀', role: 'side_quest', dialogue: [
+        { speaker: '雨雀', text: '浦原店长让我收集药材……你能帮我采集5株药草吗？' },
       ]},
-      { x: 0.3, y: 0.75, name: '花刈甚太', role: 'side_quest', dialogue: [
-        { speaker: '花刈甚太', text: '喂！帮我赶走几只低级虚，我请你喝汽水！' },
+      { x: 0.3, y: 0.75, id: 'npc_s03', name: '太岁', role: 'side_quest', dialogue: [
+        { speaker: '太岁', text: '喂！帮我赶走几只低级虚，我请你喝汽水！' },
       ]},
-      { x: 0.55, y: 0.8, name: '启吾', role: 'side_quest', dialogue: [
-        { speaker: '启吾', text: '我妹妹的护身符被虚抢走了……帮我对付几只虚拿回来。' },
+      { x: 0.55, y: 0.8, id: 'npc_s04', name: '启明', role: 'side_quest', dialogue: [
+        { speaker: '启明', text: '我妹妹的护身符被虚抢走了……帮我对付几只虚拿回来。' },
       ]},
-      { x: 0.2, y: 0.5, name: '魂', role: 'lore', dialogue: [
-        { speaker: '魂', text: '我可是改造魂魄！一护大哥的斩魄刀超帅的对吧？' },
-        { speaker: '魂', text: '流魂街是死神的故乡。去那里能找到属于你的斩魄刀。' },
+      { x: 0.2, y: 0.5, id: 'npc_s05', name: '魂影', role: 'lore', dialogue: [
+        { speaker: '魂影', text: '我可是改造魂魄！一护大哥的斩魄刀超帅的对吧？' },
+        { speaker: '魂影', text: '流魂街是死神的故乡。去那里能找到属于你的斩魄刀。' },
       ]},
-      { x: 0.75, y: 0.15, name: '观音寺', role: 'lore', dialogue: [
-        { speaker: '观音寺', text: 'BWAHAHAHA！我是空座町的守护灵媒——唐·观音寺！' },
-        { speaker: '观音寺', text: '虚是恶灵。但真正的敌人隐藏在更深处——虚圈的深处。' },
+      { x: 0.75, y: 0.15, id: 'npc_s06', name: '观云', role: 'lore', dialogue: [
+        { speaker: '观云', text: 'BWAHAHAHA！我是空座町的守护灵媒——唐·观音寺！' },
+        { speaker: '观云', text: '虚是恶灵。但真正的敌人隐藏在更深处——虚圈的深处。' },
       ]},
-      { x: 0.45, y: 0.65, name: '井上织姬(残影)', role: 'lore', dialogue: [
-        { speaker: '井上织姬(残影)', text: '我拒绝的力量——"双天归盾"。那是能将一切还原的力量。' },
-        { speaker: '井上织姬(残影)', text: '曾经有人对我说过，你的力量不是为了伤害，而是为了保护。' },
+      { x: 0.45, y: 0.65, id: 'npc_q14', name: '残影·祈', role: 'lore', dialogue: [
+        { speaker: '残影·祈', text: '我拒绝的力量——"双天归盾"。那是能将一切还原的力量。' },
+        { speaker: '残影·祈', text: '曾经有人对我说过，你的力量不是为了伤害，而是为了保护。' },
       ]},
     ],
     enemies: [

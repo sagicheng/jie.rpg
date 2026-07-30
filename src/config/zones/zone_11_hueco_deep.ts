@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x777788,
     npcs: [
-      { x: 0.45, y: 0.35, name: '萧隆库方', role: 'merchant', dialogue: [
-        { speaker: '萧隆库方', text: '黑腔深部的装备——用破面的灵压锻造。比白砂原的强多了。', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.45, y: 0.35, id: 'npc_m11', name: '暗影阁', role: 'merchant', dialogue: [
+        { speaker: '暗影阁', text: '黑腔深部的装备——用破面的灵压锻造。比白砂原的强多了。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(6, '黑腔', ['garganta_hat', 'garganta_armor', 'garganta_bracer', 'garganta_boots', 'garganta_belt', 'garganta_ring', 'garganta_necklace', 'garganta_charm', 'garganta_pendant']) },
-      { x: 0.7, y: 0.5, name: '露比', role: 'quest', dialogue: [
-        { speaker: '露比', text: '虚化的第二阶段试炼。在黑腔深处感受虚的灵压——然后掌控它！', choices: [
+      { x: 0.7, y: 0.5, id: 'npc_q09', name: '朱华', role: 'quest', dialogue: [
+        { speaker: '朱华', text: '虚化的第二阶段试炼。在黑腔深处感受虚的灵压——然后掌控它！', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '稍等', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, name: '黑腔', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.2, id: 'sys_portal_hueco', name: '黑腔', role: 'return_point', dialogue: [
         { speaker: '黑腔', text: '黑腔深部的传送据点。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '黑腔锻造师', role: 'enhance', dialogue: [{ speaker: '黑腔锻造师', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.2, y: 0.7, name: '汪达怀斯', role: 'side_quest', dialogue: [
+      { x: 0.55, y: 0.38, id: 'npc_f11', name: '黑腔匠', role: 'enhance', dialogue: [{ speaker: '黑腔匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.2, y: 0.7, id: 'npc_s37', name: '狂笑', role: 'side_quest', dialogue: [
         { speaker: '汪达怀斯', text: '……虚……帮我……击败……破面……。' },
       ]},
-      { x: 0.65, y: 0.8, name: '艾斯诺特', role: 'side_quest', dialogue: [
+      { x: 0.65, y: 0.8, id: 'npc_s33', name: '恐惧', role: 'side_quest', dialogue: [
         { speaker: '艾斯诺特', text: '恐惧……你也能感受到吗？帮我收集灵脉，我教你对抗恐惧。' },
       ]},
-      { x: 0.15, y: 0.5, name: '史塔克', role: 'lore', dialogue: [
-        { speaker: '史塔克', text: '虚化不是力量——是代价。你的灵魂会被虚侵蚀。' },
-        { speaker: '史塔克', text: '东边的虚夜宫——蓝染在那里等着。他的目的……无人知晓。' },
+      { x: 0.15, y: 0.5, id: 'npc_s27', name: '星塔', role: 'lore', dialogue: [
+        { speaker: '星塔', text: '虚化不是力量——是代价。你的灵魂会被虚侵蚀。' },
+        { speaker: '星塔', text: '东边的虚夜宫——蓝染在那里等着。他的目的……无人知晓。' },
       ]},
-      { x: 0.8, y: 0.65, name: '赫丽贝尔', role: 'lore', dialogue: [
-        { speaker: '赫丽贝尔', text: '牺牲与守护——虚化的真谛不是毁灭，而是为了守护而化身猛兽。' },
-        { speaker: '赫丽贝尔', text: '虚夜宫在东边。蓝染的野心……最终会毁灭一切。' },
+      { x: 0.8, y: 0.65, id: 'npc_m12', name: '沧溟轩', role: 'lore', dialogue: [
+        { speaker: '沧溟轩', text: '牺牲与守护——虚化的真谛不是毁灭，而是为了守护而化身猛兽。' },
+        { speaker: '沧溟轩', text: '虚夜宫在东边。蓝染的野心……最终会毁灭一切。' },
       ]},
+
     ],
     enemies: [
 

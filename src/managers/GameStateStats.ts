@@ -1,7 +1,8 @@
 /**
  * GameState 战斗属性模块 — HP/MP/ATK/DEF 等、加点、recalcStats、gainExp
  */
-import { STAT_PER_POINT, POINTS_PER_LEVEL, ZANPAKUTO_GROWTH } from '../config/config';
+import { STAT_PER_POINT, POINTS_PER_LEVEL } from '../config/config';
+import { zanpakutoGrowth } from '../config/zanpakuto';
 import { Inventory } from './Inventory';
 import { Kido } from './Kido';
 import { computeSetBonuses } from './SetSystem';
@@ -18,7 +19,7 @@ export function GameStateStatsMixin<TBase extends Constructor>(Base: TBase) {
     // 战斗属性
     hp = 100; maxHp = 100; mp = 50; maxMp = 50;
     atk = 10; def = 8; matk = 10; mdef = 8; spd = 10;
-    zanpakuto = '';
+    zpId = '';
     element = '';
     statusAcc = 0;
     statusRes = 0;
@@ -31,12 +32,12 @@ export function GameStateStatsMixin<TBase extends Constructor>(Base: TBase) {
       this.atk = 10; this.def = 8; this.matk = 10; this.mdef = 8; this.spd = 10;
       this.allocatedHP = 0; this.allocatedMP = 0; this.allocatedATK = 0;
       this.allocatedDEF = 0; this.allocatedMATK = 0; this.allocatedMDEF = 0; this.allocatedSPD = 0;
-      this.zanpakuto = ''; this.element = '';
+      this.zpId = ''; this.element = '';
       this.statusAcc = 0; this.statusRes = 0;
     }// 火/风/水/土
 
     recalcStats(): void {
-      const g = this.zanpakuto ? (ZANPAKUTO_GROWTH[this.zanpakuto] || {}) : {};
+      const g = this.zpId ? zanpakutoGrowth(this.zpId) : {};
       const gt = (k: string) => (g as any)[k] || 1.0;
       const eqBody = Inventory.getBodyEquipStats();
       const eqJewel = Inventory.getJewelryStats();

@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x776644,
     npcs: [
-      { x: 0.45, y: 0.35, name: '草鹿八千流', role: 'merchant', dialogue: [
-        { speaker: '草鹿八千流', text: '这里是草鹿！剑剑大人让我管装备。想要好东西？先付钱！', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.45, y: 0.35, id: 'npc_m06', name: '川流坊', role: 'merchant', dialogue: [
+        { speaker: '川流坊', text: '这里是草鹿！剑剑大人让我管装备。想要好东西？先付钱！', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(3, '草鹿', ['kusa_hat', 'kusa_armor', 'kusa_bracer', 'kusa_boots', 'kusa_belt', 'kusa_ring', 'kusa_necklace', 'kusa_charm', 'kusa_pendant']) },
-      { x: 0.7, y: 0.5, name: '更木剑八', role: 'quest', dialogue: [
-        { speaker: '更木剑八', text: '喂！新人。始解的试炼？跟我打一场就知道了。不过先帮我找几个强敌热热身。', choices: [
+      { x: 0.7, y: 0.5, id: 'npc_q06', name: '碎岳', role: 'quest', dialogue: [
+        { speaker: '碎岳', text: '喂！新人。始解的试炼？跟我打一场就知道了。不过先帮我找几个强敌热热身。', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '太强了…', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, name: '穿界门', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.2, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
         { speaker: '穿界门', text: '草鹿的传送据点。北边通往静灵庭。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '草鹿磨刀匠', role: 'enhance', dialogue: [{ speaker: '草鹿磨刀匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.2, y: 0.7, name: '卯之花烈', role: 'side_quest', dialogue: [
-        { speaker: '卯之花烈', text: '你的灵压有些紊乱。帮我收集灵脉样本调制药剂。' },
+      { x: 0.55, y: 0.38, id: 'npc_f06', name: '磨刀匠', role: 'enhance', dialogue: [{ speaker: '磨刀匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.2, y: 0.7, id: 'npc_s20', name: '花静', role: 'side_quest', dialogue: [
+        { speaker: '花静', text: '你的灵压有些紊乱。帮我收集灵脉样本调制药剂。' },
       ]},
-      { x: 0.65, y: 0.8, name: '涅茧利', role: 'side_quest', dialogue: [
-        { speaker: '涅茧利', text: '我对你的力量构成很感兴趣。帮我击败几只大虚，收集战斗数据。' },
+      { x: 0.65, y: 0.8, id: 'npc_m08', name: '巧手商', role: 'side_quest', dialogue: [
+        { speaker: '巧手商', text: '我对你的力量构成很感兴趣。帮我击败几只大虚，收集战斗数据。' },
       ]},
-      { x: 0.15, y: 0.5, name: '日番谷冬狮郎', role: 'lore', dialogue: [
-        { speaker: '日番谷冬狮郎', text: '始解完成了？很好。北边的静灵庭——卍解的试炼在那里。' },
-        { speaker: '日番谷冬狮郎', text: '但别急。先把流魂街的虚清理干净。草鹿是最靠近静灵庭的流魂街区。' },
+      { x: 0.15, y: 0.5, id: 'npc_s21', name: '冬凌', role: 'lore', dialogue: [
+        { speaker: '冬凌', text: '始解完成了？很好。北边的静灵庭——卍解的试炼在那里。' },
+        { speaker: '冬凌', text: '但别急。先把流魂街的虚清理干净。草鹿是最靠近静灵庭的流魂街区。' },
       ]},
-      { x: 0.8, y: 0.65, name: '松本乱菊', role: 'lore', dialogue: [
-        { speaker: '松本乱菊', text: '修行好累……不过市丸银曾经在这里出现过。' },
-        { speaker: '松本乱菊', text: '静灵庭在北边。日番谷大队长在等有资格参加卍解试炼的人。' },
+      { x: 0.8, y: 0.65, id: 'npc_s22', name: '菊舞', role: 'lore', dialogue: [
+        { speaker: '菊舞', text: '修行好累……不过市丸银曾经在这里出现过。' },
+        { speaker: '菊舞', text: '静灵庭在北边。日番谷大队长在等有资格参加卍解试炼的人。' },
       ]},
+
     ],
     enemies: [
 

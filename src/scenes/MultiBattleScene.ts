@@ -122,8 +122,6 @@ export class MultiBattleScene extends Phaser.Scene {
 
   // 服务端权威战斗奖励（battleReward 消息），透传给 GameScene.onMultiBattleEnd 供结算报告
   private lastReward: { exp: number; gold: number; loot: string[]; leveled: boolean } | null = null;
-  /** DOM 力量快捷键处理器引用（用于 SHUTDOWN 清理）。 */
-  private _powerKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor() {
     super({ key: 'MultiBattleScene' });
@@ -248,42 +246,9 @@ export class MultiBattleScene extends Phaser.Scene {
       this.scene.stop();
     });
 
-    // 力量快捷键：Z=虚化 X=狱解（改用 document DOM 事件，避开 Phaser 场景路由问题）
-    this._powerKeyHandler = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      // 复用与按钮创建相同的 hasUnlock（绕过 Vite 多 chunk GameState 双实例）
-      const unlocked: string[] = (window as any).__unlocked || [];
-      const hasUnlock = (k: string) => unlocked.includes(k) || GameState.hasUnlock(k);
-      // Z=虚化
-      if (key === 'z') {
-        console.log(`[MultiBattle] Z pressed, commandStep=${this.commandStep}, stagedChar=${!!this.stagedChar}, room=${!!this.room?.state}, hasHollow=${hasUnlock('hollow')}`);
-        if (this.commandStep !== 1 || this.stagedChar || !this.room?.state) { this.flashMessage('人物指令阶段才可使用'); return; }
-        if (!hasUnlock('hollow')) { this.flashMessage('虚化尚未解锁'); return; }
-        const me = this.room.state.players.get(this.mySessionId);
-        if (me?.hollowUsed) { this.flashMessage('虚化已在本场战斗中使用'); return; }
-        if (me?.hollowActive) { this.flashMessage('虚化已激活'); return; }
-        console.log('[MultiBattle] 虚化已提交');
-        this.stageChar({ type: 'hollow' });
-      }
-      // X=狱解
-      if (key === 'x') {
-        console.log(`[MultiBattle] X pressed, commandStep=${this.commandStep}, stagedChar=${!!this.stagedChar}, room=${!!this.room?.state}, hasHell=${hasUnlock('hell')}`);
-        if (this.commandStep !== 1 || this.stagedChar || !this.room?.state) { this.flashMessage('人物指令阶段才可使用'); return; }
-        if (!hasUnlock('hell')) { this.flashMessage('狱解尚未解锁'); return; }
-        const me = this.room.state.players.get(this.mySessionId);
-        if (me?.hellUsed) { this.flashMessage('狱解已在本场战斗中使用'); return; }
-        if (me?.hellActive) { this.flashMessage('狱解已激活'); return; }
-        console.log('[MultiBattle] 狱解已提交');
-        this.stageChar({ type: 'hell' });
-      }
-    };
-    document.addEventListener('keydown', this._powerKeyHandler);
-
     this.connect();
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      if (this._powerKeyHandler) { document.removeEventListener('keydown', this._powerKeyHandler); this._powerKeyHandler = null; }
       if (this.menu) { this.menu.destroy(true); this.menu = null; this.menuOpen = false; }
       if (this.room) { this.room.leave(); this.room = null; }
       // 恢复被本场战斗暂停的底层场景（地图 → GameScene；副本 → DungeonMapScene）

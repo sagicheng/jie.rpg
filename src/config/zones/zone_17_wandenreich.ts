@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x334466,
     npcs: [
-      { x: 0.45, y: 0.35, name: '莉托托', role: 'merchant', dialogue: [
-        { speaker: '莉托托', text: '饿了……买装备顺便给我带点吃的？星十字宫的货可是最好的。', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.45, y: 0.35, id: 'npc_m15', name: '珍味坊', role: 'merchant', dialogue: [
+        { speaker: '珍味坊', text: '饿了……买装备顺便给我带点吃的？星十字宫的货可是最好的。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(9, '星十字', ['star_hat', 'star_armor', 'star_bracer', 'star_boots', 'star_belt', 'star_ring', 'star_necklace', 'star_charm', 'star_pendant']) },
-      { x: 0.7, y: 0.5, name: '邦比爱塔', role: 'quest', dialogue: [
-        { speaker: '邦比爱塔', text: '圣文字的第二阶段试炼——在星十字宫释放你的字母！', choices: [
+      { x: 0.7, y: 0.5, id: 'npc_q17', name: '爆音', role: 'quest', dialogue: [
+        { speaker: '爆音', text: '圣文字的第二阶段试炼——在星十字宫释放你的字母！', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '稍等', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, name: '影之领域', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.2, id: 'sys_portal_shadow', name: '影之领域', role: 'return_point', dialogue: [
         { speaker: '影之领域', text: '星十字宫的传送据点。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '星十字工匠', role: 'enhance', dialogue: [{ speaker: '星十字工匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.2, y: 0.7, name: '艾斯·诺特', role: 'side_quest', dialogue: [
-        { speaker: '艾斯·诺特', text: '恐惧的力量需要灵脉支撑。帮我采集，我让你体验真正的恐惧。' },
+      { x: 0.55, y: 0.38, id: 'npc_f17', name: '星十锤', role: 'enhance', dialogue: [{ speaker: '星十锤', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.2, y: 0.7, id: 'npc_s33', name: '恐惧', role: 'side_quest', dialogue: [
+        { speaker: '恐惧', text: '恐惧的力量需要灵脉支撑。帮我采集，我让你体验真正的恐惧。' },
       ]},
-      { x: 0.65, y: 0.8, name: '杰拉德', role: 'side_quest', dialogue: [
+      { x: 0.65, y: 0.8, id: 'npc_s40', name: '奇迹使', role: 'side_quest', dialogue: [
         { speaker: '杰拉德', text: '奇迹需要牺牲。帮我击败几只虚化兵，奇迹就会降临。' },
       ]},
-      { x: 0.15, y: 0.5, name: '哈斯沃德', role: 'lore', dialogue: [
-        { speaker: '哈斯沃德', text: '我的圣文字"B"——均衡。与世界为敌的人，必须被均衡。' },
-        { speaker: '哈斯沃德', text: '东边的银架城——友哈巴赫大人的王座。最终试炼在那里。' },
+      { x: 0.15, y: 0.5, id: 'npc_m14', name: '天衡阁', role: 'lore', dialogue: [
+        { speaker: '天衡阁', text: '我的圣文字"B"——均衡。与世界为敌的人，必须被均衡。' },
+        { speaker: '天衡阁', text: '东边的银架城——友哈巴赫大人的王座。最终试炼在那里。' },
       ]},
-      { x: 0.8, y: 0.65, name: '石田雨龙', role: 'lore', dialogue: [
-        { speaker: '石田雨龙', text: '友哈巴赫选我作为他的继任者……但这只是他的棋局。' },
-        { speaker: '石田雨龙', text: '银架城在东边。那里有地狱之门的线索——友哈巴赫的终极目标。' },
+      { x: 0.8, y: 0.65, id: 'npc_s28', name: '雨龙', role: 'lore', dialogue: [
+        { speaker: '雨龙', text: '友哈巴赫选我作为他的继任者……但这只是他的棋局。' },
+        { speaker: '雨龙', text: '银架城在东边。那里有地狱之门的线索——友哈巴赫的终极目标。' },
       ]},
+
     ],
     enemies: [
 

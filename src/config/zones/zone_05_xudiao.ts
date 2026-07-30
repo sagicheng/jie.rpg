@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x665555,
     npcs: [
-      { x: 0.45, y: 0.35, name: '志波岩鹫', role: 'merchant', dialogue: [
-        { speaker: '志波岩鹫', text: '姐姐让我看店。戌吊的装备比润林安还强一点，别小看！', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.45, y: 0.35, id: 'npc_m05', name: '岩户集', role: 'merchant', dialogue: [
+        { speaker: '岩户集', text: '姐姐让我看店。戌吊的装备比润林安还强一点，别小看！', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(3, '戌吊', ['inata_hat', 'inata_armor', 'inata_bracer', 'inata_boots', 'inata_belt', 'inata_ring', 'inata_necklace', 'inata_charm', 'inata_pendant']) },
-      { x: 0.7, y: 0.5, name: '吉良井鹤', role: 'quest', dialogue: [
-        { speaker: '吉良井鹤', text: '戌吊附近的虚越来越强了。帮我清理几只，我推荐你参加始解试炼。', choices: [
+      { x: 0.7, y: 0.5, id: 'npc_q05', name: '霜行', role: 'quest', dialogue: [
+        { speaker: '霜行', text: '戌吊附近的虚越来越强了。帮我清理几只，我推荐你参加始解试炼。', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '稍等', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, name: '穿界门', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.2, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
         { speaker: '穿界门', text: '戌吊的传送据点。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '戌吊兵器师', role: 'enhance', dialogue: [{ speaker: '戌吊兵器师', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.2, y: 0.7, name: '雀部长次郎', role: 'side_quest', dialogue: [
-        { speaker: '雀部长次郎', text: '总队长山本元柳斋大人的斩魄刀——流刃若火，是炎系最强。帮我收集灵脉。' },
+      { x: 0.55, y: 0.38, id: 'npc_f05', name: '戌吊工', role: 'enhance', dialogue: [{ speaker: '戌吊工', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.2, y: 0.7, id: 'npc_s17', name: '雀羽', role: 'side_quest', dialogue: [
+        { speaker: '雀羽', text: '总队长山本元柳斋大人的斩魄刀——流刃若火，是炎系最强。帮我收集灵脉。' },
       ]},
-      { x: 0.65, y: 0.8, name: '伊势七绪', role: 'side_quest', dialogue: [
-        { speaker: '伊势七绪', text: '八番队的文书工作……帮我击败几只暴走虚，我给你写推荐信。' },
+      { x: 0.65, y: 0.8, id: 'npc_s18', name: '七弦', role: 'side_quest', dialogue: [
+        { speaker: '七弦', text: '八番队的文书工作……帮我击败几只暴走虚，我给你写推荐信。' },
       ]},
-      { x: 0.15, y: 0.5, name: '浮竹十四郎', role: 'lore', dialogue: [
-        { speaker: '浮竹十四郎', text: '始解——斩魄刀的第一次解放。你需要找到刀的名字。' },
-        { speaker: '浮竹十四郎', text: '草鹿在东边。那里有更强大的死神在等待试炼者。' },
+      { x: 0.15, y: 0.5, id: 'npc_s15', name: '浮云', role: 'lore', dialogue: [
+        { speaker: '浮云', text: '始解——斩魄刀的第一次解放。你需要找到刀的名字。' },
+        { speaker: '浮云', text: '草鹿在东边。那里有更强大的死神在等待试炼者。' },
       ]},
-      { x: 0.8, y: 0.65, name: '京乐春水', role: 'lore', dialogue: [
-        { speaker: '京乐春水', text: '花天狂骨——我的斩魄刀。始解后能将孩童的游戏化为现实。' },
-        { speaker: '京乐春水', text: '静灵庭在北边。完成始解后就能进入——但先过了草鹿那关。' },
+      { x: 0.8, y: 0.65, id: 'npc_s19', name: '春涧', role: 'lore', dialogue: [
+        { speaker: '春涧', text: '花天狂骨——我的斩魄刀。始解后能将孩童的游戏化为现实。' },
+        { speaker: '春涧', text: '静灵庭在北边。完成始解后就能进入——但先过了草鹿那关。' },
       ]},
+
     ],
     enemies: [
 

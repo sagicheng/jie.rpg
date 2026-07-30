@@ -17,7 +17,7 @@ import type { ClientLoadout } from '../scenes/MultiBattleScene';
 /** 组装玩家战斗负载（与 GameScene.buildBattleLoadout 同款，供副本战斗复用）。 */
 export function buildClientBattleLoadout(): ClientLoadout {
   return {
-    skills: getAvailableSkills(GameState.zanpakuto, GameState.element, GameState.hasShikai, GameState.hasBankai, false, false, false).map((s) => s.name),
+    skills: getAvailableSkills(GameState.zpId, GameState.element, GameState.hasShikai, GameState.hasBankai, false, false, false).map((s) => s.name),
     kidos: Kido.getActiveLearned(),
     items: Inventory.items.filter((i) => i.type === 'consumable'),
     playerStats: applyGuildStatBonus({

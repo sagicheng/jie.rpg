@@ -46,7 +46,7 @@ export interface PlayerWorld {
   dungeonWeekly?: { week: string; count: number };
   dungeon?: { dungeonId: number; stage: number } | null;
   unlocks?: string[];
-  zanpakuto?: string;
+  zpId?: string;
   kidoSchool?: string | null;
   kidoNodes?: Record<string, number>;
   kidoEquipped?: string[];
@@ -166,9 +166,9 @@ export function requestClaimQuest(questId: string): boolean {
 export function isOnline(): boolean { return !!activeRoom; }
 
 /** 解锁六大力量体系（始解/卍解/虚化…）。始解时一并传入所选斩魄刀真名，由服务端随解锁持久化。 */
-export function requestUnlock(key: string, zanpakuto?: string): boolean { return sendIntent('unlock', { key, zanpakuto }); }
+export function requestUnlock(key: string, zpId?: string): boolean { return sendIntent('unlock', { key, zanpakuto: zpId }); }
 /** 设置/修正所选斩魄刀真名（持久化）。用于始解首解落库及旧档迁移补存。 */
-export function requestSetZanpakuto(zanpakuto: string): boolean { return sendIntent('setZanpakuto', { zanpakuto }); }
+export function requestSetZanpakuto(zpId: string): boolean { return sendIntent('setZanpakuto', { zanpakuto: zpId }); }
 /** 设置鬼道主修系别。 */
 export function requestKidoSetSchool(school: string): boolean { return sendIntent('kidoSetSchool', { school }); }
 /** 鬼道节点加点。 */
@@ -250,7 +250,7 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
   GameState.unlocks = Array.isArray(pw.unlocks) ? [...pw.unlocks] : [];
   // 所选斩魄刀真名（服务端权威 + 持久化）—— 始解/卍解技能表以此查表；仅当服务端有明确值时覆盖，
   // 旧档无此字段(undefined)则保留本地值，交由 GameScene 旧档迁移逻辑引导重选补存。
-  if (pw.zanpakuto !== undefined) GameState.zanpakuto = pw.zanpakuto;
+  if (pw.zpId !== undefined) GameState.zpId = pw.zpId;
   // 鬼道（服务端权威 + 持久化）—— 覆盖 Kido 单例，recalcStats 据此算被动加成
   if (pw.kidoSchool !== undefined) Kido.school = pw.kidoSchool as any;
   if (pw.kidoNodes) Kido.nodes = { ...pw.kidoNodes };

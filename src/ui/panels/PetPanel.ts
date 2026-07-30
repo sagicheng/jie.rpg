@@ -101,7 +101,7 @@ export function renderPetPanel(scene: GameScene): Phaser.GameObjects.Container {
 
   if (pets.length === 0) {
     c.add(scene.add.text(ox + ow / 2, oy + oh / 2 - 16, '暂无灵宠', { fontSize: '20px', color: '#aaaaaa', padding: { x: 4, y: 4 } }).setOrigin(0.5));
-    c.add(scene.add.text(ox + ow / 2, oy + oh / 2 + 18, '击败妖兽有机会收服，或按 Ctrl+Y 让开发快捷键发放一只', { fontSize: '14px', color: '#888888', padding: { x: 4, y: 4 } }).setOrigin(0.5));
+    c.add(scene.add.text(ox + ow / 2, oy + oh / 2 + 18, '击败妖兽有机会收服', { fontSize: '14px', color: '#888888', padding: { x: 4, y: 4 } }).setOrigin(0.5));
     return c;
   }
 

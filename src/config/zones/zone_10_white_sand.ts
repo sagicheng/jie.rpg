@@ -7,36 +7,37 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x888899,
     npcs: [
-      { x: 0.4, y: 0.3, name: '妮露', role: 'merchant', dialogue: [
-        { speaker: '妮露', text: '虚圈的装备很特别！都是用虚壳做的！', choices: [{ text: '交易', callback: 'openShop' }] },
+      { x: 0.4, y: 0.3, id: 'npc_m10', name: '远行商', role: 'merchant', dialogue: [
+        { speaker: '远行商', text: '虚圈的装备很特别！都是用虚壳做的！', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(5, '虚壳', ['stud_hat', 'stud_armor', 'stud_bracer', 'stud_boots', 'stud_belt', 'jade_ring', 'mist_necklace', 'mist_charm', 'swamp_pendant']) },
-      { x: 0.7, y: 0.5, name: '乌尔奇奥拉(残影)', role: 'quest', dialogue: [
-        { speaker: '乌尔奇奥拉(残影)', text: '你为了力量来到虚圈。让我看看——你是否值得拥有虚化。', choices: [
+      { x: 0.7, y: 0.5, id: 'npc_q08', name: '残影·冥', role: 'quest', dialogue: [
+        { speaker: '残影·冥', text: '你为了力量来到虚圈。让我看看——你是否值得拥有虚化。', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, name: '黑腔', role: 'return_point', dialogue: [
+      { x: 0.85, y: 0.2, id: 'sys_portal_hueco', name: '黑腔', role: 'return_point', dialogue: [
         { speaker: '黑腔', text: '连接虚圈与现世的裂缝。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, name: '神奇的魔法阵', role: 'craft', dialogue: [
+      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.38, name: '砂原行商铁匠', role: 'enhance', dialogue: [{ speaker: '砂原行商铁匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.3, y: 0.45, name: '牙密', role: 'side_quest', dialogue: [
-        { speaker: '牙密', text: '喂！最强破面在此！帮我对付几只亚丘卡斯练练手。' },
+      { x: 0.55, y: 0.38, id: 'npc_f10', name: '砂原锻', role: 'enhance', dialogue: [{ speaker: '砂原锻', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.3, y: 0.45, id: 'npc_s26', name: '密牙', role: 'side_quest', dialogue: [
+        { speaker: '密牙', text: '喂！最强破面在此！帮我对付几只亚丘卡斯练练手。' },
       ]},
-      { x: 0.65, y: 0.8, name: '露比', role: 'side_quest', dialogue: [
-        { speaker: '露比', text: '我的触手被虚群缠住了……帮我清理它们，我告诉你虚化的秘密。' },
+      { x: 0.65, y: 0.8, id: 'npc_q09', name: '朱华', role: 'side_quest', dialogue: [
+        { speaker: '朱华', text: '我的触手被虚群缠住了……帮我清理它们，我告诉你虚化的秘密。' },
       ]},
-      { x: 0.2, y: 0.65, name: '葛力姆乔(残影)', role: 'lore', dialogue: [
-        { speaker: '葛力姆乔(残影)', text: '虚化——那是将虚的力量融入死神之体的禁忌之术。你准备好了吗？' },
-        { speaker: '葛力姆乔(残影)', text: '东边的黑腔深部——更强大的破面在那里。虚夜宫在更深处。' },
+      { x: 0.2, y: 0.65, id: 'npc_q10', name: '残影·牙', role: 'lore', dialogue: [
+        { speaker: '残影·牙', text: '虚化——那是将虚的力量融入死神之体的禁忌之术。你准备好了吗？' },
+        { speaker: '残影·牙', text: '东边的黑腔深部——更强大的破面在那里。虚夜宫在更深处。' },
       ]},
-      { x: 0.55, y: 0.6, name: '史塔克', role: 'lore', dialogue: [
-        { speaker: '史塔克', text: '力量越大，孤独越深。虚化会改变你——不只是力量，还有灵魂。' },
-        { speaker: '史塔克', text: '虚夜宫的蓝染……他是这一切的幕后黑手。但你现在还见不到他。' },
+      { x: 0.55, y: 0.6, id: 'npc_s27', name: '星塔', role: 'lore', dialogue: [
+        { speaker: '星塔', text: '力量越大，孤独越深。虚化会改变你——不只是力量，还有灵魂。' },
+        { speaker: '星塔', text: '虚夜宫的蓝染……他是这一切的幕后黑手。但你现在还见不到他。' },
       ]},
+
     ],
     enemies: [
 

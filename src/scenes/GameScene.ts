@@ -43,6 +43,7 @@ type ArcadeOverlapTarget = Phaser.Types.Physics.Arcade.GameObjectWithBody | Phas
 
 interface NPCData {
   sprite: Phaser.Physics.Arcade.Sprite;
+  id: string;
   name: string;
   role: string;
   dialogue: DialogueLine[];
@@ -160,9 +161,11 @@ export class GameScene extends Phaser.Scene {
       // 恢复建角信息（来自服务端返回或 TitleScene 传入）
       const chName = data.characterName || data.name || '';
       const chElement = data.characterElement || data.element || '';
+      const chGender = data.characterGender || data.gender || '';
       if (chName) {
         GameState.playerName = chName;
         if (chElement) GameState.element = chElement;
+        if (chGender) GameState.gender = chGender === 'female' ? 'female' : 'male';
         GameState.hasCreated = true;
       }
       Inventory.addItem({ id: 'stop_blood_grass', name: '止血草', type: 'consumable', desc: '回复50HP', quantity: 5 });
@@ -346,53 +349,8 @@ export class GameScene extends Phaser.Scene {
       this.launchMultiBattle();
     });
 
-    // 测试用解锁：E=始解 R=完现术 G=圣文字  A=虚化 S=狱解（raw DOM 事件，100% 可靠）
-    const unlockHandler = (e: KeyboardEvent) => {
-      // 文本框聚焦时不触发（聊天输入等）
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      const k = e.key.toLowerCase();
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      console.log('[unlock] key pressed:', k); // 调试：确认 DOM 事件到达
-      let label = '', unlockKey = '';
-      if (k === 'e') { label = '始解'; unlockKey = 'shikai'; }
-      else if (k === 'r') { label = '完现术'; unlockKey = 'fullbring'; }
-      else if (k === 'g') { label = '圣文字'; unlockKey = 'schrift'; }
-      else if (k === 'a') { label = '虚化'; unlockKey = 'hollow'; }
-      else if (k === 's') { label = '狱解'; unlockKey = 'hell'; }
-      else return;
-      if (!unlockKey) return;
-      console.log('[unlock] target:', unlockKey, 'hasUnlock:', GameState.hasUnlock(unlockKey)); // 调试
-      if (!GameState.hasUnlock(unlockKey)) {
-        GameState.addUnlock(unlockKey);
-        console.log('[unlock] added:', unlockKey); // 调试
-      }
-      const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `${label} 已解锁！`, {
-        fontSize: '22px', color: '#88ff88', fontStyle: 'bold',
-        backgroundColor: '#112211cc', padding: { x: 20, y: 12 },
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
-      this.tweens.add({ targets: t, alpha: 0, delay: 2000, duration: 500, onComplete: () => t.destroy() });
-    };
-    console.log('[unlock] DOM handler registered for E/R/G/A/S keys'); // 调试：确认 handler 注册成功
-    document.addEventListener('keydown', unlockHandler);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      document.removeEventListener('keydown', unlockHandler);
-    });
-
-    // 开发调试：全局暴露 GameState，一键解锁存到原始数组（绕过 Vite 多 chunk 双实例）
+    // 开发调试：全局暴露 GameState（绕过 Vite 多 chunk 双实例）
     (window as any).__gs = GameState;
-    (window as any).__unlockAll = () => {
-      const keys = ['shikai', 'bankai', 'hollow', 'fullbring', 'schrift', 'hell'];
-      (window as any).__unlocked = keys; // 存到 window 原始数组
-      keys.forEach((k: string) => { if (!GameState.hasUnlock(k)) GameState.addUnlock(k); });
-      const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '全部力量体系已解锁！', {
-        fontSize: '26px', color: '#ffff88', fontStyle: 'bold',
-        backgroundColor: '#221100cc', padding: { x: 24, y: 14 },
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
-      this.tweens.add({ targets: t, alpha: 0, delay: 2500, duration: 500, onComplete: () => t.destroy() });
-      console.log('✅ 全部力量体系已解锁：' + keys.join(', '));
-    };
-    console.log('💡 调试命令就绪：在控制台输入 __unlockAll() 一键解锁全部力量体系');
 
     // 战斗结束（scene resume）时清除「战斗中」标记，并弹出权威战斗奖励报告（避免被战斗场景遮挡）
     this.events.on(Phaser.Scenes.Events.RESUME, () => {
@@ -830,7 +788,7 @@ export class GameScene extends Phaser.Scene {
   }
   private startDialogue(npc: NPCData): void {
     this.isInDialogue = true; this.player.setVelocity(0, 0); this.promptText.setVisible(false);
-    GameState.updateQuestProgress('talk', npc.name, 1);
+    GameState.updateQuestProgress('talk', npc.id, 1);
     // 不再拦截quest NPC，让对话自然流动，选项触发接取/完成
     let lineIndex = 0;
     const showNext = () => { if (lineIndex < npc.dialogue.length) { const line = npc.dialogue[lineIndex]; lineIndex++; this.dialogueBox.show(line, lineIndex < npc.dialogue.length ? showNext : () => { this.isInDialogue = false; }); } };
@@ -1168,8 +1126,8 @@ export class GameScene extends Phaser.Scene {
             text: ch.text,
             callback: () => {
               if (ch.callback === 'openShop') this.openShopPanel(c.shop || []);
-              else if (ch.callback === 'acceptQuest') this.acceptQuestFromNPC(c.name);
-              else if (ch.callback === 'completeQuest') this.completeQuestFromNPC(c.name);
+              else if (ch.callback === 'acceptQuest') this.acceptQuestFromNPC(c);
+              else if (ch.callback === 'completeQuest') this.completeQuestFromNPC(c);
               else if (ch.callback === 'closeDialogue') this.isInDialogue = false;
               else if (ch.callback === 'openReturn') this.openReturn();
               else if (ch.callback === 'openCraft') this.openCraft();
@@ -1187,26 +1145,26 @@ export class GameScene extends Phaser.Scene {
       // 检查是否有可接取的主线任务
       for (const questId of MAIN_QUEST_ORDER) {
         const quest = MAIN_QUESTS[questId];
-        if (!quest || quest.acceptFrom !== c.name) continue;
+        if (!quest || quest.acceptFrom !== c.id) continue;
         if (GameState.questCompleted.includes(questId)) continue;
         if (GameState.isQuestActive(questId)) continue;
         if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) continue;
-        questChoices.push({ text: `接受任务：${quest.name}`, callback: () => this.acceptQuestFromNPC(c.name) });
+        questChoices.push({ text: `接受任务：${quest.name}`, callback: () => this.acceptQuestFromNPC(c) });
         break;
       }
       // 检查是否有可完成的任务（本NPC completeAt 且已就绪）
       const readyId = GameState.activeQuests.find(id => {
         const q = GameState.getQuestDef(id);
-        return !!q && q.completeAt === c.name && GameState.isQuestReady(id);
+        return !!q && q.completeAt === c.id && GameState.isQuestReady(id);
       });
       if (readyId) {
         const q = GameState.getQuestDef(readyId)!;
-        questChoices.push({ text: `完成任务：${q.name}`, callback: () => this.completeQuestFromNPC(c.name) });
+        questChoices.push({ text: `完成任务：${q.name}`, callback: () => this.completeQuestFromNPC(c) });
       } else {
         // 任务进行中，在对话文本中显示进度
         const activeId = GameState.activeQuests.find(id => {
           const q = GameState.getQuestDef(id);
-          return !!q && q.completeAt === c.name;
+          return !!q && q.completeAt === c.id;
         });
         if (activeId && dialogueLines.length > 0) {
           dialogueLines[0].text += `\n\n任务进度：${GameState.getQuestTrackFor(activeId)}`;
@@ -1214,11 +1172,11 @@ export class GameScene extends Phaser.Scene {
       }
       // 检查支线任务
       for (const sq of Object.values(SIDE_QUESTS)) {
-        if (sq.acceptFrom !== c.name) continue;
+        if (sq.acceptFrom !== c.id) continue;
         if (GameState.questCompleted.includes(sq.id)) continue;
         if (GameState.isQuestActive(sq.id)) continue;
         if (sq.prerequisite && !GameState.questCompleted.includes(sq.prerequisite)) continue;
-        questChoices.push({ text: `接受支线：${sq.name}`, callback: () => this.acceptQuestFromNPC(c.name) });
+        questChoices.push({ text: `接受支线：${sq.name}`, callback: () => this.acceptQuestFromNPC(c) });
         break;
       }
       // 如果有任务选项，添加到第一行对话
@@ -1228,7 +1186,7 @@ export class GameScene extends Phaser.Scene {
         dialogueLines[0].choices!.push({ text: '离开', callback: () => { this.isInDialogue = false; } });
       }
 
-      this.npcList.push({ sprite: npc, name: c.name, role: c.role, dialogue: dialogueLines, nameTag: tag, x: nx, y: ny, shop: c.shop });
+      this.npcList.push({ sprite: npc, id: c.id, name: c.name, role: c.role, dialogue: dialogueLines, nameTag: tag, x: nx, y: ny, shop: c.shop });
     }
   }
 
@@ -1310,44 +1268,44 @@ export class GameScene extends Phaser.Scene {
     });
   }
   /** 通过NPC对话选项接取任务 */
-  private acceptQuestFromNPC(npcName: string): void {
+  private acceptQuestFromNPC(npc: { id: string; name: string; role: string }): void {
     for (const questId of MAIN_QUEST_ORDER) {
       const quest = MAIN_QUESTS[questId];
-      if (!quest || quest.acceptFrom !== npcName) continue;
+      if (!quest || quest.acceptFrom !== npc.id) continue;
       if (GameState.questCompleted.includes(questId)) { this.isInDialogue = false; return; }
       if (GameState.isQuestActive(questId)) { this.isInDialogue = false; return; }
       if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) { this.isInDialogue = false; return; }
       GameState.acceptQuest(quest);
-      this.dialogueBox.show({ speaker: npcName, text: `已接取任务：${quest.name}\n${quest.desc}` }, () => { this.isInDialogue = false; });
+      this.dialogueBox.show({ speaker: npc.name, text: `已接取任务：${quest.name}\n${quest.desc}` }, () => { this.isInDialogue = false; });
       return;
     }
     // 检查支线
     for (const quest of Object.values(SIDE_QUESTS)) {
-      if (quest.acceptFrom !== npcName) continue;
+      if (quest.acceptFrom !== npc.id) continue;
       if (GameState.questCompleted.includes(quest.id)) { this.isInDialogue = false; return; }
       if (GameState.isQuestActive(quest.id)) { this.isInDialogue = false; return; }
       if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) { this.isInDialogue = false; return; }
       GameState.acceptQuest(quest);
-      this.dialogueBox.show({ speaker: npcName, text: `已接取支线：${quest.name}\n${quest.desc}` }, () => { this.isInDialogue = false; });
+      this.dialogueBox.show({ speaker: npc.name, text: `已接取支线：${quest.name}\n${quest.desc}` }, () => { this.isInDialogue = false; });
       return;
     }
     this.isInDialogue = false;
   }
 
   /** 通过NPC对话选项完成任务 */
-  private completeQuestFromNPC(npcName: string): void {
+  private completeQuestFromNPC(npc: { id: string; name: string; role: string }): void {
     // 找本NPC处已就绪的活动任务
     const readyId = GameState.activeQuests.find(id => {
       const q = GameState.getQuestDef(id);
-      return !!q && q.completeAt === npcName && GameState.isQuestReady(id);
+      return !!q && q.completeAt === npc.id && GameState.isQuestReady(id);
     });
     if (!readyId) {
       const activeId = GameState.activeQuests.find(id => {
         const q = GameState.getQuestDef(id);
-        return !!q && q.completeAt === npcName;
+        return !!q && q.completeAt === npc.id;
       });
       if (activeId) {
-        this.dialogueBox.show({ speaker: npcName, text: `任务还未完成。\n${GameState.getQuestTrackFor(activeId)}` }, () => { this.isInDialogue = false; });
+        this.dialogueBox.show({ speaker: npc.name, text: `任务还未完成。\n${GameState.getQuestTrackFor(activeId)}` }, () => { this.isInDialogue = false; });
       } else {
         this.isInDialogue = false;
       }
@@ -1359,7 +1317,7 @@ export class GameScene extends Phaser.Scene {
       // 联机：奖励由服务端权威发放（worldSync 到账），反馈由 intentResult 显示
       requestClaimQuest(q.id);
       if (q.rewards.unlock) requestUnlock(q.rewards.unlock);
-      this.dialogueBox.show({ speaker: npcName, text: `任务完成：${q.name}\n奖励将稍后到账` }, () => { this.isInDialogue = false; this.tryAutoStartNextQuest(); });
+      this.dialogueBox.show({ speaker: npc.name, text: `任务完成：${q.name}\n奖励将稍后到账` }, () => { this.isInDialogue = false; this.tryAutoStartNextQuest(); });
       return;
     }
     // 单机：本地发放奖励
@@ -1370,9 +1328,9 @@ export class GameScene extends Phaser.Scene {
     if (q.rewards.unlock) { GameState.addUnlock(q.rewards.unlock); msg += `\n解锁：${q.rewards.unlock}`; }
     this.scene.get('UIScene').events.emit('updateStats');
     if (q.id === 'shikai_trial' && !GameState.hasShikai) {
-      this.dialogueBox.show({ speaker: npcName, text: msg + '\n\n你的斩魄刀已经觉醒了！选择它的真名吧。' }, () => { this.isInDialogue = false; showShikaiSelection(this); });
+      this.dialogueBox.show({ speaker: npc.name, text: msg + '\n\n你的斩魄刀已经觉醒了！选择它的真名吧。' }, () => { this.isInDialogue = false; showShikaiSelection(this); });
     } else {
-      this.dialogueBox.show({ speaker: npcName, text: msg }, () => { this.isInDialogue = false; this.tryAutoStartNextQuest(); });
+      this.dialogueBox.show({ speaker: npc.name, text: msg }, () => { this.isInDialogue = false; this.tryAutoStartNextQuest(); });
     }
   }
 
@@ -1484,7 +1442,7 @@ export class GameScene extends Phaser.Scene {
         room.onMessage('worldSync', (pw: any) => {
           applyWorldSync(this, pw);
           // 旧档迁移：已始解但服务端未存斩魄刀真名 -> 引导重新选择以恢复始解/卍解技能（仅一次）
-          if (!this.shikaiReselectDone && GameState.hasShikai && !GameState.zanpakuto) {
+          if (!this.shikaiReselectDone && GameState.hasShikai && !GameState.zpId) {
             this.shikaiReselectDone = true;
             this.time.delayedCall(500, () => showShikaiSelection(this));
           }
@@ -1834,7 +1792,7 @@ export class GameScene extends Phaser.Scene {
       skills: Array.isArray(activePet.skills) ? activePet.skills : [],
     } : undefined;
     return {
-      skills: getAvailableSkills(GameState.zanpakuto, GameState.element, GameState.hasShikai, GameState.hasBankai, false, false, false).map((s) => s.name),
+      skills: getAvailableSkills(GameState.zpId, GameState.element, GameState.hasShikai, GameState.hasBankai, false, false, false).map((s) => s.name),
       kidos: Kido.getActiveLearned(),
       items: Inventory.items.filter((i) => i.type === 'consumable'),
       // 玩家真实战斗属性（recalcStats 结果），用于服务端权威结算，根除硬编码 BASE_PLAYER 导致的数值崩坏

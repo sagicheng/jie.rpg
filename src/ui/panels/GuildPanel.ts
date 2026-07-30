@@ -63,6 +63,8 @@ export const RANK_NAME: Record<string, string> = { leader: '会长', elder: '长
 
   // 公会面板 Tab 状态（模块级：避免 refresh() 重建面板时把 Tab 重置回 info，导致"行会商店打不开"）
 export let guildPanelTab: 'info' | 'shop' = 'info';
+  // 加入公会 Tab 状态（未加入公会时的标签切换）
+export let guildNoGuildTab: 'list' | 'create' = 'list';
 
   export function renderGuildPanel(scene: GameScene, resetTab = true): Phaser.GameObjects.Container {
     // 对齐 B/C 面板的坐标策略：容器按开面板瞬间的相机滚动量偏移定位，
@@ -188,68 +190,75 @@ export let guildPanelTab: 'info' | 'shop' = 'info';
     //  未加入公会：左列=创建表单  右列=公会列表
     // ══════════════════════════════════════
     function renderNoGuild(): void {
-      // ── 左列：创建公会 ──
-      const lx = px + 30;
-      c.add(scene.add.text(lx, py + 70, '创建公会', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+      // ── Tab 切换（已有公会 / 创建公会）──
+      const tabY = py + 68;
+      const switchTab = (t: 'list' | 'create') => { if (guildNoGuildTab === t) return; guildNoGuildTab = t; refresh(); };
+      btn(px + 200, tabY, '已有公会', guildNoGuildTab === 'list' ? 0x33507a : 0x222244, guildNoGuildTab === 'list' ? '#bcd4ff' : '#7788aa', () => switchTab('list'));
+      c.add(scene.add.text(px + PW / 2, tabY, '|', { fontSize: '16px', color: '#556677' }).setOrigin(0.5));
+      btn(px + PW - 200, tabY, '创建公会', guildNoGuildTab === 'create' ? 0x33507a : 0x222244, guildNoGuildTab === 'create' ? '#bcd4ff' : '#7788aa', () => switchTab('create'));
 
-      // 公会名
-      c.add(scene.add.text(lx, py + 110, '公会名称', { fontSize: '13px', color: '#8899bb' }).setOrigin(0, 0.5));
-      const nameInput = placeInput(lx + 170, py + 110, 260, 32, 12);
-      // 初始公告
-      c.add(scene.add.text(lx, py + 158, '初始公告（可选）', { fontSize: '13px', color: '#8899bb' }).setOrigin(0, 0.5));
-      const noticeInput = placeInput(lx + 190, py + 158, 380, 32, 200);
-      btn(lx + 120, py + 210, '创建公会', 0x2a6e4a, '#cfeedd', () => {
-        const name = nameInput.value.trim();
-        if (!name) { toast('请输入公会名（2-12 字符）'); return; }
-        if (name.length < 2 || name.length > 12) { toast('公会名须 2-12 字符'); return; }
-        GuildClient.create(scene.authToken, scene.characterId, name, noticeInput.value.trim()).then((res: any) => {
-          if (res.ok) { toast('公会「' + name + '」创建成功！'); refresh(); }
-          else toast(res.msg || '创建失败');
+      // ── 分隔线 ──
+      const tabSep = scene.add.graphics();
+      tabSep.lineStyle(1, 0x334466, 0.3); tabSep.lineBetween(px + 30, tabY + 22, px + PW - 30, tabY + 22);
+      c.add(tabSep);
+
+      if (guildNoGuildTab === 'create') {
+        // ── 创建公会：表单占据全宽 ──
+        const lx = px + 30;
+        c.add(scene.add.text(lx, py + 120, '创建公会', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+        c.add(scene.add.text(lx, py + 160, '公会名称', { fontSize: '13px', color: '#8899bb' }).setOrigin(0, 0.5));
+        const nameInput = placeInput(lx + 170, py + 160, 260, 32, 12);
+        btn(lx + 120, py + 210, '创建公会', 0x2a6e4a, '#cfeedd', () => {
+          const name = nameInput.value.trim();
+          if (!name) { toast('请输入公会名（2-12 字符）'); return; }
+          if (name.length < 2 || name.length > 12) { toast('公会名须 2-12 字符'); return; }
+          GuildClient.create(scene.authToken, scene.characterId, name, '').then((res: any) => {
+            if (res.ok) { toast('公会「' + name + '」创建成功！'); refresh(); }
+            else toast(res.msg || '创建失败');
+          });
         });
-      });
+        c.add(scene.add.text(lx, py + 300, '提示：创建后你将成为会长，可审批申请、管理成员。', { fontSize: '11px', color: '#556677', wordWrap: { width: 420 } }).setOrigin(0, 0));
+      } else {
+        // ── 已有公会：列表占据全宽 ──
+        const rx = px + 30;
+        c.add(scene.add.text(rx, py + 120, '已有公会', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
+        c.add(scene.add.text(rx, py + 150, '选择一个公会提交申请，等待会长/长老审批后即可加入。', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0));
 
-      // 提示文字
-      c.add(scene.add.text(lx, py + 250, '提示：创建后你将成为会长，可审批申请、管理成员。', { fontSize: '11px', color: '#556677', wordWrap: { width: 420 } }).setOrigin(0, 0));
-
-      // ── 右列：公会列表（浏览+申请） ──
-      const rx = px + 520;
-      c.add(scene.add.text(rx, py + 70, '已有公会', { fontSize: '18px', color: '#e8d5a3', fontStyle: 'bold' }).setOrigin(0, 0.5));
-      c.add(scene.add.text(rx, py + 98, '选择一个公会提交申请，等待会长/长老审批后即可加入。', { fontSize: '11px', color: '#556677' }).setOrigin(0, 0));
-
-      GuildClient.list(scene.authToken, scene.characterId).then((res: any) => {
-        if (!res || !res.ok) {
-          c.add(scene.add.text(rx, py + 130, '⚠ 列表加载失败，请稍后重试', { fontSize: '13px', color: '#cc6644' }).setOrigin(0, 0));
-          return;
-        }
-        const list = res.guilds || [];
-        if (list.length === 0) {
-          c.add(scene.add.text(rx, py + 130, '（暂无公会，你可以创建一个！）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0));
-          return;
-        }
-        // 表头
-        c.add(scene.add.text(rx, py + 128, '公会名', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
-        c.add(scene.add.text(rx + 200, py + 128, '等级', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
-        c.add(scene.add.text(rx + 270, py + 128, '人数', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
-        // 列表行
-        list.slice(0, 12).forEach((g: any, i: number) => {
-          const ry = py + 152 + i * 36;
-          // 行背景（交替色）
-          if (i % 2 === 0) {
-            const rowBg = scene.add.graphics();
-            rowBg.fillStyle(0x1a1a2e, 0.4); rowBg.fillRoundedRect(rx - 6, ry - 12, 440, 32, 4);
-            c.add(rowBg);
+        GuildClient.list(scene.authToken, scene.characterId).then((res: any) => {
+          if (!res || !res.ok) {
+            c.add(scene.add.text(rx, py + 180, '列表加载失败，请稍后重试', { fontSize: '13px', color: '#cc6644' }).setOrigin(0, 0));
+            return;
           }
-          c.add(scene.add.text(rx, ry, `〈${g.name}〉`, { fontSize: '14px', color: '#cdd6e8' }).setOrigin(0, 0.5));
-          c.add(scene.add.text(rx + 200, ry, `Lv.${g.level}`, { fontSize: '13px', color: '#99aabb' }).setOrigin(0, 0.5));
-          c.add(scene.add.text(rx + 270, ry, `${g.memberCount}人`, { fontSize: '13px', color: '#99aabb' }).setOrigin(0, 0.5));
-          btn(rx + 380, ry, '申请加入', 0x33507a, '#bcd4ff', () => {
-            GuildClient.apply(scene.authToken, scene.characterId, g.id, '').then((ar: any) => {
-              if (ar.ok) toast('已提交申请，等待审批');
-              else toast(ar.msg || '申请失败');
+          const list = res.guilds || [];
+          if (list.length === 0) {
+            c.add(scene.add.text(rx, py + 180, '（暂无公会，你可以创建一个！）', { fontSize: '13px', color: '#667788' }).setOrigin(0, 0));
+            return;
+          }
+          // 表头
+          c.add(scene.add.text(rx, py + 178, '公会名', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
+          c.add(scene.add.text(rx + 250, py + 178, '等级', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
+          c.add(scene.add.text(rx + 370, py + 178, '人数', { fontSize: '12px', color: '#667788' }).setOrigin(0, 0.5));
+          c.add(scene.add.text(rx + 500, py + 178, '操作', { fontSize: '12px', color: '#667788' }).setOrigin(0.5));
+          // 列表行
+          list.slice(0, 14).forEach((g: any, i: number) => {
+            const ry = py + 202 + i * 34;
+            if (i % 2 === 0) {
+              const rowBg = scene.add.graphics();
+              rowBg.fillStyle(0x1a1a2e, 0.4); rowBg.fillRoundedRect(rx - 6, ry - 12, PW - 66, 30, 4);
+              c.add(rowBg);
+            }
+            c.add(scene.add.text(rx, ry, `${g.name}`, { fontSize: '14px', color: '#cdd6e8' }).setOrigin(0, 0.5));
+            c.add(scene.add.text(rx + 250, ry, `Lv.${g.level}`, { fontSize: '13px', color: '#99aabb' }).setOrigin(0, 0.5));
+            c.add(scene.add.text(rx + 370, ry, `${g.memberCount}人`, { fontSize: '13px', color: '#99aabb' }).setOrigin(0, 0.5));
+            btn(rx + 540, ry, '申请加入', 0x33507a, '#bcd4ff', () => {
+              GuildClient.apply(scene.authToken, scene.characterId, g.id, '').then((ar: any) => {
+                if (ar.ok) toast('已提交申请，等待审批');
+                else toast(ar.msg || '申请失败');
+              });
             });
           });
         });
-      });
+      }
     }
 
     // ══════════════════════════════════════
