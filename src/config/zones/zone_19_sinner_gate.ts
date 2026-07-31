@@ -22,6 +22,11 @@ import { shop } from './shop';
       { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
+      { x: 0.6, y: 0.8, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
+        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+          { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
+        ]},
+      ]},
       { x: 0.55, y: 0.38, id: 'npc_f19', name: '咎人锻', role: 'enhance', dialogue: [{ speaker: '咎人锻', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.8, y: 0.25, id: 'npc_m18', name: '炼狱商', role: 'side_quest', dialogue: [
         { speaker: '炼狱商', text: '咎人越狱了！帮我抓回5个，我给你地狱的秘宝。' },

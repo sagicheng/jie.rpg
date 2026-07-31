@@ -1111,13 +1111,13 @@ export class GameScene extends Phaser.Scene {
     const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
     for (const c of cfg.npcs) {
       const nx = c.x * GAME_WIDTH * 3, ny = c.y * GAME_HEIGHT * 2;
-      const npc = this.physics.add.sprite(nx, ny, 'npc').setImmovable(true).setDepth(5);
+      const npcTexture = this.textures.exists(c.id) ? c.id : 'npc';
+      const npc = this.physics.add.sprite(nx, ny, npcTexture).setImmovable(true).setDepth(5).setDisplaySize(40, 60);
       const tag = this.add.text(nx, ny - 30, c.name, {
         fontSize: '11px',
         color: c.role === 'merchant' ? '#ffdd88' : c.role === 'return_point' ? '#88ccff' : c.role === 'craft' ? '#aa88ff' : c.role === 'enhance' ? '#ff8844' : c.role === 'quest_board' ? '#ffcc66' : '#ffe8b0',
         backgroundColor: '#00000088', padding: { x: 4, y: 2 },
       }).setOrigin(0.5).setDepth(6);
-      this.tweens.add({ targets: npc, scaleY: 1.03, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
       const dialogueLines: DialogueLine[] = c.dialogue.map((d, i) => {
         const line: DialogueLine = { speaker: d.speaker, text: d.text };

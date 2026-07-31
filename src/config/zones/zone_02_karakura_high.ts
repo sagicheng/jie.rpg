@@ -22,6 +22,11 @@ import { shop } from './shop';
       { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
+      { x: 0.45, y: 0.6, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
+        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+          { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
+        ]},
+      ]},
       { x: 0.55, y: 0.38, id: 'npc_f02', name: '校舍工', role: 'enhance', dialogue: [{ speaker: '校舍工', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.2, y: 0.7, id: 'npc_s08', name: '千代', role: 'side_quest', dialogue: [
         { speaker: '千代', text: '我的书包被虚叼走了！帮我抢回来……对付几只低级虚就行。' },

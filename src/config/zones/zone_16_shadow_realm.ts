@@ -22,6 +22,11 @@ import { shop } from './shop';
       { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
         { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
+      { x: 0.75, y: 0.65, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
+        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+          { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
+        ]},
+      ]},
       { x: 0.55, y: 0.38, id: 'npc_f16', name: '影铁匠', role: 'enhance', dialogue: [{ speaker: '影铁匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.85, y: 0.85, id: 'npc_s33', name: '恐惧', role: 'side_quest', dialogue: [
         { speaker: '恐惧', text: '恐惧……让我看看你能收集多少灵脉来对抗我的恐惧。' },
