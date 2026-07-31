@@ -59,53 +59,43 @@ export class BootScene extends Phaser.Scene {
   private createPlaceholderAssets(): void {
     const g = this.make.graphics({ x: 0, y: 0 } as any);
 
-    // 已用真实美术的 key 不再生成程序化占位
-    const REAL_KEYS = new Set(ASSET_IMAGES.map(a => a.key));
+    // player_male/female 永远在 assetManifest 注册，由 preload 加载真实 PNG；不再生成程序化占位（避免 generateTexture 覆盖已加载纹理）
 
-    // 玩家角色 (32x48) — 按性别生成程序化占位（真实美术已覆盖时跳过）
-    for (const gk of ['player_male', 'player_female']) {
-      if (!REAL_KEYS.has(gk)) {
-        g.clear();
-        g.fillStyle(gk === 'player_male' ? 0x4a90d9 : 0xd94a9a, 1);
-        g.fillRoundedRect(0, 0, 32, 48, 4);
-        g.fillStyle(0xffcc88, 1);
-        g.fillRoundedRect(8, 4, 16, 16, 4);
-        g.generateTexture(gk, 32, 48);
-        g.clear();
-      }
+    // NPC 占位（仅当真实纹理缺失时生成，供 fallback 用）
+    if (!this.textures.exists('npc')) {
+      g.fillStyle(0x88aa66, 1);
+      g.fillRoundedRect(0, 0, 32, 48, 4);
+      g.fillStyle(0xffcc88, 1);
+      g.fillRoundedRect(8, 4, 16, 16, 4);
+      g.generateTexture('npc', 32, 48);
+      g.clear();
     }
 
-    // NPC (32x48)
-    g.fillStyle(0x88aa66, 1);
-    g.fillRoundedRect(0, 0, 32, 48, 4);
-    g.fillStyle(0xffcc88, 1);
-    g.fillRoundedRect(8, 4, 16, 16, 4);
-    g.generateTexture('npc', 32, 48);
-    g.clear();
-
-    // 妖魔·杂 (32x48)
-    g.fillStyle(0xcc4444, 1);
-    g.fillRoundedRect(0, 0, 32, 48, 4);
-    g.fillStyle(0x331111, 1);
-    g.fillRoundedRect(6, 2, 20, 20, 4);
-    g.generateTexture('enemy_small', 32, 48);
-    g.clear();
-
-    // 妖魔·恶 (48x64)
-    g.fillStyle(0x993333, 1);
-    g.fillRoundedRect(0, 0, 48, 64, 4);
-    g.fillStyle(0x441111, 1);
-    g.fillRoundedRect(8, 4, 32, 28, 4);
-    g.generateTexture('enemy_elite', 48, 64);
-    g.clear();
-
-    // Boss (64x80)
-    g.fillStyle(0x661111, 1);
-    g.fillRoundedRect(0, 0, 64, 80, 6);
-    g.fillStyle(0x220000, 1);
-    g.fillRoundedRect(10, 6, 44, 36, 4);
-    g.generateTexture('enemy_boss', 64, 80);
-    g.clear();
+    // 妖魔占位（仅当对应真实纹理缺失时生成）
+    if (!this.textures.exists('enemy_small')) {
+      g.fillStyle(0xcc4444, 1);
+      g.fillRoundedRect(0, 0, 32, 48, 4);
+      g.fillStyle(0x331111, 1);
+      g.fillRoundedRect(6, 2, 20, 20, 4);
+      g.generateTexture('enemy_small', 32, 48);
+      g.clear();
+    }
+    if (!this.textures.exists('enemy_elite')) {
+      g.fillStyle(0x993333, 1);
+      g.fillRoundedRect(0, 0, 48, 64, 4);
+      g.fillStyle(0x441111, 1);
+      g.fillRoundedRect(8, 4, 32, 28, 4);
+      g.generateTexture('enemy_elite', 48, 64);
+      g.clear();
+    }
+    if (!this.textures.exists('enemy_boss')) {
+      g.fillStyle(0x661111, 1);
+      g.fillRoundedRect(0, 0, 64, 80, 6);
+      g.fillStyle(0x220000, 1);
+      g.fillRoundedRect(10, 6, 44, 36, 4);
+      g.generateTexture('enemy_boss', 64, 80);
+      g.clear();
+    }
 
     // 地形tile (32x32)
     const tiles: [number, string][] = [

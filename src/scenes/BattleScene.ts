@@ -236,29 +236,26 @@ export class BattleScene extends Phaser.Scene {
     this.enemies.forEach((enemy, i) => {
       const pos = positions[i];
       const tex = enemy.type === '妖将' || enemy.type === '妖王' ? 'enemy_boss' : 'enemy_elite';
-      const scale = count <= 4 ? 2.2 : 1.6; // 多怪时缩小
-      const sprite = this.add.sprite(pos.x, pos.y, tex).setScale(scale);
+      const scale = count <= 4 ? 2.2 : 1.6;
+      // 立绘在右
+      const sprite = this.add.sprite(pos.x, pos.y, tex).setScale(scale).setDepth(10);
       this.enemySprites.push(sprite);
 
-      const nameOffset = count <= 4 ? -70 : -48;
-      const nameSize = count <= 4 ? '13px' : '11px';
-      const nameText = this.add.text(pos.x, pos.y + nameOffset, enemy.name, {
-        fontSize: nameSize, color: '#ff6666', fontFamily: 'serif', fontStyle: 'bold', padding: { y: 2 },
+      // 名字 + 类型（立绘上方）
+      const nameText = this.add.text(pos.x, pos.y - 70, enemy.name, {
+        fontSize: '13px', color: '#ff6666', fontFamily: 'serif', fontStyle: 'bold', padding: { y: 2 },
       }).setOrigin(0.5);
       this.enemyNameTexts.push(nameText);
-
-      // 敌人类型标签
-      const typeOffset = count <= 4 ? -54 : -36;
-      const typeText = this.add.text(pos.x, pos.y + typeOffset, enemy.type, {
+      const typeText = this.add.text(pos.x, pos.y - 54, enemy.type, {
         fontSize: '8px', color: '#994444', padding: { y: 1 },
       }).setOrigin(0.5);
       this.enemyTypeTexts.push(typeText);
 
-      // 独立血条（切图皮肤）+ 即时信息文本(HP数值/状态标签)
-      const bw = count <= 4 ? 100 : 70, bh = 7;
-      const hpBar = new SkinBar(this, { x: pos.x - bw / 2, y: pos.y + 40, w: bw, h: bh, depth: 30, pad: 1 });
+      // 血条 + HP数值 在立绘**左侧**（并排，留出 20px 间距避免遮挡）
+      const bw = 100, bh = 7;
+      const hpBar = new SkinBar(this, { x: pos.x - 150, y: pos.y - 10, w: bw, h: bh, depth: 30, pad: 1 });
       this.enemyHpBars.push(hpBar);
-      const info = this.add.text(pos.x, pos.y + 47, '', {
+      const info = this.add.text(pos.x - 100, pos.y + 5, '', {
         fontSize: '11px', color: '#ffbbbb', fontFamily: 'monospace', align: 'center',
       }).setOrigin(0.5, 0).setVisible(false);
       this.enemyInfoTexts.push(info);
@@ -268,19 +265,28 @@ export class BattleScene extends Phaser.Scene {
     this.enemyStatusSlots = this.enemies.map(() => this.makeStatusSlotRow());
     this.playerStatusSlots = this.makeStatusSlotRow();
 
-    // 我方（左侧 4 行站位的第一行；其余 3 行预留给队友 / 灵宠）
-    const PX = GAME_WIDTH * 0.24, PY = GAME_HEIGHT * 0.22;
-    this.add.sprite(PX, PY, 'player_' + GameState.gender).setDisplaySize(90, 135).setFlipX(true);
+    // ══ 我方站位（左半区）══
+    // 布局：[玩家HP/MP条] [玩家立绘] [宠物立绘(预留)] [宠物HP/MP条(预留)]
+    const PX = 350, PY = 280;
+    // 玩家立绘
+    this.add.sprite(PX, PY, 'player_' + GameState.gender).setDisplaySize(120, 180).setFlipX(true).setDepth(10);
     const bt = GameState.getActiveTitleDef()?.name;
-    this.add.text(PX, PY + 75, bt ? `${GameState.playerName} · ${bt}` : GameState.playerName, {
+    this.add.text(PX, PY + 100, bt ? `${GameState.playerName} · ${bt}` : GameState.playerName, {
       fontSize: '14px', color: '#88aacc', padding: { y: 2 },
     }).setOrigin(0.5);
 
-    this.playerHpBar = new SkinBar(this, { x: GAME_WIDTH * 0.24 - 90, y: GAME_HEIGHT * 0.22 + 170, w: 180, h: 10, depth: 30, pad: 2 });
-    this.playerMpBar = new SkinBar(this, { x: GAME_WIDTH * 0.24 - 90, y: GAME_HEIGHT * 0.22 + 184, w: 180, h: 6, depth: 30, pad: 1 });
-    this.playerInfoText = this.add.text(PX, GAME_HEIGHT * 0.22 + 170 + 24, '', {
-      fontSize: '12px', color: '#aaccff', fontFamily: 'monospace', align: 'center',
-    }).setOrigin(0.5, 0);
+    // 玩家 HP/MP 血条 + 数值（立绘左侧）
+    this.playerHpBar = new SkinBar(this, { x: 30, y: PY - 20, w: 200, h: 12, depth: 30, pad: 2 });
+    this.playerMpBar = new SkinBar(this, { x: 30, y: PY - 2, w: 200, h: 8, depth: 30, pad: 1 });
+    this.playerInfoText = this.add.text(130, PY - 50, '', {
+      fontSize: '13px', color: '#aaccff', fontFamily: 'monospace', align: 'center',
+    }).setOrigin(0.5);
+
+    // 宠物站位预留（立绘在玩家右侧，血条再右）
+    // TODO: 宠物系统接入后，在此创建宠物 sprite + petHpBar/petMpBar
+    // const petX = PX + 280;
+    // this.add.sprite(petX, PY, 'pet_xxx').setDisplaySize(100, 150);
+    // this.petHpBar = new SkinBar(this, { x: petX + 120, y: PY - 20, w: 160, h: 12, depth: 30, pad: 2 });
 
     // 战斗日志
     this.logText = this.add.text(GAME_WIDTH / 2, 360, '', {
@@ -335,13 +341,17 @@ export class BattleScene extends Phaser.Scene {
 
   /** 梦幻/飘流式站位：怪物 2 列 × 4 行（最多 8 只），居于画面右侧；左侧留 4 行供我方（人+宠）使用。 */
   private getEnemyPositions(count: number): { x: number; y: number }[] {
-    const cols = [GAME_WIDTH * 0.72, GAME_WIDTH * 0.86];                       // 两列，靠右
-    const rows = [GAME_HEIGHT * 0.22, GAME_HEIGHT * 0.40, GAME_HEIGHT * 0.58, GAME_HEIGHT * 0.76]; // 四行
+    // 敌方区域：右半区 (x: 1100~1900)，每怪 = 血条(左) + 立绘(右) 并排
+    const perRow = count <= 4 ? count : 4;
+    const rows = Math.ceil(count / 4);
+    const unitW = 200; // 每怪占位宽（血条100 + 立绘80 + 间隔20）
+    const startX = GAME_WIDTH - 80 - perRow * unitW;
+    const rowYs = [GAME_HEIGHT * 0.22, GAME_HEIGHT * 0.50];
     const positions: { x: number; y: number }[] = [];
     for (let i = 0; i < count; i++) {
-      const row = Math.floor(i / 2);
-      const col = i % 2;
-      positions.push({ x: cols[col], y: rows[row] });
+      const row = Math.floor(i / 4);
+      const col = i % 4;
+      positions.push({ x: startX + col * unitW + 100, y: rowYs[row] || rowYs[0] });
     }
     return positions;
   }
@@ -632,8 +642,8 @@ export class BattleScene extends Phaser.Scene {
       const pos = positions[i];
       const scale = big ? 2.2 : 1.6;
       const s = this.enemySprites[i]; if (s) { s.setPosition(pos.x, pos.y); s.setScale(scale); }
-      const n = this.enemyNameTexts[i]; if (n) n.setPosition(pos.x, pos.y + (big ? -70 : -48));
-      const t = this.enemyTypeTexts[i]; if (t) t.setPosition(pos.x, pos.y + (big ? -54 : -36));
+      const n = this.enemyNameTexts[i]; if (n) n.setPosition(pos.x, pos.y - 70);
+      const t = this.enemyTypeTexts[i]; if (t) t.setPosition(pos.x, pos.y - 54);
     });
   }
 

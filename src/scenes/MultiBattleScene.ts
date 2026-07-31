@@ -28,13 +28,13 @@ import { SkinBar, SkinButton, cardFrame, tagBg, panel, cardHl, menuRow, menuBack
 
 interface Card {
   root: Phaser.GameObjects.Container;
-  bg: Phaser.GameObjects.Image;       // 卡片底框（切图皮肤；灵宠卡片换 ui_card_pet 纹理）
   name: Phaser.GameObjects.Text;
-  hpBar: SkinBar;                     // 切图血条（外框+填充，按 HP% 缩放/上色）
-  hpText: Phaser.GameObjects.Text;
-  hl: Phaser.GameObjects.Image;      // 待选目标高亮辉光框（切图皮肤）
-  lastHp: number;                    // 上一帧 HP，用于检测伤害飘字
-  statusIcons: Phaser.GameObjects.GameObject[]; // 异常状态 PNG 图标 + 回合数（每帧重绘）
+  hpBar: SkinBar;                     // 长条血条（立绘头顶）
+  hpText: Phaser.GameObjects.Text;    // HP 数值
+  portrait: Phaser.GameObjects.Image; // 角色立绘
+  hl: Phaser.GameObjects.Image;      // 待选目标高亮辉光框
+  lastHp: number;
+  statusIcons: Phaser.GameObjects.GameObject[];
 }
 
 interface Button {
@@ -817,33 +817,40 @@ export class MultiBattleScene extends Phaser.Scene {
     //
     const W = this.scale.width;
     const H = this.scale.height;
-    const cardAreaTop = H * 0.20;
-    const playerRowH = H * 0.14;   // 我方行距（人物+宠物同行，紧凑）
-    const enemyRowH  = H * 0.18;   // 敌方行距（双列，稍宽）
+    const cardAreaTop = H * 0.18;
+    const playerRowH = H * 0.20;   // 我方行距（180框需更多空间）
+    const enemyRowH  = H * 0.22;   // 敌方行距
 
     const ownerPositions: Record<string, { x: number; y: number }> = {};
     if (isPlayer) {
+      // 我方：左侧紧凑组，玩家(0.19)+宠物(0.32)间距 0.13
       let row = 0;
-      // 第一遍：非宠物（人物/队友）—— 左侧主列
       for (const c of list) {
         if (!c.isPet) {
           const id = c.sessionId || c.id;
-          ownerPositions[id] = { x: W * 0.15, y: cardAreaTop + row * playerRowH };
+          ownerPositions[id] = { x: W * 0.19, y: cardAreaTop + row * playerRowH };
           row++;
         }
       }
-      // 第二遍：宠物紧跟主人右侧同行 —— 紧凑配对
       for (const c of list) {
         if (c.isPet && c.ownerSid) {
           const op = ownerPositions[c.ownerSid];
           if (op) {
-            ownerPositions[c.sessionId] = { x: W * 0.37, y: op.y };
+            ownerPositions[c.sessionId] = { x: W * 0.32, y: op.y };
           } else {
-            ownerPositions[c.sessionId] = { x: W * 0.15, y: cardAreaTop + row * playerRowH };
+            ownerPositions[c.sessionId] = { x: W * 0.14, y: cardAreaTop + row * playerRowH };
             row++;
           }
         }
       }
+    } else {
+      // 敌方：右侧紧凑组，敌1(0.68)+敌2(0.81)间距 0.13；中间空白以 W*0.50 为中心，左半0.32+0.31+0.19+0.31=镜像右半
+      list.forEach((c: any, i: number) => {
+        const id = c.sessionId || c.id;
+        const col = i % 2, row = Math.floor(i / 2);
+        const ex = W * (col === 0 ? 0.68 : 0.81);
+        ownerPositions[id] = { x: ex, y: cardAreaTop + row * enemyRowH };
+      });
     }
 
     list.forEach((c: any, i: number) => {
@@ -851,20 +858,21 @@ export class MultiBattleScene extends Phaser.Scene {
       let x: number, y: number;
       if (isPlayer) {
         const pos = ownerPositions[id];
-        x = pos?.x ?? W * 0.26;
+        x = pos?.x ?? W * 0.19;
         y = pos?.y ?? cardAreaTop + i * playerRowH;
       } else {
         const col = i % 2, row = Math.floor(i / 2);
-        x = W * (col === 0 ? 0.67 : 0.87);
+        x = W * (col === 0 ? 0.68 : 0.81);
         y = cardAreaTop + row * enemyRowH;
       }
+      // 决定立绘朝向：宠物/第二列敌人立绘朝左，其他朝右
       let card = map.get(id);
       if (!card) {
         card = this.makeCard(x, y, isPlayer);
         map.set(id, card);
         // 敌人卡片可点击：攻击/技能/鬼道选怪时高亮并接受点击
         if (!isPlayer) {
-          card.root.setSize(380, 96).setInteractive({ useHandCursor: true });
+          card.root.setSize(200, 290).setInteractive({ useHandCursor: true });
           card.root.on('pointerdown', () => this.onEnemyCardClicked(id));
         }
       } else {
@@ -872,17 +880,33 @@ export class MultiBattleScene extends Phaser.Scene {
       }
       // 玩家卡片：道具选目标时可点击
       if (isPlayer && this.pendingTarget && this.pendingTarget.type === 'item') {
-        card.root.setSize(380, 96).setInteractive({ useHandCursor: true });
+        card.root.setSize(200, 290).setInteractive({ useHandCursor: true });
         card.root.off('pointerdown');
         card.root.on('pointerdown', () => this.onPlayerCardClicked(id));
       } else if (isPlayer && !(this.pendingTarget && this.pendingTarget.type === 'item')) {
         card.root.disableInteractive();
       }
+      // 立绘纹理：玩家=性别对应 PNG；敌人=boss/elite；灵宠=占位（暂无纹理）
+      let portraitKey = '';
+      if (isPlayer) {
+        if (c.isPet) {
+          portraitKey = 'npc'; // 宠物暂无立绘，用绿块占位
+        } else {
+          const g = c.gender || GameState.gender;
+          portraitKey = this.textures.exists(`player_${g}`) ? `player_${g}` : '';
+        }
+      } else {
+        portraitKey = (c.type === '妖将' || c.type === '妖王') ? 'enemy_boss' : 'enemy_elite';
+      }
+      if (portraitKey && this.textures.exists(portraitKey)) {
+        card.portrait.setTexture(portraitKey).setVisible(true);
+      } else {
+        card.portrait.setVisible(false);
+      }
       card.name.setText(`${c.name}${c.alive ? '' : '（倒下）'}`);
-      // 出战灵宠卡片：换紫调皮肤 + 🐾 标识，与人物区分
+      // 出战灵宠卡片：🐾 标识，与人物区分
       if (c.isPet) {
         card.name.setText(`🐾 ${c.name}${c.alive ? '' : '（倒下）'}`);
-        card.bg.setTexture(SKIN.cardPet);
       }
       this.drawHpBar(card, c.hp, c.maxHp);
       this.drawStatusIcons(card, c);
@@ -907,15 +931,16 @@ export class MultiBattleScene extends Phaser.Scene {
   }
 
   private makeCard(x: number, y: number, isPlayer: boolean): Card {
-    const w = 380, h = 96;
+    // 经典回合��布局：长条血条(头顶) → 名字 → 立绘(居中)
     const root = this.add.container(x, y).setDepth(10);
-    const bg = cardFrame(this, isPlayer ? 'ally' : 'enemy').setOrigin(0.5);
-    const name = this.add.text(-w / 2 + 16, -h / 2 + 12, '', { fontSize: '16px', color: isPlayer ? '#aaffaa' : '#ffaaaa', fontStyle: 'bold' });
-    const hpBar = new SkinBar(this, { x: -174, y: 28, w: 348, h: 14, depth: 12, pad: 2 });
-    const hpText = this.add.text(-w / 2 + 16, 32, '', { fontSize: '12px', color: '#dddddd' });
-    const hl = cardHl(this).setDisplaySize(384, 104); // 待选目标高亮辉光框（切图皮肤）
-    root.add([bg, name, hpBar.frame, hpBar.fill, hpText, hl]);
-    return { root, bg, name, hpBar, hpText, hl, lastHp: -1, statusIcons: [] };
+    const barW = 160, barH = 8;
+    const hpBar = new SkinBar(this, { x: -barW / 2, y: -112, w: barW, h: barH, depth: 12, pad: 1 });
+    const hpText = this.add.text(0, -98, '', { fontSize: '12px', color: '#ffffff' }).setOrigin(0.5);
+    const name = this.add.text(0, -80, '', { fontSize: '13px', color: isPlayer ? '#aaffaa' : '#ffaaaa', fontStyle: 'bold' }).setOrigin(0.5);
+    const portrait = this.add.image(0, 0, 'player_' + GameState.gender).setDisplaySize(120, 180).setDepth(15).setVisible(false);
+    const hl = cardHl(this).setDisplaySize(190, 290); // 高亮框包住立绘+血条
+    root.add([hpBar.frame, hpBar.fill, hpText, name, portrait, hl]);
+    return { root, name, hpBar, hpText, portrait, hl, lastHp: -1, statusIcons: [] };
   }
 
   private drawHpBar(card: Card, hp: number, maxHp: number): void {
