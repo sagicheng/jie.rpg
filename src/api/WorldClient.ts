@@ -46,7 +46,8 @@ export interface PlayerWorld {
   dungeonWeekly?: { week: string; count: number };
   dungeon?: { dungeonId: number; stage: number } | null;
   unlocks?: string[];
-  zpId?: string;
+  zpId?: string; // 旧字段名（兼容个别本地引用），实际服务端下发为 zanpakuto
+  zanpakuto?: string; // 服务端 PlayerWorld 字段名，worldSync 下发「所选斩魄刀真名」
   kidoSchool?: string | null;
   kidoNodes?: Record<string, number>;
   kidoEquipped?: string[];
@@ -250,7 +251,9 @@ export function applyWorldSync(scene: any, pw: PlayerWorld): void {
   GameState.unlocks = Array.isArray(pw.unlocks) ? [...pw.unlocks] : [];
   // 所选斩魄刀真名（服务端权威 + 持久化）—— 始解/卍解技能表以此查表；仅当服务端有明确值时覆盖，
   // 旧档无此字段(undefined)则保留本地值，交由 GameScene 旧档迁移逻辑引导重选补存。
-  if (pw.zpId !== undefined) GameState.zpId = pw.zpId;
+  // 注意：服务端 PlayerWorld 字段名为 zanpakuto（非 zpId），务必对齐，否则 GameState.zpId 永远为空、
+  // 导致每次登录都触发「已始解但无刀名」的旧档迁移重选（兄弟 2026-08-01 真机反馈）。
+  if (pw.zanpakuto !== undefined) GameState.zpId = pw.zanpakuto;
   // 鬼道（服务端权威 + 持久化）—— 覆盖 Kido 单例，recalcStats 据此算被动加成
   if (pw.kidoSchool !== undefined) Kido.school = pw.kidoSchool as any;
   if (pw.kidoNodes) Kido.nodes = { ...pw.kidoNodes };

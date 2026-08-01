@@ -36,28 +36,83 @@ export function ensureZanpakutoPortraits(
 }
 
 /**
- * 力量形态立绘（虚化/狱解）懒加载：仅加载「当前性别」那一张。
- * key 对齐 assets/characters/char_${which}_${gender}.png。
- * 与斩魄刀立绘同理，按需触发、不进启动预载。
+ * 战斗立绘形态。
+ *  base   → male / female            （基础形态，BootScene 预载）
+ *  bankai → player_male / player_female（卍解）
+ *  hollow → char_hollow_*             （虚化，懒加载）
+ *  hell   → char_hell_*               （狱解，懒加载）
  */
-export function ensureFormPortrait(
+export type BattleForm = 'base' | 'bankai' | 'hollow' | 'hell';
+
+/** 形态 + 性别 → 立绘纹理 key（单一事实来源，战斗场景全部走这里）。 */
+export function battlePortraitKey(gender: 'male' | 'female', form: BattleForm = 'base'): string {
+  switch (form) {
+    case 'bankai': return `player_${gender}`;
+    case 'hollow': return `char_hollow_${gender}`;
+    case 'hell':   return `char_hell_${gender}`;
+    default:       return gender;              // 基础形态：female / male
+  }
+}
+
+/** 同一 key 的并发懒加载去重：key → 等待回调队列 */
+const pendingPortraits: Map<string, ((key: string) => void)[]> = new Map();
+
+/**
+ * 立绘按需加载（纹理已存在则同步回调）。
+ * char_* 形态立绘不进启动预载（见 BootScene），首次释放时才拉取。
+ */
+export function ensureBattlePortrait(
   scene: Phaser.Scene,
-  which: 'hollow' | 'hell' | 'bankai',
+  key: string,
   onReady?: (key: string) => void,
 ): void {
-  const key = which === 'bankai'
-    ? `player_${GameState.gender}`            // 卍解：复用主角色静态立绘（placeholder），正式美术到位后改回 char_bankai_*
-    : `char_${which}_${GameState.gender}`;
+  if (!key) return;
   if (scene.textures.exists(key)) { onReady?.(key); return; }
+
+  // 同一张图的重复请求合流，避免 Loader 重复入队报 duplicate key
+  const waiting = pendingPortraits.get(key);
+  if (waiting) { if (onReady) waiting.push(onReady); return; }
+  pendingPortraits.set(key, onReady ? [onReady] : []);
 
   const loader = scene.load as Phaser.Loader.LoaderPlugin;
   loader.image(key, `assets/characters/${key}.png`);
 
-  const fire = () => onReady?.(key);
+  const fire = () => {
+    const cbs = pendingPortraits.get(key) || [];
+    pendingPortraits.delete(key);
+    for (const cb of cbs) cb(key);
+  };
   if (loader.isLoading()) {
     loader.once('complete', () => { loader.once('complete', fire); loader.start(); });
   } else {
     loader.once('complete', fire);
     loader.start();
   }
+}
+
+/**
+ * 力量形态立绘（卍解/虚化/狱解）懒加载：仅加载「当前性别」那一张。
+ * 保留旧签名供全屏演出调用。
+ */
+export function ensureFormPortrait(
+  scene: Phaser.Scene,
+  which: 'hollow' | 'hell' | 'bankai',
+  onReady?: (key: string) => void,
+): void {
+  ensureBattlePortrait(scene, battlePortraitKey(GameState.gender, which), onReady);
+}
+
+/**
+ * 立绘等比适配到指定框内（不拉伸变形）。
+ * 各形态原图长宽比不同（445×917 vs 1024×1820），统一按高度贴合、宽度不超框。
+ */
+export function fitPortrait(
+  img: Phaser.GameObjects.Image | Phaser.GameObjects.Sprite,
+  maxW: number,
+  maxH: number,
+): void {
+  const src = img.frame ? { w: img.frame.width, h: img.frame.height } : { w: img.width, h: img.height };
+  if (!src.w || !src.h) return;
+  const s = Math.min(maxW / src.w, maxH / src.h);
+  img.setDisplaySize(src.w * s, src.h * s);
 }

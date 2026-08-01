@@ -63,6 +63,8 @@ export class CombatPlayer extends Schema {
   @type('string') sessionId = '';
   @type('string') name = '';
   @type('string') color = '';
+  /** 性别：'male' | 'female'。客户端据此选战斗立绘（含队友），避免全场都用自己的性别。 */
+  @type('string') gender = 'male';
   /** PVP 阵营：A / B（区分敌我，绝不借用敌人 AI）。 */
   @type('string') team = 'A';
   /** 是否为出战灵宠（与主人同属一个客户端，共享回合决策）。 */
@@ -82,7 +84,10 @@ export class CombatPlayer extends Schema {
   /** 权威异常状态（DoT / 控制 / 减益） */
   @type(CombatStatus) status = new CombatStatus();
 
-  // ── 形态激活状态（权威同步） ──
+  // ── 形态激活状态（权威同步；客户端据此切换立绘：hell > hollow > bankai > 基础） ──
+  @type('boolean') bankaiUsed = false;
+  @type('boolean') bankaiActive = false;
+  @type('number') bankaiTurnsLeft = 0;
   @type('boolean') hollowUsed = false;
   @type('boolean') hollowActive = false;
   @type('number') hollowTurnsLeft = 0;

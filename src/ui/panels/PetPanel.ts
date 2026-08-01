@@ -1,5 +1,12 @@
 /**
  * 灵宠面板 — 灵宠查看 / 出战 / 养成 的打开与渲染
+ *
+ * 改造（兄弟 2026-08-01 反馈）：
+ *  1. 列表加滚动条（>4 张时启用 mask + 滚轮 + 滚动条 thumb）
+ *  2. 卡框线按品质统一（普通=灰/优秀=绿/精良=蓝/稀有=紫/传说=金；出战=紫）
+ *  3. 属性点行每只都显示（即便全 0 也有「剩余 0」提示，按钮按 attrPoints>0 才出）
+ *  4. 元素加成：computePetAura 按 pet.element 给不同方向的属性光环
+ *  5. 战斗形态一次性：MultiBattleScene 加 *UsedThisBattle 守卫
  */
 
 import type { GameScene } from '../../scenes/GameScene';
@@ -61,6 +68,9 @@ import { GUILD_SHOP_ITEMS } from '../../api/GuildShop';
 
 export const PET_PW = 1200, PET_PH = 860;
 
+/** 滚动位置跨重建保留（worldSync 触发 refreshOpenPanels 全毁重建时不再回弹到顶）。 */
+let lastPetScrollY = 0;
+
 export function closePetPanel(scene: GameScene): void {
   if (scene.petPanel) { scene.petPanel.destroy(true); scene.petPanel = null; }
   scene.resumeFromMenu();
@@ -75,6 +85,15 @@ export function openPetPanel(scene: GameScene): void {
   scene.pauseForMenu();
   scene.petPanel = renderPetPanel(scene);
 }
+
+/**
+ * 灵宠面板布局常量（兄弟 2026-08-01 反馈：列表长需滚动，卡高统一 150 以容下属性行）。
+ * - CARD_H = 150：含「头部+经验+属性+技能+属性分配」五行（约 30px × 5）
+ * - CARD_GAP = 12：卡间距
+ * - listTopY/listBotY：滚动视口（标题栏下 → aura 文本上）
+ */
+const CARD_H = 150;
+const CARD_GAP = 12;
 
 export function renderPetPanel(scene: GameScene): Phaser.GameObjects.Container {
   const cam = scene.cameras.main;
@@ -95,9 +114,19 @@ export function renderPetPanel(scene: GameScene): Phaser.GameObjects.Container {
     .on('pointerdown', () => closePetPanel(scene)));
 
   const pets: any[] = (GameState as any).pets || [];
-  const listY = oy + th + 16;
-  const cw = ow - 40;
   const cx0 = ox + 20;
+  const cw = ow - 40;
+
+  // 列表视口（兄弟 2026-08-01 反馈：列表长需滚动 → 限定 mask 区）
+  const listTopY = oy + th + 16;        // 96
+  const auraY = oy + oh - 26;           // 770
+  const listBotY = auraY - 12;          // 758
+  const listH = listBotY - listTopY;    // 662
+  // 滚动条放列表右侧，缩进 4
+  const sbW = 8;
+  const sbX = cx0 + cw - sbW - 4;
+  const sbY = listTopY + 4;
+  const sbH = listH - 8;
 
   if (pets.length === 0) {
     c.add(scene.add.text(ox + ow / 2, oy + oh / 2 - 16, '暂无灵宠', { fontSize: '20px', color: '#aaaaaa', padding: { x: 4, y: 4 } }).setOrigin(0.5));
@@ -105,97 +134,188 @@ export function renderPetPanel(scene: GameScene): Phaser.GameObjects.Container {
     return c;
   }
 
-  // 小徽章绘制助手
-  const drawBadge = (x: number, y: number, text: string, color: number): void => {
+  // 滚动状态
+  const totalH = pets.length * CARD_H + Math.max(0, pets.length - 1) * CARD_GAP;
+  const scrollable = totalH > listH;
+  const maxScroll = Math.max(0, totalH - listH);
+  let scrollY = lastPetScrollY;
+
+  // 列表容器：所有卡片挂在它下面，整体 setY 偏移做滚动
+  const listContainer = scene.add.container(0, 0);
+  c.add(listContainer);
+
+  // clip mask
+  let maskG: Phaser.GameObjects.Graphics | null = null;
+  if (scrollable) {
+    maskG = scene.make.graphics({});
+    maskG.fillStyle(0xffffff);
+    maskG.fillRect(cx0, listTopY, cw, listH);
+    listContainer.setMask(maskG.createGeometryMask());
+  }
+
+  // 徽章助手（target 改为接收容器，便于统一挂到 listContainer 走 mask）
+  const drawBadge = (target: Phaser.GameObjects.Container, x: number, y: number, text: string, color: number): void => {
     const w = text.length * 13 + 18;
-    const g = scene.add.graphics(); g.fillStyle(color, 0.9); g.fillRoundedRect(x, y, w, 22, 6); c.add(g);
-    c.add(scene.add.text(x + w / 2, y + 11, text, { fontSize: '12px', color: '#0c0c18', fontStyle: 'bold' }).setOrigin(0.5));
+    const g = scene.add.graphics(); g.fillStyle(color, 0.9); g.fillRoundedRect(x, y, w, 22, 6); target.add(g);
+    target.add(scene.add.text(x + w / 2, y + 11, text, { fontSize: '12px', color: '#0c0c18', fontStyle: 'bold' }).setOrigin(0.5));
   };
 
+  // 渲染每张卡
   pets.forEach((pet: any, i: number) => {
-    const hasAttrs = (pet.attrPoints > 0) || pet.attrStr || pet.attrVit || pet.attrAgi || pet.attrInt;
-    const cardH = hasAttrs ? 150 : 120;
-    const cardY = listY + i * (cardH + 12);
+    const cardY = i * (CARD_H + CARD_GAP);  // 相对 listContainer 起点（绝对 y 由 listContainer.y 决定）
     const isActive = !!pet.active;
+    const cardC = scene.add.container(0, cardY);
+
+    // ── 改造 2：卡框线按品质统一（普通=灰/优秀=绿/精良=蓝/稀有=紫/传说=金；出战=紫） ──
+    const qInfo = petQualityInfo(pet.quality);
+    const borderColor = isActive ? 0x7c6cff : qInfo.color;
+    const borderAlpha = isActive ? 0.9 : 0.7;
+
     const card = scene.add.graphics();
     card.fillStyle(isActive ? 0x1c2540 : 0x171728, 0.98);
-    card.fillRoundedRect(cx0, cardY, cw, cardH, 10);
-    card.lineStyle(2, isActive ? 0x7c6cff : petColor(pet.speciesId), isActive ? 0.9 : 0.5);
-    card.strokeRoundedRect(cx0, cardY, cw, cardH, 10);
-    c.add(card);
+    card.fillRoundedRect(cx0, 0, cw, CARD_H, 10);
+    card.lineStyle(2, borderColor, borderAlpha);
+    card.strokeRoundedRect(cx0, 0, cw, CARD_H, 10);
+    cardC.add(card);
 
-    const ix = cx0 + 18, iy = cardY + cardH / 2;
-    const tile = scene.add.graphics(); tile.fillStyle(petColor(pet.speciesId), 0.22); tile.fillRoundedRect(ix, iy - 32, 64, 64, 10); tile.lineStyle(2, petColor(pet.speciesId), 0.8); tile.strokeRoundedRect(ix, iy - 32, 64, 64, 10); c.add(tile);
-    c.add(scene.add.text(ix + 32, iy, petIcon(pet.speciesId), { fontSize: '34px' }).setOrigin(0.5));
+    // 物种图标瓦片（仍按物种色，区分物种；与品质框线互不冲突）
+    const ix = cx0 + 18, iy = CARD_H / 2;
+    const tile = scene.add.graphics(); tile.fillStyle(petColor(pet.speciesId), 0.22); tile.fillRoundedRect(ix, iy - 32, 64, 64, 10); tile.lineStyle(2, petColor(pet.speciesId), 0.8); tile.strokeRoundedRect(ix, iy - 32, 64, 64, 10); cardC.add(tile);
+    cardC.add(scene.add.text(ix + 32, iy, petIcon(pet.speciesId), { fontSize: '34px' }).setOrigin(0.5));
 
-    const tx = ix + 86;
     // 头部：名称 + 等级
-    c.add(scene.add.text(tx, cardY + 18, `${pet.name}`, { fontSize: '18px', color: '#ffffff', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0, 0.5));
-    c.add(scene.add.text(tx + 4, cardY + 42, `Lv.${pet.level}`, { fontSize: '14px', color: '#ffd27a', padding: { x: 4, y: 2 } }).setOrigin(0, 0.5));
-    // 元素 / 品质 徽章
+    const tx = ix + 86;
+    cardC.add(scene.add.text(tx, 18, `${pet.name}`, { fontSize: '18px', color: '#ffffff', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0, 0.5));
+    cardC.add(scene.add.text(tx + 4, 42, `Lv.${pet.level}`, { fontSize: '14px', color: '#ffd27a', padding: { x: 4, y: 2 } }).setOrigin(0, 0.5));
     const el = petElementInfo(pet.element);
-    drawBadge(tx + 70, cardY + 32, `${el.icon}${el.label}`, el.color);
-    const q = petQualityInfo(pet.quality);
-    drawBadge(tx + 168, cardY + 32, q.label, q.color);
-    if (isActive) drawBadge(tx + 250, cardY + 32, '出战', 0x2a6e4a);
+    drawBadge(cardC, tx + 70, 32, `${el.icon}${el.label}`, el.color);
+    drawBadge(cardC, tx + 168, 32, qInfo.label, qInfo.color);
+    if (isActive) drawBadge(cardC, tx + 250, 32, '出战', 0x2a6e4a);
 
     // 经验条
     const need = 80 * pet.level;
     const ratio = Math.min(1, (pet.exp || 0) / need);
-    const barX = tx, barY = cardY + 60, barW = 240, barH = 8;
-    const bg = scene.add.graphics(); bg.fillStyle(0x000000, 0.5); bg.fillRoundedRect(barX, barY, barW, barH, 4); c.add(bg);
-    const fg = scene.add.graphics(); fg.fillStyle(0x66ccff, 1); fg.fillRoundedRect(barX, barY, Math.max(2, barW * ratio), barH, 4); c.add(fg);
-    c.add(scene.add.text(barX + barW + 8, barY + barH / 2, `EXP ${pet.exp || 0}/${need}`, { fontSize: '11px', color: '#9fb8d8', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
+    const barX = tx, barY = 60, barW = 240, barH = 8;
+    const bg = scene.add.graphics(); bg.fillStyle(0x000000, 0.5); bg.fillRoundedRect(barX, barY, barW, barH, 4); cardC.add(bg);
+    const fg = scene.add.graphics(); fg.fillStyle(0x66ccff, 1); fg.fillRoundedRect(barX, barY, Math.max(2, barW * ratio), barH, 4); cardC.add(fg);
+    cardC.add(scene.add.text(barX + barW + 8, barY + barH / 2, `EXP ${pet.exp || 0}/${need}`, { fontSize: '11px', color: '#9fb8d8', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
 
-    // 属性行
-    c.add(scene.add.text(tx, cardY + 84, `HP ${pet.maxHp}  ATK ${pet.atk}  DEF ${pet.def}  MATK ${pet.matk}  MDEF ${pet.mdef}  SPD ${pet.spd}`, { fontSize: '13px', color: '#cfd6e6', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
+    // 战斗属性行
+    cardC.add(scene.add.text(tx, 84, `HP ${pet.maxHp}  ATK ${pet.atk}  DEF ${pet.def}  MATK ${pet.matk}  MDEF ${pet.mdef}  SPD ${pet.spd}`, { fontSize: '13px', color: '#cfd6e6', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
     // 技能行
-    c.add(scene.add.text(tx, cardY + 106, `技能：${petSkillNames(pet)}`, { fontSize: '12px', color: '#b89cff', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
+    cardC.add(scene.add.text(tx, 106, `技能：${petSkillNames(pet)}`, { fontSize: '12px', color: '#b89cff', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
 
-    // 属性点分配行
-    if (hasAttrs) {
-      const ay = cardY + cardH - 22;
-      c.add(scene.add.text(tx, ay, '属性', { fontSize: '13px', color: '#9fb8d8', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
-      const attrsDef: Array<[string, string, number]> = [
-        ['str', '力', pet.attrStr], ['vit', '体', pet.attrVit], ['agi', '敏', pet.attrAgi], ['int', '灵', pet.attrInt],
-      ];
-      let ax = tx + 52;
-      attrsDef.forEach(([ak, al, av]) => {
-        c.add(scene.add.text(ax, ay, `${al}${av}`, { fontSize: '13px', color: '#cfd6e6' }).setOrigin(0, 0.5));
-        if (pet.attrPoints > 0) {
-          const minus = scene.add.text(ax + 34, ay, '-', { fontSize: '18px', color: '#ff9999' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-          minus.on('pointerdown', () => { requestPetSetAttr(pet.id, ak, -1); refreshPetPanel(scene); });
-          const plus = scene.add.text(ax + 60, ay, '+', { fontSize: '18px', color: '#99ff99' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-          plus.on('pointerdown', () => { requestPetSetAttr(pet.id, ak, 1); refreshPetPanel(scene); });
-          c.add(minus); c.add(plus);
-        }
-        ax += pet.attrPoints > 0 ? 110 : 56;
-      });
-      if (pet.attrPoints > 0) c.add(scene.add.text(ax + 8, ay, `剩余 ${pet.attrPoints}`, { fontSize: '13px', color: '#ffd27a', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
-    }
+    // ── 改造 3：属性点分配行统一显示（即便全 0 也保留「剩余 0」提示，按钮按 attrPoints>0 才出） ──
+    const ay = CARD_H - 22;
+    cardC.add(scene.add.text(tx, ay, '属性', { fontSize: '13px', color: '#9fb8d8', padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
+    const attrsDef: Array<[string, string, number]> = [
+      ['str', '力', pet.attrStr || 0], ['vit', '体', pet.attrVit || 0], ['agi', '敏', pet.attrAgi || 0], ['int', '灵', pet.attrInt || 0],
+    ];
+    let ax = tx + 52;
+    attrsDef.forEach(([ak, al, av]) => {
+      cardC.add(scene.add.text(ax, ay, `${al}${av}`, { fontSize: '13px', color: '#cfd6e6' }).setOrigin(0, 0.5));
+      if (pet.attrPoints > 0) {
+        const minus = scene.add.text(ax + 34, ay, '-', { fontSize: '18px', color: '#ff9999' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        minus.on('pointerdown', () => { requestPetSetAttr(pet.id, ak, -1); refreshPetPanel(scene); });
+        const plus = scene.add.text(ax + 60, ay, '+', { fontSize: '18px', color: '#99ff99' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        plus.on('pointerdown', () => { requestPetSetAttr(pet.id, ak, 1); refreshPetPanel(scene); });
+        cardC.add(minus); cardC.add(plus);
+      }
+      ax += pet.attrPoints > 0 ? 110 : 56;
+    });
+    const remainTxt = `剩余 ${pet.attrPoints || 0}`;
+    const remainColor = pet.attrPoints > 0 ? '#ffd27a' : '#666666';
+    cardC.add(scene.add.text(ax + 8, ay, remainTxt, { fontSize: '13px', color: remainColor, padding: { x: 2, y: 1 } }).setOrigin(0, 0.5));
 
-    // 右侧按钮
+    // 右侧按钮（出战/收回、放生）
     const btnX = cx0 + cw - 170;
-    const btnY = cardY + cardH / 2;
+    const btnY = CARD_H / 2;
     const toggle = scene.add.text(btnX, btnY - 16, isActive ? '收回' : '出战', {
       fontSize: '15px', color: isActive ? '#ffd27a' : '#cfeedd', fontStyle: 'bold', padding: { x: 14, y: 6 }, backgroundColor: isActive ? '#553a00aa' : '#113311aa',
     }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
     toggle.on('pointerdown', () => { if (isActive) requestPetRecall(pet.id); else requestPetSetActive(pet.id); refreshPetPanel(scene); });
-    c.add(toggle);
+    cardC.add(toggle);
 
     const rel = scene.add.text(btnX, btnY + 24, '放生', {
       fontSize: '15px', color: '#ff9999', fontStyle: 'bold', padding: { x: 14, y: 6 }, backgroundColor: '#441111aa',
     }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
     rel.on('pointerdown', () => { requestPetRelease(pet.id); refreshPetPanel(scene); });
-    c.add(rel);
+    cardC.add(rel);
+
+    listContainer.add(cardC);
   });
 
+  // 滚动条
+  const scrollBar = scene.add.graphics();
+  c.add(scrollBar);
+  const updateScroll = (): void => {
+    // 非滚动时强制 scrollY=0，避免 Clamp 越界把 listContainer 推走
+    if (scrollable) scrollY = Phaser.Math.Clamp(scrollY, listH - totalH, 0);
+    else scrollY = 0;
+    lastPetScrollY = scrollY; // 跨重建保留（worldSync 频繁重建不回弹）
+    listContainer.y = listTopY + scrollY;
+    scrollBar.clear();
+    if (scrollable) {
+      const thumbH = Math.max(24, listH * listH / totalH);
+      const progress = (listH - totalH) !== 0 ? scrollY / (listH - totalH) : 0;
+      const ty = sbY + progress * (sbH - thumbH);
+      // 轨道
+      scrollBar.fillStyle(0x000000, 0.35);
+      scrollBar.fillRoundedRect(sbX, sbY, sbW, sbH, 4);
+      // 手柄
+      scrollBar.fillStyle(0x99aacc, 0.85);
+      scrollBar.fillRoundedRect(sbX, ty, sbW, thumbH, 4);
+    }
+  };
+  updateScroll();
+
+  // 滚轮监听（仅滚动时挂；销毁面板时统一解绑）
+  if (scrollable) {
+    const onWheel = (pointer: any, _o: any, _dx: number, dy: number): void => {
+      const wx = pointer.worldX, wy = pointer.worldY;
+      // 列表区世界坐标：c 起点 + 局部 listTopY
+      if (wx < c.x + cx0 || wx > c.x + cx0 + cw || wy < c.y + listTopY || wy > c.y + listBotY) return;
+      scrollY -= dy * 0.5;
+      updateScroll();
+    };
+    scene.input.on('wheel', onWheel);
+
+    // 滚动条拖拽（thumb 可点击跳转）
+    const dragStartY = { val: 0, scroll: 0, active: false };
+    scrollBar.setInteractive(new Phaser.Geom.Rectangle(sbX - 4, sbY, sbW + 8, sbH), Phaser.Geom.Rectangle.Contains);
+    scrollBar.on('pointerdown', (p: any) => {
+      dragStartY.val = p.worldY;
+      dragStartY.scroll = scrollY;
+      dragStartY.active = true;
+    });
+    const onMove = (p: any): void => {
+      if (!dragStartY.active) return;
+      const thumbH = Math.max(24, listH * listH / totalH);
+      const trackRange = sbH - thumbH;
+      if (trackRange <= 0) return;
+      const deltaY = p.worldY - dragStartY.val;
+      const scrollDelta = (listH - totalH) * (deltaY / trackRange);
+      scrollY = dragStartY.scroll + scrollDelta;
+      updateScroll();
+    };
+    const onUp = (): void => { dragStartY.active = false; };
+    scene.input.on('pointermove', onMove);
+    scene.input.on('pointerup', onUp);
+
+    listContainer.once(Phaser.GameObjects.Events.DESTROY, () => {
+      scene.input.off('wheel', onWheel);
+      scene.input.off('pointermove', onMove);
+      scene.input.off('pointerup', onUp);
+      if (maskG) maskG.destroy();
+    });
+  }
+
+  // 出战光环（按元素给不同方向加成 — 改造 4 在 PetSystem.computePetAura 实现）
   const active = pets.find((p: any) => p.active);
   if (active) {
     const aura = computePetAura(active);
     if (aura) {
-      const ay = oy + oh - 26;
-      c.add(scene.add.text(ox + ow / 2, ay, `出战光环 →  HP+${aura.hp}  ATK+${aura.atk}  DEF+${aura.def}  MATK+${aura.matk}  MDEF+${aura.mdef}  SPD+${aura.spd}`, { fontSize: '14px', color: '#9fe6c0', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0.5));
+      c.add(scene.add.text(ox + ow / 2, auraY, `出战光环 →  HP+${aura.hp}  ATK+${aura.atk}  DEF+${aura.def}  MATK+${aura.matk}  MDEF+${aura.mdef}  SPD+${aura.spd}`, { fontSize: '14px', color: '#9fe6c0', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0.5));
     }
   }
 

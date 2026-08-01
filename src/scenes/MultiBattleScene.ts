@@ -17,7 +17,7 @@
 import Phaser from 'phaser';
 import { getClient } from '../core/Net';
 import { GameState } from '../managers/GameState';
-import { ensureFormPortrait } from '../core/portraitLoader';
+import { ensureFormPortrait, battlePortraitKey, ensureBattlePortrait, fitPortrait, BattleForm } from '../core/portraitLoader';
 import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../managers/Skills';
 import { Kido, KidoNode } from '../managers/Kido';
 import { Inventory } from '../managers/Inventory';
@@ -35,6 +35,7 @@ interface Card {
   hl: Phaser.GameObjects.Image;      // 待选目标高亮辉光框
   lastHp: number;
   statusIcons: Phaser.GameObjects.GameObject[];
+  locked?: boolean;                   // 滑移动画期间锁定位，避免 syncCards 把卡牌拽回原位
 }
 
 interface Button {
@@ -100,6 +101,12 @@ export class MultiBattleScene extends Phaser.Scene {
   private petSid = '';
   /** 本轮已提交指令的战斗员 SID 集合（人物 / 宠物分别守卫）。 */
   private submittedActors: Set<string> = new Set();
+
+  // —— 形态一次性（兄弟 2026-08-01 反馈：卍解/虚化/狱解每场只能开一次，结束后按钮置灰） ——
+  /** 本场战斗是否已用卍解/虚化/狱解（launch 模式每次新实例，标志默认 false 即每场重置）。 */
+  private bankaiUsedThisBattle = false;
+  private hollowUsedThisBattle = false;
+  private hellUsedThisBattle = false;
 
   // —— 两步固定选择（梦幻/飘流式）：先人物、后灵宠 ——
   /** 0=非指令阶段；1=人物指令阶段；2=灵宠指令阶段 */
@@ -314,6 +321,8 @@ export class MultiBattleScene extends Phaser.Scene {
       dungeonRoomId: this.dungeonStage > 0 ? this.dungeonRoomId : undefined,
       // 出战灵宠 DTO（v1.1 战斗协同）：服务端据此生成宠物战斗员
       pet: this.loadout.pet,
+      // 性别：服务端据此设置 CombatPlayer.gender，队友立绘才不会全用自己的性别
+      gender: GameState.gender,
     })
       .then((room: any) => {
         failTimer.remove();
@@ -346,9 +355,24 @@ export class MultiBattleScene extends Phaser.Scene {
             }
           }
         });
-        // 服务端广播形态激活（虚化/狱解）：所有客户端播放全屏立绘特效（包含触发者自身）
-        room.onMessage('formActivated', (data: { actorSid: string; form: string }) => {
-          this.showFormPortrait(data.form as 'hollow' | 'hell');
+        // 服务端广播形态激活（卍解/虚化/狱解）：所有客户端播放全屏立绘特效（包含触发者自身），
+        // 并立即让触发者卡牌立绘切到对应形态（onStateChange→syncCards 也会兜底）。
+        room.onMessage('formActivated', (data: { actorSid: string; form: 'bankai' | 'hollow' | 'hell' }) => {
+          this.showFormPortrait(data.form);
+          this.renderState();
+          // 兄弟 2026-08-01 反馈：形态每场一次，自己激活后立即置灰按钮 + 标 used
+          // （其他人激活时不在本端置灰本端按钮——形态消耗以激活者为准）
+          if (data.actorSid === this.mySessionId) {
+            if (data.form === 'bankai') this.bankaiUsedThisBattle = true;
+            if (data.form === 'hollow') this.hollowUsedThisBattle = true;
+            if (data.form === 'hell') this.hellUsedThisBattle = true;
+            const btn = this.actionBtns[data.form];
+            if (btn) btn.setEnable(false);
+          }
+        });
+        // 服务端在执行阶段广播的攻击演出事件：驱动纯 tween 滑移（melee=冲砍 / cast=原地咏唱）
+        room.onMessage('actionFx', (data: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }) => {
+          this.playAttackFx(data.actorSid, data.targetId, data.kind);
         });
         this.renderState();
         // 组队战斗：只有触发者(撞怪的人)负责发 startbattle，被拉进来的队员静默等待
@@ -400,6 +424,10 @@ export class MultiBattleScene extends Phaser.Scene {
     return !!petp && petp.alive;
   }
   private stageChar(a: { type: string; id?: string; targetId?: string }): void {
+    // 形态一次性守卫：卍解/虚化/狱解每场只能用一次
+    if (a.type === 'bankai' && this.bankaiUsedThisBattle) return;
+    if (a.type === 'hollow' && this.hollowUsedThisBattle) return;
+    if (a.type === 'hell' && this.hellUsedThisBattle) return;
     this.stagedChar = a;
     this.advanceAfterChar();
   }
@@ -685,7 +713,7 @@ export class MultiBattleScene extends Phaser.Scene {
    * 释放力量瞬间居中弹出立绘（虚化/狱解），按当前性别自动选男/女那张。
    * 缩放+淡入（~350ms）后悬停，1150ms 后 300ms 淡出；外圈暗红/狱炎光环烘托觉醒感。
    */
-  private showFormPortrait(which: 'hollow' | 'hell'): void {
+  private showFormPortrait(which: 'bankai' | 'hollow' | 'hell'): void {
     ensureFormPortrait(this, which, (key) => {
       if (!this.scene.isActive()) return;
       const w = this.scale.width, h = this.scale.height, cx = w / 2, cy = h / 2;
@@ -712,6 +740,95 @@ export class MultiBattleScene extends Phaser.Scene {
         });
       });
     });
+  }
+
+  /**
+   * 纯 tween 滑移攻击演出（服务端 actionFx 驱动）：
+   *   melee → 角色滑过去 → 目标位攻击抖动 → 滑回来，含残影 + 速度线粒子
+   *   cast  → 原地小前倾起手 → 命中时目标抖动（+速度线）
+   * actorSid 兼容人物(ownerSid)与灵宠(ownerSid:pet)；targetId 为敌人 id。
+   */
+  private playAttackFx(actorSid: string, targetId: string | undefined, kind: 'melee' | 'cast'): void {
+    const actorCard = this.playerCards.get(actorSid);
+    if (!actorCard) return;
+    const actor = actorCard.root;
+    const targetCard = targetId ? this.enemyCards.get(targetId) : undefined;
+    const target = targetCard?.root;
+    const homeX = actor.x, homeY = actor.y;
+
+    if (kind === 'melee' && target) {
+      const dx = target.x - homeX, dy = target.y - homeY;
+      const lunge = 0.6;                                  // 滑到目标 60% 处，避免完全重叠
+      const tx = homeX + dx * lunge, ty = homeY + dy * lunge;
+      this.spawnAfterimage(actorCard, homeX, homeY);
+      actorCard.locked = true;                           // 锁定位，防 syncCards 把卡拽回
+      this.tweens.add({
+        targets: actor, x: tx, y: ty, duration: 165, ease: 'Quad.Out',
+        onComplete: () => {
+          this.shakeCard(target!);
+          this.spawnSpeedLines(target!, dx, dy);
+          this.tweens.add({
+            targets: actor, x: homeX, y: homeY, duration: 210, ease: 'Quad.InOut', delay: 90,
+            onComplete: () => { actorCard.locked = false; },
+          });
+        },
+      });
+    } else if (kind === 'cast') {
+      const dir = target ? (Math.sign(target.x - homeX) || 1) : 1;
+      this.spawnAfterimage(actorCard, homeX, homeY);
+      actorCard.locked = true;
+      this.tweens.add({
+        targets: actor, x: homeX + dir * 20, duration: 130, yoyo: true, ease: 'Sine.InOut',
+        onYoyo: () => {
+          if (target) { this.shakeCard(target); this.spawnSpeedLines(target, target.x - homeX, target.y - homeY); }
+        },
+        onComplete: () => { actorCard.locked = false; },
+      });
+    } else {
+      // 无目标普攻 / 兜底：原地小幅挥砍
+      this.tweens.add({ targets: actor, angle: 5, duration: 90, yoyo: true, ease: 'Sine.InOut' });
+    }
+  }
+
+  /** 滑移起点克隆一张半透明残影，随演出淡出销毁。 */
+  private spawnAfterimage(card: Card, x: number, y: number): void {
+    const key = card.portrait.texture.key;
+    if (!key || !this.textures.exists(key)) return;
+    const ghost = this.add.image(x, y, key)
+      .setDisplaySize(120, 180).setAlpha(0.32).setDepth(16).setTint(0x9fd8ff);
+    this.tweens.add({
+      targets: ghost, alpha: 0, scaleX: ghost.scaleX * 1.12, scaleY: ghost.scaleY * 1.12,
+      duration: 260, ease: 'Quad.Out', onComplete: () => ghost.destroy(),
+    });
+  }
+
+  /** 卡牌受击抖动（仅作用于 root，敌人位置稳定不会与 syncCards 冲突）。 */
+  private shakeCard(root: Phaser.GameObjects.Container): void {
+    const ox = root.x;
+    this.tweens.add({
+      targets: root, x: ox + 9, duration: 38, yoyo: true, repeat: 3, ease: 'Sine.InOut',
+      onComplete: () => { root.x = ox; },
+    });
+  }
+
+  /** 命中速度线粒子：以冲击方向为中心扇形向外飞散并淡出。 */
+  private spawnSpeedLines(target: Phaser.GameObjects.Container, dx: number, dy: number): void {
+    const cx = target.x, cy = target.y;
+    const ang = Math.atan2(dy, dx);
+    const n = 6;
+    for (let i = 0; i < n; i++) {
+      const a = ang + (i - (n - 1) / 2) * 0.18;
+      const len = Phaser.Math.Between(34, 54);
+      const line = this.add.rectangle(cx, cy, len, 3, 0xffffff, 0.9)
+        .setRotation(a).setOrigin(0, 0.5).setDepth(17);   // 自中心向外延伸
+      this.tweens.add({
+        targets: line,
+        x: cx + Math.cos(a) * (len + 26),
+        y: cy + Math.sin(a) * (len + 26),
+        alpha: 0, duration: 220, ease: 'Quad.Out',
+        onComplete: () => line.destroy(),
+      });
+    }
   }
 
   /** 指令阶段倒计时：服务端 roundExpiresAt 驱动，超时自动开战。 */
@@ -876,7 +993,7 @@ export class MultiBattleScene extends Phaser.Scene {
           card.root.on('pointerdown', () => this.onEnemyCardClicked(id));
         }
       } else {
-        card.root.setPosition(x, y);
+        if (!card.locked) card.root.setPosition(x, y);
       }
       // 玩家卡片：道具选目标时可点击
       if (isPlayer && this.pendingTarget && this.pendingTarget.type === 'item') {
@@ -886,20 +1003,34 @@ export class MultiBattleScene extends Phaser.Scene {
       } else if (isPlayer && !(this.pendingTarget && this.pendingTarget.type === 'item')) {
         card.root.disableInteractive();
       }
-      // 立绘纹理：玩家=性别对应 PNG；敌人=boss/elite；灵宠=占位（暂无纹理）
+      // 立绘纹理：玩家按「形态优先级」选图（hell > hollow > bankai > 基础），
+      // 与服务端 CombatPlayer 的 hellActive/hollowActive/bankaiActive 标志对齐；
+      // char_* 形态立绘按需懒加载，未就绪时回退基础立绘。敌人=boss/elite；灵宠=占位。
       let portraitKey = '';
       if (isPlayer) {
         if (c.isPet) {
           portraitKey = 'npc'; // 宠物暂无立绘，用绿块占位
         } else {
-          const g = c.gender || GameState.gender;
-          portraitKey = this.textures.exists(`player_${g}`) ? `player_${g}` : '';
+          const g = (c.gender || GameState.gender) as 'male' | 'female';
+          const form: BattleForm =
+            c.hellActive ? 'hell' : c.hollowActive ? 'hollow' : c.bankaiActive ? 'bankai' : 'base';
+          const key = battlePortraitKey(g, form);
+          if (!this.textures.exists(key)) {
+            ensureBattlePortrait(this, key); // 触发懒加载；当前帧先用基础立绘兜底，加载完下一帧切
+            portraitKey = g;
+          } else {
+            portraitKey = key;
+          }
         }
       } else {
         portraitKey = (c.type === '妖将' || c.type === '妖王') ? 'enemy_boss' : 'enemy_elite';
       }
       if (portraitKey && this.textures.exists(portraitKey)) {
-        card.portrait.setTexture(portraitKey).setVisible(true);
+        if (card.portrait.texture.key !== portraitKey) {
+          card.portrait.setTexture(portraitKey);
+          fitPortrait(card.portrait, 120, 180); // 各形态原图长宽比不同，等比适配不拉伸
+        }
+        card.portrait.setVisible(true);
       } else {
         card.portrait.setVisible(false);
       }
@@ -937,7 +1068,7 @@ export class MultiBattleScene extends Phaser.Scene {
     const hpBar = new SkinBar(this, { x: -barW / 2, y: -112, w: barW, h: barH, depth: 12, pad: 1 });
     const hpText = this.add.text(0, -98, '', { fontSize: '12px', color: '#ffffff' }).setOrigin(0.5);
     const name = this.add.text(0, -80, '', { fontSize: '13px', color: isPlayer ? '#aaffaa' : '#ffaaaa', fontStyle: 'bold' }).setOrigin(0.5);
-    const portrait = this.add.image(0, 0, 'player_' + GameState.gender).setDisplaySize(120, 180).setDepth(15).setVisible(false);
+    const portrait = this.add.image(0, 0, GameState.gender).setDisplaySize(120, 180).setDepth(15).setVisible(false);
     const hl = cardHl(this).setDisplaySize(190, 290); // 高亮框包住立绘+血条
     root.add([hpBar.frame, hpBar.fill, hpText, name, portrait, hl]);
     return { root, name, hpBar, hpText, portrait, hl, lastHp: -1, statusIcons: [] };

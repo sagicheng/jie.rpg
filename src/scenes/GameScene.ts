@@ -516,9 +516,9 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.addKey('U').on('down', () => {
       if (this.ctrlKey.isDown) return;
       if (this.isInDialogue || this.inDungeon || this.scene.isActive('MultiBattleScene') || this.scene.isActive('DungeonMapScene')) return;
-      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel || this.petPanel) return;
+      if (this.dungeonConfirmOpen || this.teamPanelFull || this.questLogPanel) return;
       if (this.inventoryPanel || this.statPanel || this.kidoPanel || this.enhancePanel || this.bestiaryPanel || this.guildPanel || this.friendPanel || this.auctionPanel) return;
-      this.togglePetPanel();
+      this.togglePetPanel(); // 面板开着时第二次按 U 由 togglePetPanel 内部关闭（不要在此提前 return）
     });
 
     // Enter 键：聚焦全局聊天输入框（模态/战斗/副本中不抢占）

@@ -9,7 +9,7 @@ import { QUALITY_COLOR, QUALITY_CN } from '../core/constants';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
 import { GameState } from '../managers/GameState';
 import { SkinBar, SkinButton, hpColor, floatDamage, panel, menuRow } from '../ui/BattleSkin';
-import { ensureFormPortrait } from '../core/portraitLoader';
+import { ensureFormPortrait, battlePortraitKey, ensureBattlePortrait, fitPortrait, BattleForm } from '../core/portraitLoader';
 import { EnemyData, calcDamage, calcMagicDamage, generateLoot } from '../managers/BattleData';
 import { Inventory } from '../managers/Inventory';
 import { getAvailableSkills, getSkillTargetType, SkillData } from '../managers/Skills';
@@ -124,9 +124,10 @@ export class BattleScene extends Phaser.Scene {
   private hollowActive = false;
   private hollowTurnsLeft = 0;
   private hollowUsed = false;
-  private hellActive = false;
-  private hellTurnsLeft = 0;
-  private hellUsed = false;
+    private hellActive = false;
+    private hellTurnsLeft = 0;
+    private hellUsed = false;
+    private playerSprite?: Phaser.GameObjects.Sprite;   // 我方站立立绘（按形态切换纹理）
 
   private playerHp: number;
   private playerMaxHp: number;
@@ -268,8 +269,9 @@ export class BattleScene extends Phaser.Scene {
     // ══ 我方站位（左半区）══
     // 布局：[玩家HP/MP条] [玩家立绘] [宠物立绘(预留)] [宠物HP/MP条(预留)]
     const PX = 350, PY = 280;
-    // 玩家立绘
-    this.add.sprite(PX, PY, 'player_' + GameState.gender).setDisplaySize(120, 180).setFlipX(true).setDepth(10);
+    // 玩家立绘：基础形态用 female/male（BootScene 预载）；释放形态时切换到对应立绘
+    this.playerSprite = this.add.sprite(PX, PY, GameState.gender).setFlipX(true).setDepth(10);
+    fitPortrait(this.playerSprite, 120, 180);
     const bt = GameState.getActiveTitleDef()?.name;
     this.add.text(PX, PY + 100, bt ? `${GameState.playerName} · ${bt}` : GameState.playerName, {
       fontSize: '14px', color: '#88aacc', padding: { y: 2 },
@@ -1331,6 +1333,7 @@ export class BattleScene extends Phaser.Scene {
     this.playerSpd = Math.round(this.playerSpd * 1.3);
     this.logText.setText('卍 解！全属性大幅提升（5回合）！');
     this.showFormPortrait('bankai');                 // 卍解立绘演出（参照虚化，复用主角色静态图）
+    this.refreshPlayerFormSprite();
     this.cameras.main.flash(600, 0, 100, 200);
     this.cameras.main.shake(300, 0.01);
     this.time.delayedCall(1500, () => this.startEnemyPhase());
@@ -1347,6 +1350,7 @@ export class BattleScene extends Phaser.Scene {
     this.playerMp = this.playerMaxMp;
     this.logText.setText('虚 化！异常抗性+30% · MP上限激增！');
     this.showFormPortrait('hollow');
+    this.refreshPlayerFormSprite();
     this.cameras.main.flash(400, 200, 50, 50);
     this.time.delayedCall(1500, () => this.startEnemyPhase());
   }
@@ -1359,6 +1363,7 @@ export class BattleScene extends Phaser.Scene {
     this.hellActive = true; this.hellTurnsLeft = 3; this.hellUsed = true;
     this.logText.setText('狱 解！业火焚身——伤害倍增！');
     this.showFormPortrait('hell');
+    this.refreshPlayerFormSprite();
     this.cameras.main.flash(500, 180, 0, 0);
     this.cameras.main.shake(400, 0.015);
     this.time.delayedCall(1500, () => this.startEnemyPhase());
@@ -1404,6 +1409,27 @@ export class BattleScene extends Phaser.Scene {
 
 
   // ——— 回合决策超时 ———
+  /** 按当前激活形态切换我方站立立绘：hell > hollow > bankai > 基础；形态立绘懒加载中用基础兜底。 */
+  private refreshPlayerFormSprite(): void {
+    if (!this.playerSprite || !this.scene.isActive()) return;
+    const g = GameState.gender as 'male' | 'female';
+    const form: BattleForm =
+      this.hellActive ? 'hell' : this.hollowActive ? 'hollow' : this.bankaiActive ? 'bankai' : 'base';
+    const key = battlePortraitKey(g, form);
+    const apply = (k: string) => { if (this.playerSprite) { this.playerSprite.setTexture(k); fitPortrait(this.playerSprite, 120, 180); } };
+    if (this.textures.exists(key)) {
+      apply(key);
+    } else {
+      apply(g);                                    // 形态立绘懒加载中：先用基础立绘兜底
+      ensureBattlePortrait(this, key, () => {
+        if (!this.playerSprite || !this.scene.isActive()) return;
+        const cur: BattleForm =
+          this.hellActive ? 'hell' : this.hollowActive ? 'hollow' : this.bankaiActive ? 'bankai' : 'base';
+        if (cur === form) apply(key);              // 加载完且形态仍匹配才切，避免覆盖失效回退
+      });
+    }
+  }
+
   private startTurnTimer(): void {
     this.clearTurnTimer();
     let remain = this.TURN_SECONDS;
@@ -1673,6 +1699,7 @@ export class BattleScene extends Phaser.Scene {
         this.logText.setText('狱解解除... 业火熄灭');
       }
     }
+    this.refreshPlayerFormSprite();   // 任一形态到期 → 立绘回退基础 female/male
   }
 
   /** 敌人状态时长递减：在本轮敌人全部行动结束后结算，确保当回合施加的控制/异常仍能生效 */

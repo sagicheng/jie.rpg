@@ -827,6 +827,13 @@ export class GameRoom extends Room<GameRoomState> {
 
     sessionCharMap.set(client.sessionId, charId);
     world.registerCharId(client.sessionId, charId);
+
+    // GM 账号：进房即注入全解锁（六大力量体系/全任务/满背包/灵宠），幂等，落库免重连叠加
+    if (acc.gm) {
+      world.applyGMGrant(pw);
+      world.persistBySid(client.sessionId);
+    }
+
     registerGuildOnline(client, charId, ch.name);
     registerOnline(client, charId, ch.name, zoneName(pw.zone));
     // 好友上下线通知（向在线好友推送）

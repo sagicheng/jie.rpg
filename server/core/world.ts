@@ -91,6 +91,8 @@ export interface PlayerWorld {
   dungeon: ActiveDungeon | null;
   // 六大力量体系解锁（始解/卍解/虚化/完现术/圣文字/狱解）
   unlocks: string[];
+  /** GM 一键全解锁守卫：避免每次进房重复叠加背包/属性。 */
+  gmGranted?: boolean;
   // 始解所选斩魄刀真名（与 unlocks 中的 'shikai' 配套；始解/卍解技能表均以此查表，必须持久化）
   zanpakuto: string;
   // 鬼道（服务端权威 + 持久化，与背包/金币同等重要）
@@ -263,7 +265,7 @@ function seedWorld(): PlayerWorld {
     quests: {}, completedQuests: [], bestiary: {}, gatherNodes: {},
     dailyClaimed: { date: '', ids: [] }, weeklyClaimed: { week: '', ids: [] },
     dungeonWeekly: { week: '', count: 0 }, dungeon: null,
-    unlocks: [], zanpakuto: '', kidoSchool: null, kidoNodes: {}, kidoEquipped: [], kidoPoints: 0,
+    unlocks: [], gmGranted: false, zanpakuto: '', kidoSchool: null, kidoNodes: {}, kidoEquipped: [], kidoPoints: 0,
     bestiaryTierClaimed: [], unlockedTitles: [], activeTitle: null,
     arena: newArenaState(),
     pets: [],
@@ -334,6 +336,7 @@ export class WorldService {
     this.refreshDungeonWeekly(w);
     if (data.dungeon !== undefined) w.dungeon = data.dungeon;
     if (Array.isArray(data.unlocks)) w.unlocks = data.unlocks;
+    if (typeof data.gmGranted === 'boolean') w.gmGranted = data.gmGranted;
     if (Array.isArray(data.pets)) w.pets = data.pets as Pet[];
     if (typeof data.zanpakuto === 'string') w.zanpakuto = data.zanpakuto;
     if (typeof data.kidoSchool === 'string' || data.kidoSchool === null) w.kidoSchool = data.kidoSchool;
@@ -783,6 +786,99 @@ export class WorldService {
     armorSlots.forEach(s => give(s, armorStats));
     jewelSlots.forEach(s => give(s, jewelStats));
     return { ok: true, msg: `已发放测试套装 第${zone}区·${quality}（5防具+4饰品已装备）` };
+  }
+
+  /**
+   * GM 一键全解锁（幂等，gmGranted 守卫）。
+   * - 六大力量体系全开（始解/卍解/虚化/完现术/圣文字/狱解）
+   * - 全主线+支线任务完成
+   * - 背包塞满消耗品/材料/灵宠蛋 + 各种品质装备（每槽 green/blue/purple/gold）
+   * - 直接穿一套满金 9 槽套装；抓两只灵宠拉到 40 级
+   * - 高等级(80)/金币(999999)/属性点/鬼道点；图鉴全收集解锁称号
+   * 仅 GM 账号进房时由 GameRoom 调用；落库以免重连重复叠加。
+   */
+  applyGMGrant(pw: PlayerWorld): void {
+    if (pw.gmGranted) return;
+
+    // 六大力量体系
+    const ALL_UNLOCKS = ['shikai', 'bankai', 'hollow', 'fullbring', 'schrift', 'hell'];
+    for (const u of ALL_UNLOCKS) if (!pw.unlocks.includes(u)) pw.unlocks.push(u);
+    pw.zanpakuto = pw.zanpakuto || 'zp01';
+
+    // 鬼道：主修破道，学满若干节点并装备
+    pw.kidoSchool = pw.kidoSchool || 'hado';
+    pw.kidoPoints = Math.max(pw.kidoPoints, 99);
+    const learnNodes: Record<string, number> = { hado_t1_01: 3, hado_t2_01: 3, bakudo_t1_01: 3, kaido_t1_01: 3 };
+    for (const [nid, pts] of Object.entries(learnNodes)) {
+      if (KIDO_NODES[nid]) pw.kidoNodes[nid] = Math.max(pw.kidoNodes[nid] || 0, pts);
+    }
+    pw.kidoEquipped = ['hado_t1_01', 'hado_t2_01', 'bakudo_t1_01', 'kaido_t1_01'];
+
+    // 等级 / 金币 / 属性点
+    pw.level = Math.max(pw.level, 80);
+    pw.gold = Math.max(pw.gold, 999999);
+    pw.exp = 0;
+    pw.statPoints += 200;
+
+    // 任务：全主线+支线完成
+    const storyIds = [...Object.keys(MAIN_QUESTS), ...Object.keys(SIDE_QUESTS)];
+    for (const id of storyIds) if (!pw.completedQuests.includes(id)) pw.completedQuests.push(id);
+
+    // 背包：消耗品 / 材料 / 灵宠蛋
+    const stack = (id: string, name: string, type: string, qty: number, extra: Record<string, any> = {}) => {
+      const ex = pw.inventory.find(i => i.id === id && i.type !== 'equipment');
+      if (ex) ex.quantity += qty;
+      else pw.inventory.push({ id, name, type, desc: '', quantity: qty, ...extra });
+    };
+    stack('stop_blood_grass', '止血草', 'consumable', 99, { desc: '回复50HP' });
+    stack('medicine_pill_s', '伤药(小)', 'consumable', 99, { desc: '回复150HP' });
+    stack('spirit_water_s', '灵力水(小)', 'consumable', 99, { desc: '回复30MP' });
+    stack('antidote', '解毒药', 'consumable', 99, { desc: '解除中毒·寄生·灼烧' });
+    stack('respec_charm', '洗点符', 'consumable', 99, { desc: '使用后退还全部已分配属性点' });
+    stack('mat_铁矿石', '铁矿石', 'material', 999);
+    stack('mat_银矿石', '银矿石', 'material', 999);
+    stack('mat_妖将核心', '妖将核心', 'material', 999);
+    stack('mat_灵晶碎片', '灵晶碎片', 'material', 999);
+    stack('mat_灵木枝', '灵木枝', 'material', 999);
+    stack('mat_麻布片', '麻布片', 'material', 999);
+    stack('mat_传说材料碎片', '传说材料碎片', 'material', 999);
+    stack('pet_egg', '灵宠蛋', 'pet_egg', 20, { desc: '双击开启，随机孵化灵宠', zone: 9 });
+
+    // 背包：各种品质装备（每槽 green/blue/purple/gold 各一件，唯一 id，供测试强化/精炼/分解/换装）
+    const slots: EquipSlot[] = ['head', 'body', 'bracer', 'boots', 'belt', 'ring', 'necklace', 'charm', 'pendant'];
+    const qualities = ['green', 'blue', 'purple', 'gold'];
+    const slotStats: Record<string, Record<string, number>> = {
+      head: { def: 20, hp: 20 }, body: { def: 30, hp: 40 }, bracer: { atk: 15, def: 15 },
+      boots: { spd: 20 }, belt: { def: 18, hp: 18 }, ring: { matk: 20, mp: 20 },
+      necklace: { matk: 18, mdef: 18 }, charm: { atk: 12, def: 12 }, pendant: { hp: 30, mp: 20 },
+    };
+    let gi = 0;
+    for (const slot of slots) {
+      for (const q of qualities) {
+        const id = `gmgear_${slot}_${q}_${gi++}`;
+        pw.inventory.push({
+          id, name: `GM·${q}·${slot}`, type: 'equipment', desc: 'GM测试装备',
+          quantity: 1, slot, stats: slotStats[slot] || { atk: 10 }, quality: q,
+          enhanceLevel: 0, refineStats: [],
+        });
+      }
+    }
+
+    // 装备：直接穿一套满金 9 槽套装（便于即时测试套装/战斗）
+    this.grantSetTestGear(pw, 9, 'gold');
+
+    // 灵宠：抓两只并拉到 40 级
+    for (const sp of ['fox_fire', 'dragonet']) {
+      const r = this.createPet(pw, sp);
+      const pet = (r.data as any)?.pet as Pet | undefined;
+      if (pet) { let need = 0; for (let lv = 1; lv < 40; lv++) need += petExpForLevel(lv); this.addPetExp(pw, pet.id, need); }
+    }
+
+    // 图鉴：全命名妖魔击杀，解锁称号
+    for (const name of Object.keys(NAMED_ENEMIES)) pw.bestiary[name] = Math.max(pw.bestiary[name] || 0, 5);
+    this.evaluateTitles(pw);
+
+    pw.gmGranted = true;
   }
 
   // ───────────────── 灵宠系统（服务端权威） ─────────────────

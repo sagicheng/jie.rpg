@@ -16,6 +16,10 @@ export interface AssetImage {
 }
 
 export const ASSET_IMAGES: AssetImage[] = [
+  // 战斗界面「基础形态」玩家立绘（未开任何形态时使用）——key 直接对齐 GameState.gender('male'|'female')
+  { key: 'male', path: 'assets/characters/male.png' },
+  { key: 'female', path: 'assets/characters/female.png' },
+  // player_* = 卍解形态立绘（同时兼作地图/副本行走图底图），勿与基础立绘混用
   { key: 'player_male', path: 'assets/characters/player_male.png' },
   { key: 'player_female', path: 'assets/characters/player_female.png' },
   { key: 'enemy', path: 'assets/monsters/enemy.png' },

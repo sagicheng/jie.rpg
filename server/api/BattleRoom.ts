@@ -64,6 +64,8 @@ export class BattleRoom extends Room<BattleRoomState> {
   private execQueue: string[] = [];   // 执行阶段队列（turnOrder 副本，逐步 shift）
   /** 指令阶段玩家提交的意图 */
   private pendingActions: Map<string, PendingAction> = new Map();
+  /** 卍解前的原始属性快照（sid → 属性），形态到期时原样回滚。 */
+  private bankaiBase: Map<string, { atk: number; def: number; matk: number; mdef: number; spd: number }> = new Map();
   private dungeonId = 0;
   private dungeonStage = 0;
   private dungeonRoomId = '';
@@ -79,7 +81,7 @@ export class BattleRoom extends Room<BattleRoomState> {
   }
 
   onJoin(client: Client, options: {
-    name?: string; enemyData?: any; enemyParty?: EnemyData[]; monsterId?: string;
+    name?: string; gender?: string; enemyData?: any; enemyParty?: EnemyData[]; monsterId?: string;
     loadout?: { skills?: string[]; kidos?: KidoLoadoutDTO[]; items?: string[] };
     playerStats?: { hp?: number; maxHp?: number; mp?: number; maxMp?: number; atk?: number; def?: number; matk?: number; mdef?: number; spd?: number };
     /** 出战灵宠战斗 DTO（含属性快照与技能列表）。 */
@@ -89,6 +91,7 @@ export class BattleRoom extends Room<BattleRoomState> {
     const p = new CombatPlayer();
     p.sessionId = client.sessionId;
     p.name = (options?.name ?? '勇者').slice(0, 16);
+    p.gender = options?.gender === 'female' ? 'female' : 'male';
     p.color = COLORS[Math.floor(Math.random() * COLORS.length)];
     const st = options?.playerStats;
     p.maxHp = st?.maxHp ?? BASE_PLAYER.hp; p.hp = st?.hp ?? p.maxHp;
@@ -407,6 +410,7 @@ export class BattleRoom extends Room<BattleRoomState> {
       case 'attack': {
         const targetId = this.resolveTarget(action.targetId);
         if (!targetId) { this.scheduleExecuteNext(); return; }
+        this.broadcastFx(sid, targetId, 'melee');
         this.executeAttack(sid, targetId);
         break;
       }
@@ -415,6 +419,11 @@ export class BattleRoom extends Room<BattleRoomState> {
         if (!sk || !lo.skills.has(sk.name)) { this.scheduleExecuteNext(); return; }
         if (p.mp < sk.mp) { this.logMsg(p.name, `${p.name} 灵力不足，技能失败`); this.scheduleExecuteNext(); return; }
         p.mp = Math.max(0, p.mp - sk.mp);
+        const tt = getSkillTargetType(sk as any);
+        const fxTarget = tt === 'enemy' ? this.resolveTarget(action.targetId)
+          : tt === 'enemy-all' ? this.firstAliveEnemy() : undefined;
+        // 单体物理技 = 冲上去砍（melee）；魔法/群体/治疗 = 原地起手（cast）
+        this.broadcastFx(sid, fxTarget, (tt === 'enemy' && sk.damageType !== 'magical') ? 'melee' : 'cast');
         this.executeSkill(p, sk, action.targetId);
         break;
       }
@@ -423,6 +432,10 @@ export class BattleRoom extends Room<BattleRoomState> {
         if (!k) { this.scheduleExecuteNext(); return; }
         if (p.mp < k.mp) { this.logMsg(p.name, `${p.name} 灵力不足`); this.scheduleExecuteNext(); return; }
         p.mp = Math.max(0, p.mp - k.mp);
+        const kidoTarget = (k.effectType === 'damage' || k.effectType === 'control')
+          ? (k.target === 'all' ? this.firstAliveEnemy() : this.resolveTarget(action.targetId))
+          : undefined;
+        this.broadcastFx(sid, kidoTarget, 'cast');   // 鬼道恒为咏唱型演出
         this.executeKido(p, k, action.targetId);
         break;
       }
@@ -439,19 +452,32 @@ export class BattleRoom extends Room<BattleRoomState> {
           // 灵力不足：自动转为普攻，保证宠物当回合仍有行动
           this.logMsg(p.name, `${p.name} 灵力不足，改为普攻`);
           const tid = this.resolveTarget(action.targetId);
-          if (tid) this.executeAttack(p.sessionId, tid);
+          if (tid) { this.broadcastFx(p.sessionId, tid, 'melee'); this.executeAttack(p.sessionId, tid); }
           break;
         }
         p.mp = Math.max(0, p.mp - sk.mp);
         const magic = sk.damageType === 'magical';
         const tid = this.resolveTarget(action.targetId);
         if (!tid) { this.scheduleExecuteNext(); return; }
+        this.broadcastFx(p.sessionId, tid, magic ? 'cast' : 'melee');
         const e = this.state.enemies.get(tid)!;
         const r = magic ? calcMagicDamage(this.effMatk(p), this.effMdef(e), sk.power) : calcDamage(this.effAtk(p), this.effDef(e), sk.power);
         e.hp = Math.max(0, e.hp - r.damage);
         const skName = PET_SKILLS[action.skillId!]?.name || action.skillId!;
         this.logMsg(p.name, `${p.name}「${skName}」→ ${e.name} -${r.damage}${r.crit ? '（暴击！）' : ''}`);
         if (e.hp <= 0) { e.alive = false; this.logMsg('system', `${e.name} 被击败！`); }
+        break;
+      }
+      case 'bankai': {
+        if (p.bankaiUsed || p.bankaiActive) { this.scheduleExecuteNext(); return; }
+        p.bankaiActive = true; p.bankaiTurnsLeft = 5; p.bankaiUsed = true;
+        // 记录原始属性，5 回合后原样回滚（避免反复乘除产生累积误差）
+        this.bankaiBase.set(sid, { atk: p.atk, def: p.def, matk: p.matk, mdef: p.mdef, spd: p.spd });
+        p.atk = Math.round(p.atk * 1.3); p.def = Math.round(p.def * 1.3);
+        p.matk = Math.round(p.matk * 1.3); p.mdef = Math.round(p.mdef * 1.3);
+        p.spd = Math.round(p.spd * 1.3);
+        this.logMsg(p.name, `${p.name} 卍解！全属性大幅提升（5回合）！`);
+        this.broadcast('formActivated', { actorSid: sid, form: 'bankai' });
         break;
       }
       case 'hollow': {
@@ -631,10 +657,22 @@ export class BattleRoom extends Room<BattleRoomState> {
     return dot;
   }
 
-  /** 每回合结束：衰减形态持续回合（虚化4回合/狱解3回合，到期自动结束）。 */
+  /** 每回合结束：衰减形态持续回合（卍解5回合/虚化4回合/狱解3回合，到期自动结束并回滚增益）。 */
   private tickForms(): void {
     this.state.players.forEach((p) => {
       if (!p.alive) return;
+      if (p.bankaiActive) {
+        p.bankaiTurnsLeft--;
+        if (p.bankaiTurnsLeft <= 0) {
+          p.bankaiActive = false;
+          const base = this.bankaiBase.get(p.sessionId);
+          if (base) {
+            p.atk = base.atk; p.def = base.def; p.matk = base.matk; p.mdef = base.mdef; p.spd = base.spd;
+            this.bankaiBase.delete(p.sessionId);
+          }
+          this.logMsg('system', `${p.name} 卍解结束`);
+        }
+      }
       if (p.hollowActive) {
         p.hollowTurnsLeft--;
         if (p.hollowTurnsLeft <= 0) { p.hollowActive = false; this.logMsg('system', `${p.name} 虚化结束`); }
@@ -925,6 +963,10 @@ export class BattleRoom extends Room<BattleRoomState> {
       if (!best || pl.hp / pl.maxHp < best.hp / best.maxHp) best = pl;
     }
     return best || this.state.players.get(selfId)!;
+  }
+  /** 广播一次攻击演出事件，客户端据此播放纯 tween 滑移（melee=冲上去砍 / cast=原地咏唱）。 */
+  private broadcastFx(actorSid: string, targetId?: string, kind: 'melee' | 'cast' = 'cast'): void {
+    this.broadcast('actionFx', { actorSid, targetId, kind });
   }
   private logMsg(who: string, text: string) {
     const m = new ChatMessage(); m.name = who; m.text = text; m.t = Date.now();

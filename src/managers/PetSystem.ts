@@ -25,12 +25,29 @@ export interface PetAura {
 }
 
 /**
- * 计算出战灵宠对玩家的属性光环。
- * 比例：HP +10% / ATK·DEF·MATK·MDEF·SPD 各 +20%（直接吃灵宠当前属性快照）。
+ * 计算出战灵宠对玩家的属性光环（按元素给不同方向加成 — 兄弟 2026-08-01 反馈）。
+ * 灵宠只有 四元素：火 / 风 / 水 / 土（见 PET_ELEMENTS_CLIENT），故仅此四类定向分支。
+ * 火 → +MATK +SPD | 风 → +ATK +SPD | 水 → +HP +MDEF | 土 → +HP +DEF
+ * 默认（原版）→ HP +10% 五维 +20%
  * 灵宠无 MP 字段，故光环不含 MP。
  */
 export function computePetAura(pet: any): PetAura | null {
   if (!pet) return null;
+  const el = String(pet?.element || '').toLowerCase();
+  // 元素定向加成：以灵宠自身属性快照为基数（保留原 0.20 比例），方向按元素切
+  if (el === 'fire') {
+    return { hp: Math.round((pet.maxHp || 0) * 0.10), atk: 0, def: 0, matk: Math.round((pet.matk || 0) * 0.20), mdef: 0, spd: Math.round((pet.spd || 0) * 0.20) };
+  }
+  if (el === 'wind') {
+    return { hp: 0, atk: Math.round((pet.atk || 0) * 0.20), def: 0, matk: 0, mdef: 0, spd: Math.round((pet.spd || 0) * 0.20) };
+  }
+  if (el === 'water') {
+    return { hp: Math.round((pet.maxHp || 0) * 0.20), atk: 0, def: 0, matk: 0, mdef: Math.round((pet.mdef || 0) * 0.20), spd: 0 };
+  }
+  if (el === 'earth') {
+    return { hp: Math.round((pet.maxHp || 0) * 0.20), atk: 0, def: Math.round((pet.def || 0) * 0.20), matk: 0, mdef: 0, spd: 0 };
+  }
+  // 默认（原版，含未知元素）
   return {
     hp: Math.round((pet.maxHp || 0) * 0.10),
     atk: Math.round((pet.atk || 0) * 0.20),
