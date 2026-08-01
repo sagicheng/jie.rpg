@@ -159,3 +159,45 @@ export function ensurePetPortrait(
     loader.start();
   }
 }
+
+/**
+ * 怪物立绘纹理 key（单一事实来源，主场景 + 战斗卡全部走这里）。
+ * 对应资源：assets/monsters/<name>.png（name 与 bestiary.ts 的 name 字段一字不差）。
+ */
+export function monsterPortraitKey(name: string): string {
+  return `mob_${name}`;
+}
+
+/**
+ * 怪物 PNG 按需加载（纹理已存在则同步回调）。
+ * 复用 pendingPortraits 并发去重 Map（key 以 mob_ 前缀区分，不与角色/灵宠立绘冲突）。
+ * 资源就绪后通过 onReady 回调继续渲染（主场景 setTexture 切真图 / 战斗卡 renderState 重渲）。
+ */
+export function ensureMonsterPortrait(
+  scene: Phaser.Scene,
+  name: string,
+  onReady?: (key: string) => void,
+): void {
+  const key = monsterPortraitKey(name);
+  if (!name) { onReady?.(key); return; }
+  if (scene.textures.exists(key)) { onReady?.(key); return; }
+
+  const waiting = pendingPortraits.get(key);
+  if (waiting) { if (onReady) waiting.push(onReady); return; }
+  pendingPortraits.set(key, onReady ? [onReady] : []);
+
+  const loader = scene.load as Phaser.Loader.LoaderPlugin;
+  loader.image(key, `assets/monsters/${name}.png`);
+
+  const fire = () => {
+    const cbs = pendingPortraits.get(key) || [];
+    pendingPortraits.delete(key);
+    for (const cb of cbs) cb(key);
+  };
+  if (loader.isLoading()) {
+    loader.once('complete', () => { loader.once('complete', fire); loader.start(); });
+  } else {
+    loader.once('complete', fire);
+    loader.start();
+  }
+}

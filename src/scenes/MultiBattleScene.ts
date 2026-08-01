@@ -17,7 +17,7 @@
 import Phaser from 'phaser';
 import { getClient } from '../core/Net';
 import { GameState } from '../managers/GameState';
-import { ensureFormPortrait, battlePortraitKey, ensureBattlePortrait, fitPortrait, BattleForm, petPortraitKey, ensurePetPortrait } from '../core/portraitLoader';
+import { ensureFormPortrait, battlePortraitKey, ensureBattlePortrait, ensureMonsterPortrait, monsterPortraitKey, fitPortrait, BattleForm, petPortraitKey, ensurePetPortrait } from '../core/portraitLoader';
 import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../managers/Skills';
 import { Kido, KidoNode } from '../managers/Kido';
 import { Inventory } from '../managers/Inventory';
@@ -1007,6 +1007,7 @@ export class MultiBattleScene extends Phaser.Scene {
       // 与服务端 CombatPlayer 的 hellActive/hollowActive/bankaiActive 标志对齐；
       // char_* 形态立绘按需懒加载，未就绪时回退基础立绘。敌人=boss/elite；灵宠=按 speciesId 取 PNG 立绘（懒加载兜底占位）。
       let portraitKey = '';
+      let isEnemy = false;
       if (isPlayer) {
         if (c.isPet) {
           // 灵宠：按 speciesId 取对应立绘 PNG（服务端 CombatPlayer 下发 speciesId）。
@@ -1036,12 +1037,30 @@ export class MultiBattleScene extends Phaser.Scene {
           }
         }
       } else {
-        portraitKey = (c.type === '妖将' || c.type === '妖王') ? 'enemy_boss' : 'enemy_elite';
+        // 敌人：按 name 取对应怪物立绘 PNG（bestiary.ts 的 name 字段，与 assets/monsters/<name>.png 一字不差）。
+        // 加载中先占位 enemy_boss/enemy_elite，ensureMonsterPortrait 就绪后 renderState 重渲切真图。
+        const mkey = monsterPortraitKey(c.name || '');
+        if (!c.name) {
+          portraitKey = (c.type === '妖将' || c.type === '妖王') ? 'enemy_boss' : 'enemy_elite';
+        } else if (this.textures.exists(mkey)) {
+          portraitKey = mkey;
+        } else {
+          ensureMonsterPortrait(this, c.name, () => this.renderState());
+          portraitKey = (c.type === '妖将' || c.type === '妖王') ? 'enemy_boss' : 'enemy_elite';
+        }
+        isEnemy = true;
       }
       if (portraitKey && this.textures.exists(portraitKey)) {
         if (card.portrait.texture.key !== portraitKey) {
           card.portrait.setTexture(portraitKey);
-          fitPortrait(card.portrait, 120, c.isPet ? 120 : 180); // 灵宠 120×120 方图；人物立绘按 120×180
+          // 灵宠 120×120 方图；敌人宽 120、垂直按原图比例折算；人物立绘 120×180
+          if (c.isPet) {
+            fitPortrait(card.portrait, 120, 120);
+          } else if (isEnemy) {
+            fitPortrait(card.portrait, 120, 9999);
+          } else {
+            fitPortrait(card.portrait, 120, 180);
+          }
         }
         card.portrait.setVisible(true);
       } else {

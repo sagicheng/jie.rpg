@@ -14,6 +14,7 @@ import { getEnemyData, NAMED_ENEMIES } from '../managers/BestiaryData';
 import { Inventory } from '../managers/Inventory';
 import { SaveManager } from '../core/SaveManager';
 import { ZONE_CONFIGS, getDungeonPortal } from '../config/zones';
+import { monsterPortraitKey, ensureMonsterPortrait } from '../core/portraitLoader';
 import { makeSetId } from '../managers/SetSystem';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../managers/QuestData';
 import { Kido, KIDO_NODES, KidoSchool } from '../managers/Kido';
@@ -1006,6 +1007,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** 恢复一只被隐藏的地图怪物（刷新/复原），幂等。重置 HP 并重新显示。 */
+  /** 主场景怪物立绘：水平 targetW，垂直按原图比例折算（不拉伸变形）。 */
+  private fitMonsterSprite(sprite: Phaser.GameObjects.Sprite, targetW: number): void {
+    const fw = sprite.width, fh = sprite.height;
+    if (!fw || !fh) { sprite.setDisplaySize(targetW, targetW); return; }
+    sprite.setDisplaySize(targetW, fh * (targetW / fw));
+  }
+
   private restoreMonster(en: { sprite: Phaser.GameObjects.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; dead?: boolean }): void {
     if (!en.dead) return;
     en.dead = false;
@@ -1201,19 +1209,30 @@ export class GameScene extends Phaser.Scene {
       occupied.push({ x: ex, y: ey });
       const data = getEnemyData(e.name, e.type, e.element, GameState.zone);
       const isBoss = e.isBoss === true || e.type === '\u5996\u5c06' || e.type === '\u5996\u738b';
-      const sprite = this.physics.add.sprite(ex, ey, isBoss ? 'enemy_boss' : 'enemy').setDepth(5);
+      const mkey = monsterPortraitKey(e.name);
+      // 主场景怪物：水平 40px，垂直按原图比例折算；纹理缺失时先用占位图，懒加载真图后切
+      const initialKey = this.textures.exists(mkey) ? mkey : (isBoss ? 'enemy_boss' : 'enemy');
+      const sprite = this.physics.add.sprite(ex, ey, initialKey).setDepth(5);
       this.enemyGroup!.add(sprite);
-      if (!isBoss) {
-        // 显示尺寸固定 40x40；碰撞体按纹理实际尺寸比例自适应（换图不崩、不缩成一点）
-        sprite.setDisplaySize(40, 40);
-        this.fitBody(sprite, 0.85, 0.85);
+      if (!this.textures.exists(mkey)) {
+        ensureMonsterPortrait(this, e.name, () => {
+          if (!sprite.active) return; // 怪物已销毁（切场景/刷新）则跳过，避免操作已销毁对象
+          sprite.setTexture(mkey);
+          this.fitMonsterSprite(sprite, 40);
+          if (label && label.active) label.setPosition(ex, ey - sprite.displayHeight / 2 - 10);
+        });
       }
       if (isBoss) {
-        sprite.setScale(1.6).setTint(0xffcc44);
+        sprite.setTint(0xffcc44);
+        this.fitMonsterSprite(sprite, 40);
         this.fitBody(sprite, 0.9, 0.95);
-        this.tweens.add({ targets: sprite, scaleX: 1.65, scaleY: 1.55, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        // 呼吸动画改为 alpha 脉动，避免覆盖 fitMonsterSprite 设定的 scale（导致尺寸跳变）
+        this.tweens.add({ targets: sprite, alpha: 0.7, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      } else {
+        this.fitMonsterSprite(sprite, 40);
+        this.fitBody(sprite, 0.85, 0.85);
+        const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30); this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       }
-      else { const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30); this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
       const label = this.add.text(ex, ey - sprite.displayHeight / 2 - 10, isBoss ? '\u3010BOSS\u3011' + e.name : e.name, { fontSize: '11px', color: isBoss ? '#ffcc44' : e.type === '\u6076\u5996' ? '#ff8866' : '#aaaabb', fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(6);
       const id = `${GameState.zone}:${idx}`;
       this.enemies.push({ sprite, data, label, id });
