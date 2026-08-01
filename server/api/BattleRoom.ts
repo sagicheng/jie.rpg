@@ -116,6 +116,7 @@ export class BattleRoom extends Room<BattleRoomState> {
       // ownerSid 指向同战斗房内主人战斗员（client.sessionId），用于 onLeave 击倒宠物 + 客户端布局配对
       // （地图房 GameRoom 的 ownerSessionId 映射由独立的 this.ownerSids Map 处理，不依赖此字段）
       pet.ownerSid = client.sessionId;
+      pet.speciesId = petOpt.speciesId || ''; // 灵宠物种 id：战斗卡据此取对应立绘 PNG
       const ps = petOpt.stats;
       pet.maxHp = ps.maxHp ?? ps.hp; pet.hp = ps.hp ?? pet.maxHp;
       pet.atk = ps.atk ?? 0; pet.def = ps.def ?? 0;

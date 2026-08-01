@@ -116,3 +116,46 @@ export function fitPortrait(
   const s = Math.min(maxW / src.w, maxH / src.h);
   img.setDisplaySize(src.w * s, src.h * s);
 }
+
+/**
+ * 灵宠立绘纹理 key（单一事实来源，战斗卡全部走这里）。
+ * 对应资源：assets/pets/<speciesId>.png
+ */
+export function petPortraitKey(speciesId: string): string {
+  return `pet_${speciesId}`;
+}
+
+/**
+ * 灵宠 PNG 按需加载（纹理已存在则同步回调）。
+ * 复用上面的 pendingPortraits 并发去重 Map（key 以 pet_ 前缀区分，不会与角色/斩魄刀立绘冲突）。
+ * 资源就绪后通过 onReady 回调继续渲染（战斗卡 renderState 重渲即可切真图）。
+ */
+export function ensurePetPortrait(
+  scene: Phaser.Scene,
+  speciesId: string,
+  onReady?: (key: string) => void,
+): void {
+  const key = petPortraitKey(speciesId);
+  if (!speciesId) { onReady?.(key); return; }
+  if (scene.textures.exists(key)) { onReady?.(key); return; }
+
+  // 同一张图的重复请求合流，避免 Loader 重复入队报 duplicate key
+  const waiting = pendingPortraits.get(key);
+  if (waiting) { if (onReady) waiting.push(onReady); return; }
+  pendingPortraits.set(key, onReady ? [onReady] : []);
+
+  const loader = scene.load as Phaser.Loader.LoaderPlugin;
+  loader.image(key, `assets/pets/${speciesId}.png`);
+
+  const fire = () => {
+    const cbs = pendingPortraits.get(key) || [];
+    pendingPortraits.delete(key);
+    for (const cb of cbs) cb(key);
+  };
+  if (loader.isLoading()) {
+    loader.once('complete', () => { loader.once('complete', fire); loader.start(); });
+  } else {
+    loader.once('complete', fire);
+    loader.start();
+  }
+}

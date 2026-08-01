@@ -17,7 +17,7 @@
 import Phaser from 'phaser';
 import { getClient } from '../core/Net';
 import { GameState } from '../managers/GameState';
-import { ensureFormPortrait, battlePortraitKey, ensureBattlePortrait, fitPortrait, BattleForm } from '../core/portraitLoader';
+import { ensureFormPortrait, battlePortraitKey, ensureBattlePortrait, fitPortrait, BattleForm, petPortraitKey, ensurePetPortrait } from '../core/portraitLoader';
 import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../managers/Skills';
 import { Kido, KidoNode } from '../managers/Kido';
 import { Inventory } from '../managers/Inventory';
@@ -1005,11 +1005,24 @@ export class MultiBattleScene extends Phaser.Scene {
       }
       // 立绘纹理：玩家按「形态优先级」选图（hell > hollow > bankai > 基础），
       // 与服务端 CombatPlayer 的 hellActive/hollowActive/bankaiActive 标志对齐；
-      // char_* 形态立绘按需懒加载，未就绪时回退基础立绘。敌人=boss/elite；灵宠=占位。
+      // char_* 形态立绘按需懒加载，未就绪时回退基础立绘。敌人=boss/elite；灵宠=按 speciesId 取 PNG 立绘（懒加载兜底占位）。
       let portraitKey = '';
       if (isPlayer) {
         if (c.isPet) {
-          portraitKey = 'npc'; // 宠物暂无立绘，用绿块占位
+          // 灵宠：按 speciesId 取对应立绘 PNG（服务端 CombatPlayer 下发 speciesId）。
+          // 加载中先占位 'npc'，ensurePetPortrait 就绪后 renderState 重渲切真图。
+          const sid = (c.speciesId || '') as string;
+          if (sid) {
+            const key = petPortraitKey(sid);
+            if (!this.textures.exists(key)) {
+              ensurePetPortrait(this, sid, () => this.renderState());
+              portraitKey = 'npc';
+            } else {
+              portraitKey = key;
+            }
+          } else {
+            portraitKey = 'npc'; // 无 speciesId 兜底占位
+          }
         } else {
           const g = (c.gender || GameState.gender) as 'male' | 'female';
           const form: BattleForm =
@@ -1028,7 +1041,7 @@ export class MultiBattleScene extends Phaser.Scene {
       if (portraitKey && this.textures.exists(portraitKey)) {
         if (card.portrait.texture.key !== portraitKey) {
           card.portrait.setTexture(portraitKey);
-          fitPortrait(card.portrait, 120, 180); // 各形态原图长宽比不同，等比适配不拉伸
+          fitPortrait(card.portrait, 120, c.isPet ? 120 : 180); // 灵宠 120×120 方图；人物立绘按 120×180
         }
         card.portrait.setVisible(true);
       } else {

@@ -71,6 +71,8 @@ export class CombatPlayer extends Schema {
   @type('boolean') isPet = false;
   /** 灵宠主人 sessionId（人物战斗员此字段为空）。 */
   @type('string') ownerSid = '';
+  /** 灵宠物种 id（用于战斗卡选取对应立绘 PNG；人物战斗员此字段为空）。 */
+  @type('string') speciesId = '';
   @type('number') hp = 0;
   @type('number') maxHp = 0;
   @type('number') atk = 0;

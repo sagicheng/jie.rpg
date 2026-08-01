@@ -35,6 +35,8 @@ import { listSetProgress, setShortName } from '../../managers/SetSystem';
 
 import { PET_SPECIES_CLIENT, petIcon, petColor, computePetAura, petElementInfo, petQualityInfo, petSkillNames } from '../../managers/PetSystem';
 
+import { petPortraitKey, ensurePetPortrait, fitPortrait } from '../../core/portraitLoader';
+
 import { applyConsumable, getConsumableEffect } from '../../managers/ConsumableSystem';
 
 import { createPlayerStatus } from '../../managers/StatusSystem';
@@ -178,13 +180,35 @@ export function renderPetPanel(scene: GameScene): Phaser.GameObjects.Container {
     card.strokeRoundedRect(cx0, 0, cw, CARD_H, 10);
     cardC.add(card);
 
-    // 物种图标瓦片（仍按物种色，区分物种；与品质框线互不冲突）
-    const ix = cx0 + 18, iy = CARD_H / 2;
-    const tile = scene.add.graphics(); tile.fillStyle(petColor(pet.speciesId), 0.22); tile.fillRoundedRect(ix, iy - 32, 64, 64, 10); tile.lineStyle(2, petColor(pet.speciesId), 0.8); tile.strokeRoundedRect(ix, iy - 32, 64, 64, 10); cardC.add(tile);
-    cardC.add(scene.add.text(ix + 32, iy, petIcon(pet.speciesId), { fontSize: '34px' }).setOrigin(0.5));
+    // 灵宠立绘（按 speciesId 取 PNG，懒加载；未就绪回退物种色块 + emoji，与战斗卡同一套）
+    const iconSize = 120;
+    const ix = cx0 + 14, iy = CARD_H / 2;
+    const iconKey = petPortraitKey(pet.speciesId);
+    // 物种色底块（比立绘略大，作为框底，区分物种；与品质框线互不冲突）
+    const tile = scene.add.graphics();
+    tile.fillStyle(petColor(pet.speciesId), 0.22);
+    tile.fillRoundedRect(ix - 6, iy - iconSize / 2 - 6, iconSize + 12, iconSize + 12, 12);
+    tile.lineStyle(2, petColor(pet.speciesId), 0.8);
+    tile.strokeRoundedRect(ix - 6, iy - iconSize / 2 - 6, iconSize + 12, iconSize + 12, 12);
+    cardC.add(tile);
+    // 立绘主体（等比适配不拉伸；纹理缺失时先画 __MISSING 占位框）
+    const petImg = scene.add.image(ix + iconSize / 2, iy, scene.textures.exists(iconKey) ? iconKey : '__MISSING').setOrigin(0.5);
+    if (scene.textures.exists(iconKey)) fitPortrait(petImg, iconSize, iconSize);
+    cardC.add(petImg);
+    // 立绘未就绪：先放 emoji 占位，加载完成切真图（面板已关闭则跳过，避免操作已销毁对象）
+    if (!scene.textures.exists(iconKey)) {
+      const ph = scene.add.text(ix + iconSize / 2, iy, petIcon(pet.speciesId), { fontSize: '44px' }).setOrigin(0.5);
+      cardC.add(ph);
+      ensurePetPortrait(scene, pet.speciesId, () => {
+        if (!petImg.scene) { ph.destroy(); return; }
+        petImg.setTexture(iconKey);
+        fitPortrait(petImg, iconSize, iconSize);
+        ph.destroy();
+      });
+    }
 
-    // 头部：名称 + 等级
-    const tx = ix + 86;
+    // 头部：名称 + 等级（文字起点让开 120 立绘区）
+    const tx = ix + iconSize + 22;
     cardC.add(scene.add.text(tx, 18, `${pet.name}`, { fontSize: '18px', color: '#ffffff', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0, 0.5));
     cardC.add(scene.add.text(tx + 4, 42, `Lv.${pet.level}`, { fontSize: '14px', color: '#ffd27a', padding: { x: 4, y: 2 } }).setOrigin(0, 0.5));
     const el = petElementInfo(pet.element);
