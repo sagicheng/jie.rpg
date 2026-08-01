@@ -56,32 +56,57 @@ export function battlePortraitKey(gender: 'male' | 'female', form: BattleForm = 
 
 /** 同一 key 的并发懒加载去重：key → 等待回调队列 */
 const pendingPortraits: Map<string, ((key: string) => void)[]> = new Map();
+/**
+ * 加载失败（资源缺失 404）永久记录：后续对该 key 的加载请求直接跳过，
+ * 不再发网络请求、不再触发 loaderror——根除「缺图怪报复性刷屏把主线程打满 → 整页卡死」。
+ */
+const failedPortraits: Set<string> = new Set();
 
 /**
- * 立绘按需加载（纹理已存在则同步回调）。
- * char_* 形态立绘不进启动预载（见 BootScene），首次释放时才拉取。
+ * 立绘按需加载核心（纹理已存在则同步回调）。
+ * - 同一张图并发请求合流，避免 Loader 重复入队报 duplicate key
+ * - 纹理【真实加载成功】才回调 onReady；缺失文件不回调（调用方保持不可见/占位）
+ * - 失败 key 永久缓存，永不重试
  */
-export function ensureBattlePortrait(
+function ensurePortrait(
   scene: Phaser.Scene,
   key: string,
+  path: string,
   onReady?: (key: string) => void,
 ): void {
-  if (!key) return;
+  if (!key) { onReady?.(key); return; }
   if (scene.textures.exists(key)) { onReady?.(key); return; }
+  if (failedPortraits.has(key)) return; // 已知缺失：直接跳过，不发请求、不报错
 
-  // 同一张图的重复请求合流，避免 Loader 重复入队报 duplicate key
   const waiting = pendingPortraits.get(key);
   if (waiting) { if (onReady) waiting.push(onReady); return; }
   pendingPortraits.set(key, onReady ? [onReady] : []);
 
   const loader = scene.load as Phaser.Loader.LoaderPlugin;
-  loader.image(key, `assets/characters/${key}.png`);
+
+  const onError = (file: { key?: string } | undefined) => {
+    if (file && file.key === key) {
+      failedPortraits.add(key);
+      pendingPortraits.delete(key);
+      loader.off('loaderror', onError);
+    }
+  };
+  loader.on('loaderror', onError);
 
   const fire = () => {
-    const cbs = pendingPortraits.get(key) || [];
+    loader.off('loaderror', onError);
+    const cbs = pendingPortraits.get(key);
+    if (!cbs) return;
     pendingPortraits.delete(key);
-    for (const cb of cbs) cb(key);
+    // 仅在纹理真实加载成功时才回调；失败则标记缓存，调用方保持隐藏/占位
+    if (scene.textures.exists(key)) {
+      for (const cb of cbs) { try { cb(key); } catch (e) { console.error('[portrait] onReady error', key, e); } }
+    } else {
+      failedPortraits.add(key);
+    }
   };
+
+  loader.image(key, path);
   if (loader.isLoading()) {
     loader.once('complete', () => { loader.once('complete', fire); loader.start(); });
   } else {
@@ -94,6 +119,14 @@ export function ensureBattlePortrait(
  * 力量形态立绘（卍解/虚化/狱解）懒加载：仅加载「当前性别」那一张。
  * 保留旧签名供全屏演出调用。
  */
+export function ensureBattlePortrait(
+  scene: Phaser.Scene,
+  key: string,
+  onReady?: (key: string) => void,
+): void {
+  ensurePortrait(scene, key, `assets/characters/${key}.png`, onReady);
+}
+
 export function ensureFormPortrait(
   scene: Phaser.Scene,
   which: 'hollow' | 'hell' | 'bankai',
@@ -137,27 +170,7 @@ export function ensurePetPortrait(
 ): void {
   const key = petPortraitKey(speciesId);
   if (!speciesId) { onReady?.(key); return; }
-  if (scene.textures.exists(key)) { onReady?.(key); return; }
-
-  // 同一张图的重复请求合流，避免 Loader 重复入队报 duplicate key
-  const waiting = pendingPortraits.get(key);
-  if (waiting) { if (onReady) waiting.push(onReady); return; }
-  pendingPortraits.set(key, onReady ? [onReady] : []);
-
-  const loader = scene.load as Phaser.Loader.LoaderPlugin;
-  loader.image(key, `assets/pets/${speciesId}.png`);
-
-  const fire = () => {
-    const cbs = pendingPortraits.get(key) || [];
-    pendingPortraits.delete(key);
-    for (const cb of cbs) cb(key);
-  };
-  if (loader.isLoading()) {
-    loader.once('complete', () => { loader.once('complete', fire); loader.start(); });
-  } else {
-    loader.once('complete', fire);
-    loader.start();
-  }
+  ensurePortrait(scene, key, `assets/pets/${speciesId}.png`, onReady);
 }
 
 /**
@@ -172,6 +185,9 @@ export function monsterPortraitKey(name: string): string {
  * 怪物 PNG 按需加载（纹理已存在则同步回调）。
  * 复用 pendingPortraits 并发去重 Map（key 以 mob_ 前缀区分，不与角色/灵宠立绘冲突）。
  * 资源就绪后通过 onReady 回调继续渲染（主场景 setTexture 切真图 / 战斗卡 renderState 重渲）。
+ *
+ * 注意：缺图怪（如未出图的随从 虚·触手 等）会在首次 attempt 失败后进入 failedPortraits 缓存，
+ * 此后永不重试、永不回调——调用方据此保持该怪不可见且不参与碰撞。
  */
 export function ensureMonsterPortrait(
   scene: Phaser.Scene,
@@ -180,24 +196,29 @@ export function ensureMonsterPortrait(
 ): void {
   const key = monsterPortraitKey(name);
   if (!name) { onReady?.(key); return; }
-  if (scene.textures.exists(key)) { onReady?.(key); return; }
+  ensurePortrait(scene, key, `assets/monsters/${name}.png`, onReady);
+}
 
-  const waiting = pendingPortraits.get(key);
-  if (waiting) { if (onReady) waiting.push(onReady); return; }
-  pendingPortraits.set(key, onReady ? [onReady] : []);
+/**
+ * 区域 Boss 立绘纹理 key（单一事实来源）。
+ * 资源单独存放在 assets/monsters/boss/<name>.png，与 A 表普通怪（assets/monsters/<name>.png）区分，
+ * 方便美术维护。name 与 BossMechanics.ts 的 BOSS_CONFIG 键一字不差。
+ */
+export function bossPortraitKey(name: string): string {
+  return `boss_${name}`;
+}
 
-  const loader = scene.load as Phaser.Loader.LoaderPlugin;
-  loader.image(key, `assets/monsters/${name}.png`);
-
-  const fire = () => {
-    const cbs = pendingPortraits.get(key) || [];
-    pendingPortraits.delete(key);
-    for (const cb of cbs) cb(key);
-  };
-  if (loader.isLoading()) {
-    loader.once('complete', () => { loader.once('complete', fire); loader.start(); });
-  } else {
-    loader.once('complete', fire);
-    loader.start();
-  }
+/**
+ * 区域 Boss PNG 按需加载（纹理已存在则同步回调）。
+ * 复用 pendingPortraits 并发去重 Map（key 以 boss_ 前缀区分，不与普通怪 mob_ 冲突）。
+ * 资源就绪后通过 onReady 回调继续渲染。
+ */
+export function ensureBossPortrait(
+  scene: Phaser.Scene,
+  name: string,
+  onReady?: (key: string) => void,
+): void {
+  const key = bossPortraitKey(name);
+  if (!name) { onReady?.(key); return; }
+  ensurePortrait(scene, key, `assets/monsters/boss/${name}.png`, onReady);
 }

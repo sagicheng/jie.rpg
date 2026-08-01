@@ -17,7 +17,7 @@
 import Phaser from 'phaser';
 import { getClient } from '../core/Net';
 import { GameState } from '../managers/GameState';
-import { ensureFormPortrait, battlePortraitKey, ensureBattlePortrait, ensureMonsterPortrait, monsterPortraitKey, fitPortrait, BattleForm, petPortraitKey, ensurePetPortrait } from '../core/portraitLoader';
+import { ensureFormPortrait, battlePortraitKey, ensureBattlePortrait, ensureMonsterPortrait, monsterPortraitKey, fitPortrait, BattleForm, petPortraitKey, ensurePetPortrait, bossPortraitKey, ensureBossPortrait } from '../core/portraitLoader';
 import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../managers/Skills';
 import { Kido, KidoNode } from '../managers/Kido';
 import { Inventory } from '../managers/Inventory';
@@ -847,6 +847,7 @@ export class MultiBattleScene extends Phaser.Scene {
   // ——— 渲染（DQ式回合：指令阶段/执行阶段两态）———
   private renderState(): void {
     if (!this.room || !this.room.state) return;
+    try {
     const s = this.room.state;
 
     // 诊断：每帧首次渲染时打印 players 快照（仅首帧，防刷屏）
@@ -918,6 +919,12 @@ export class MultiBattleScene extends Phaser.Scene {
           target.onMultiBattleEnd(s.phase, this.monsterId, this.enemyData, this.lastReward ?? undefined);
         }
       }
+    }
+    } catch (err) {
+      // 渲染异常（如 Boss 卡牌数据/立绘异常）若不打捞，会中断 Phaser 渲染循环表现为"卡死"。
+      // 这里捕获并显式暴露堆栈，且不让单帧渲染失败拖垮整场战斗。
+      console.error('[renderState] 异常（enemyParty=' + JSON.stringify((this.enemyParty || []).map((c: any) => c?.name)) + '）：', err);
+      (window as any).__fatal?.('renderState 异常（Boss/敌卡渲染）: ' + (err as any)?.message, (err as any)?.stack);
     }
   }
 
@@ -1039,14 +1046,16 @@ export class MultiBattleScene extends Phaser.Scene {
       } else {
         // 敌人：按 name 取对应怪物立绘 PNG（bestiary.ts 的 name 字段，与 assets/monsters/<name>.png 一字不差）。
         // 加载中先占位 enemy_boss/enemy_elite，ensureMonsterPortrait 就绪后 renderState 重渲切真图。
-        const mkey = monsterPortraitKey(c.name || '');
+        const isBossEnemy = c.type === '妖将' || c.type === '妖王';
+        const mkey = isBossEnemy ? bossPortraitKey(c.name || '') : monsterPortraitKey(c.name || '');
         if (!c.name) {
-          portraitKey = (c.type === '妖将' || c.type === '妖王') ? 'enemy_boss' : 'enemy_elite';
+          portraitKey = isBossEnemy ? 'enemy_boss' : 'enemy_elite';
         } else if (this.textures.exists(mkey)) {
           portraitKey = mkey;
         } else {
-          ensureMonsterPortrait(this, c.name, () => this.renderState());
-          portraitKey = (c.type === '妖将' || c.type === '妖王') ? 'enemy_boss' : 'enemy_elite';
+          if (isBossEnemy) ensureBossPortrait(this, c.name, () => this.renderState());
+          else ensureMonsterPortrait(this, c.name, () => this.renderState());
+          portraitKey = isBossEnemy ? 'enemy_boss' : 'enemy_elite';
         }
         isEnemy = true;
       }
@@ -1057,7 +1066,8 @@ export class MultiBattleScene extends Phaser.Scene {
           if (c.isPet) {
             fitPortrait(card.portrait, 120, 120);
           } else if (isEnemy) {
-            fitPortrait(card.portrait, 120, 9999);
+            if (c.type === '妖将' || c.type === '妖王') card.portrait.setDisplaySize(120, 180);
+            else fitPortrait(card.portrait, 120, 9999);
           } else {
             fitPortrait(card.portrait, 120, 180);
           }

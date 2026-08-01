@@ -14,7 +14,7 @@ import { getEnemyData, NAMED_ENEMIES } from '../managers/BestiaryData';
 import { Inventory } from '../managers/Inventory';
 import { SaveManager } from '../core/SaveManager';
 import { ZONE_CONFIGS, getDungeonPortal } from '../config/zones';
-import { monsterPortraitKey, ensureMonsterPortrait } from '../core/portraitLoader';
+import { monsterPortraitKey, ensureMonsterPortrait, bossPortraitKey, ensureBossPortrait } from '../core/portraitLoader';
 import { makeSetId } from '../managers/SetSystem';
 import { MAIN_QUESTS, MAIN_QUEST_ORDER, SIDE_QUESTS } from '../managers/QuestData';
 import { Kido, KIDO_NODES, KidoSchool } from '../managers/Kido';
@@ -834,6 +834,7 @@ export class GameScene extends Phaser.Scene {
   /** 玩家与怪物物理体重叠时触发战斗（比中心点距离判定更稳，贴合"走上去就打"的直觉）。 */
   private onEnemyOverlap(_player: ArcadeOverlapTarget, enemySprite: ArcadeOverlapTarget): void {
     const en = this.enemies.find(e => e.sprite === enemySprite);
+    if (!en || !en.sprite.visible) return; // 看不见的怪（无立绘/未加载）不触发战斗
     this.enterBattle(en);
   }
 
@@ -843,6 +844,7 @@ export class GameScene extends Phaser.Scene {
     const px = this.player.x, py = this.player.y;
     const en = this.enemies.find(e => {
       if (e.dead || e.data.hp <= 0) return false;
+      if (!e.sprite.visible) return false; // 看不见的怪（无立绘/未加载）不计入碰撞
       if (this.gameRoom && !this.isMonsterAvailable(e.id)) return false;
       return Phaser.Math.Distance.Between(px, py, e.sprite.x, e.sprite.y) < 42;
     });
@@ -851,19 +853,29 @@ export class GameScene extends Phaser.Scene {
 
   private enterBattle(en?: { sprite: Phaser.Physics.Arcade.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; id: string; dead?: boolean }): void {
     if (!en) return;
+    if (!en.sprite.visible) return; // 看不见的怪不进战斗
     if (this.battleCooldown > 0 || this.isInDialogue) return;
     if (en.dead || en.data.hp <= 0) return;
     if (this.gameRoom && !this.isMonsterAvailable(en.id)) return;
-    // 联机：进入战斗即锁定该怪，对其余玩家消失（防抢怪/卡刷新时间）
-    if (this.gameRoom) { this.gameRoom.send('enterBattle', { id: en.id }); this.setBattling(true); }
-    this.battleCooldown = 180;
-    this.scene.pause();
-    if (this.gameRoom) {
-      // 联机：进权威战斗房间（单人独占该怪，根除双杀双掉落）；真实怪数据传给服务端结算
-      this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, enemyParty: this.buildEncounterParty(en.data), monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), ownerSessionId: this.mySessionId });
-    } else {
-      // 离线兜底：本地战斗
-      this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
+    try {
+      // 联机：进入战斗即锁定该怪，对其余玩家消失（防抢怪/卡刷新时间）
+      if (this.gameRoom) { this.gameRoom.send('enterBattle', { id: en.id }); this.setBattling(true); }
+      this.battleCooldown = 180;
+      this.scene.pause();
+      if (this.gameRoom) {
+        // 联机：进权威战斗房间（单人独占该怪，根除双杀双掉落）；真实怪数据传给服务端结算
+        this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, enemyParty: this.buildEncounterParty(en.data), monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), ownerSessionId: this.mySessionId });
+      } else {
+        // 离线兜底：本地战斗
+        this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
+      }
+    } catch (err) {
+      // 进入战斗抛异常会导致渲染循环中断（表现为"卡死"）。捕获并显式暴露堆栈，便于定位（如 Boss 数据异常）。
+      console.error('[enterBattle] 异常（怪物=' + (en.data?.name ?? '?') + '）：', err);
+      (window as any).__fatal?.('enterBattle 异常（怪物=' + (en.data?.name ?? '?') + '）: ' + (err as any)?.message, (err as any)?.stack);
+      // 回滚暂停/锁定状态，避免场景卡在半残态
+      if (this.scene.isPaused()) this.scene.resume();
+      if (this.gameRoom) this.setBattling(false);
     }
   }
 
@@ -1209,31 +1221,36 @@ export class GameScene extends Phaser.Scene {
       occupied.push({ x: ex, y: ey });
       const data = getEnemyData(e.name, e.type, e.element, GameState.zone);
       const isBoss = e.isBoss === true || e.type === '\u5996\u5c06' || e.type === '\u5996\u738b';
-      const mkey = monsterPortraitKey(e.name);
-      // 主场景怪物：水平 40px，垂直按原图比例折算；纹理缺失时先用占位图，懒加载真图后切
-      const initialKey = this.textures.exists(mkey) ? mkey : (isBoss ? 'enemy_boss' : 'enemy');
-      const sprite = this.physics.add.sprite(ex, ey, initialKey).setDepth(5);
+      // 普通怪走 assets/monsters/<name>.png；Boss 立绘单独放 assets/monsters/boss/<name>.png
+      const pkey = isBoss ? bossPortraitKey(e.name) : monsterPortraitKey(e.name);
+      // 只显示有真实立绘的怪：无图则完全不显示、不参与碰撞（取消 enemy 通用占位）
+      // 占位纹理用程序化 enemy_boss（BootScene 生成，且 setVisible(false) 永不显示），真立绘就绪后由 applyPortrait 替换；无图则始终不可见、不参与碰撞
+      const sprite = this.physics.add.sprite(ex, ey, 'enemy_boss').setDepth(5).setVisible(false);
       this.enemyGroup!.add(sprite);
-      if (!this.textures.exists(mkey)) {
-        ensureMonsterPortrait(this, e.name, () => {
-          if (!sprite.active) return; // 怪物已销毁（切场景/刷新）则跳过，避免操作已销毁对象
-          sprite.setTexture(mkey);
-          this.fitMonsterSprite(sprite, 40);
-          if (label && label.active) label.setPosition(ex, ey - sprite.displayHeight / 2 - 10);
-        });
+      const label = this.add.text(ex, ey, isBoss ? '【BOSS】' + e.name : e.name, { fontSize: '11px', color: isBoss ? '#ffcc44' : e.type === '恶妖' ? '#ff8866' : '#aaaabb', fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(6).setVisible(false);
+      const applyPortrait = () => {
+        if (!sprite.active) return; // 怪物已销毁（切场景/刷新）则跳过，避免操作已销毁对象
+        sprite.setTexture(pkey);
+        if (isBoss) sprite.setDisplaySize(60, 90); else this.fitMonsterSprite(sprite, 40);
+        sprite.setVisible(true);
+        label.setVisible(true);
+        label.setPosition(ex, ey - sprite.displayHeight / 2 - 10);
+        this.fitBody(sprite, isBoss ? 0.9 : 0.85, isBoss ? 0.95 : 0.85);
+      };
+      if (this.textures.exists(pkey)) {
+        applyPortrait();
+      } else if (isBoss) {
+        ensureBossPortrait(this, e.name, applyPortrait);
+      } else {
+        ensureMonsterPortrait(this, e.name, applyPortrait);
       }
       if (isBoss) {
         sprite.setTint(0xffcc44);
-        this.fitMonsterSprite(sprite, 40);
-        this.fitBody(sprite, 0.9, 0.95);
-        // 呼吸动画改为 alpha 脉动，避免覆盖 fitMonsterSprite 设定的 scale（导致尺寸跳变）
+        // 呼吸动画改为 alpha 脉动，避免覆盖 setDisplaySize 设定的尺寸（导致跳变）
         this.tweens.add({ targets: sprite, alpha: 0.7, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       } else {
-        this.fitMonsterSprite(sprite, 40);
-        this.fitBody(sprite, 0.85, 0.85);
-        const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30); this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30);         this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       }
-      const label = this.add.text(ex, ey - sprite.displayHeight / 2 - 10, isBoss ? '\u3010BOSS\u3011' + e.name : e.name, { fontSize: '11px', color: isBoss ? '#ffcc44' : e.type === '\u6076\u5996' ? '#ff8866' : '#aaaabb', fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(6);
       const id = `${GameState.zone}:${idx}`;
       this.enemies.push({ sprite, data, label, id });
     });

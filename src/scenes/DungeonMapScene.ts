@@ -22,6 +22,7 @@ import { Inventory } from '../managers/Inventory';
 import { buildDungeonParty, buildClientBattleLoadout, getDungeonStageVisual } from '../managers/dungeon';
 import { EnemyData } from '../managers/BattleData';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
+import { bossPortraitKey, ensureBossPortrait, monsterPortraitKey, ensureMonsterPortrait } from '../core/portraitLoader';
 // 复用 GameScene 同一套面板系统（背包/属性/鬼道/图鉴/任务/标题），让副本内也能开 C/B 等界面。
 // DungeonMapScene 实现与 GameScene 同款的「面板宿主契约」（公开字段 + pauseForMenu/resumeFromMenu），
 // 调用时以 `this as any` 桥接（不改 panels.ts，零回归风险）。
@@ -200,19 +201,37 @@ export class DungeonMapScene extends Phaser.Scene {
       }
       occupied.push({ x: ex, y: ey });
       const isBoss = data.type === '妖将' || data.type === '妖王';
-      const sprite = this.physics.add.sprite(ex, ey, isBoss ? 'enemy_boss' : 'enemy').setDepth(5);
-      if (isBoss) {
-        sprite.setScale(1.6).setTint(0xffcc44);
-        this.tweens.add({ targets: sprite, scaleX: 1.65, scaleY: 1.55, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      } else {
-        // 普通怪原地不动（与全游「明雷」一致）：之前加了位置游走 tween，玩家走过去时怪会闪躲，
-        // 导致碰撞判定最近距离常 >31px 擦肩而过、不进战斗。改为原地轻微呼吸动画保留生命感。
-        this.tweens.add({ targets: sprite, scaleX: 1.05, scaleY: 0.97, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      }
-      const label = this.add.text(ex, ey - sprite.height / 2 - 10, isBoss ? `【BOSS】${data.name}` : data.name, {
+      const pkey = isBoss ? bossPortraitKey(data.name) : monsterPortraitKey(data.name);
+      // 只显示有真实立绘的怪：无图则不显示、不参与碰撞（取消 enemy 通用占位）
+      // 占位纹理用程序化 enemy_boss（BootScene 生成，且 setVisible(false) 永不显示），真立绘就绪后由 applyPortrait 替换；无图则始终不可见、不参与碰撞
+      const sprite = this.physics.add.sprite(ex, ey, 'enemy_boss').setDepth(5).setVisible(false);
+      const label = this.add.text(ex, ey, isBoss ? `【BOSS】${data.name}` : data.name, {
         fontSize: '11px', color: isBoss ? '#ffcc44' : data.type === '恶妖' ? '#ff8866' : '#aaaabb',
         fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 },
-      }).setOrigin(0.5).setDepth(6);
+      }).setOrigin(0.5).setDepth(6).setVisible(false);
+      const applyPortrait = () => {
+        if (!sprite.active) return;
+        sprite.setTexture(pkey);
+        if (isBoss) sprite.setDisplaySize(60, 90);
+        else { const fw = sprite.width, fh = sprite.height; sprite.setDisplaySize(40, fh * (40 / fw)); }
+        sprite.setVisible(true);
+        label.setVisible(true);
+        label.setPosition(ex, ey - sprite.displayHeight / 2 - 10);
+      };
+      if (this.textures.exists(pkey)) {
+        applyPortrait();
+      } else if (isBoss) {
+        ensureBossPortrait(this, data.name, applyPortrait);
+      } else {
+        ensureMonsterPortrait(this, data.name, applyPortrait);
+      }
+      if (isBoss) {
+        sprite.setTint(0xffcc44);
+        this.tweens.add({ targets: sprite, alpha: 0.7, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      } else {
+        // 普通怪原地不动（与全游「明雷」一致）：原地轻微呼吸动画保留生命感。
+        this.tweens.add({ targets: sprite, scaleX: 1.05, scaleY: 0.97, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      }
       this.enemies.push({ sprite, data, label, id: `${this.dungeonId}:${this.localStage}:${idx}` });
     });
   }
@@ -456,6 +475,7 @@ export class DungeonMapScene extends Phaser.Scene {
     // 找到最近的一只明雷怪（非整组），仅传该只进战斗
     let nearest: { enemy: DungeonEnemy; dist: number } | null = null;
     for (const en of this.enemies) {
+      if (!en.sprite.visible) continue; // 看不见的怪（无立绘/未加载）不计入碰撞
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, en.sprite.x, en.sprite.y);
       if (d < 52 && (!nearest || d < nearest.dist)) nearest = { enemy: en, dist: d };
     }

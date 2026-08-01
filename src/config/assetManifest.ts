@@ -22,7 +22,6 @@ export const ASSET_IMAGES: AssetImage[] = [
   // player_* = 卍解形态立绘（同时兼作地图/副本行走图底图），勿与基础立绘混用
   { key: 'player_male', path: 'assets/characters/player_male.png' },
   { key: 'player_female', path: 'assets/characters/player_female.png' },
-  { key: 'enemy', path: 'assets/monsters/enemy.png' },
   { key: 'bg_battle', path: 'assets/backgrounds/bg_battle.png' },
   { key: 'bg_town', path: 'assets/backgrounds/bg_town.png' },
 

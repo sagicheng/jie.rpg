@@ -50,6 +50,33 @@ const config: Phaser.Types.Core.GameConfig = {
 
 const game = new Phaser.Game(config);
 
+// ═══ 全局错误可视化（避免"异常打断渲染循环 → 静默卡死"难以排查）═══
+// 背景：main.ts 上方已禁用 WebAudio 以防 AudioContext 卡死；但任何运行期异常
+// （如 Boss 碰撞进入战斗时抛错）都会中断 Phaser 的 requestAnimationFrame 循环，
+// 表现为"游戏直接卡死、任何操作无响应"。此处把未捕获异常/Promise rejection
+// 直接渲染到屏幕上，便于真机第一时间看到堆栈（而不是对着黑屏猜）。
+function showFatalOverlay(title: string, detail?: string): void {
+  let el = document.getElementById('fatal-error-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fatal-error-overlay';
+    el.style.cssText = 'position:fixed;left:0;top:0;right:0;z-index:2147483647;max-height:55vh;overflow:auto;background:rgba(24,0,0,0.94);color:#ff9a9a;font:12px/1.5 Consolas,Menlo,monospace;padding:14px 18px;white-space:pre-wrap;border-bottom:2px solid #ff4d4d;box-shadow:0 4px 18px rgba(0,0,0,0.6);';
+    document.body.appendChild(el);
+  }
+  el.textContent = `⚠ ${title}${detail ? '\n\n' + detail : ''}\n\n[按 F5 刷新重试 · 请把这段报错发给开发]`;
+}
+(window as any).__fatal = showFatalOverlay;
+window.addEventListener('error', (e: ErrorEvent) => {
+  const err = (e as any).error ?? e;
+  showFatalOverlay('运行期异常（渲染循环已中断）: ' + ((e as any).message || String(err)), (err as any)?.stack);
+  console.error('[FATAL]', (e as any).error ?? e);
+});
+window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
+  const r = (e as any).reason;
+  showFatalOverlay('未处理的 Promise 拒绝: ' + (r?.message ?? String(r)), r?.stack);
+  console.error('[FATAL] unhandledrejection', r);
+});
+
 
 
 // 联机：切除"窗口失焦/隐藏即暂停渲染"的监听，让后台窗口也持续重绘。
