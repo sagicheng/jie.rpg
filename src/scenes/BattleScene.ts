@@ -30,6 +30,7 @@ import {
 import { applyConsumable, getConsumableEffect, CONSUMABLES, TempBuff } from '../managers/ConsumableSystem';
 import { getStatusHitRate, getEnemyElementInfo, getElementMultiplier, generateNamedLoot, NAMED_ENEMIES } from '../managers/BestiaryData';
 import { setupBoss, runBossMechanics, onBossAddDeath } from '../managers/BossMechanics';
+import { enemyDisplayName } from '../config/entityNames';
 import {
   getSkillMechanics, applyConditionalDamage, hasIgnoreDef, getHpCost,
   getMultiHitCount, getLifestealPct, getMpStealPct, getSpeedScaling,
@@ -243,7 +244,7 @@ export class BattleScene extends Phaser.Scene {
       this.enemySprites.push(sprite);
 
       // 名字 + 类型（立绘上方）
-      const nameText = this.add.text(pos.x, pos.y - 70, enemy.name, {
+      const nameText = this.add.text(pos.x, pos.y - 70, enemyDisplayName(enemy.name), {
         fontSize: '13px', color: '#ff6666', fontFamily: 'serif', fontStyle: 'bold', padding: { y: 2 },
       }).setOrigin(0.5);
       this.enemyNameTexts.push(nameText);
@@ -302,7 +303,7 @@ export class BattleScene extends Phaser.Scene {
 
     // 开场动画
     this.spritesFadeIn(() => {
-      const names = this.enemies.map(e => e.name).join('、');
+      const names = this.enemies.map(e => enemyDisplayName(e.name)).join('、');
       this.enemyNameTexts.forEach(t => t.setVisible(false));
       this.enemyTypeTexts.forEach(t => t.setVisible(false));
       // 检测Boss
@@ -313,7 +314,7 @@ export class BattleScene extends Phaser.Scene {
           fontSize: '36px', color: '#ff3333', fontStyle: 'bold',
           backgroundColor: '#1a0000dd', padding: { x: 40, y: 16 },
         }).setOrigin(0.5).setDepth(500).setAlpha(0);
-        const bossName = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40, boss.name, {
+        const bossName = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40, enemyDisplayName(boss.name), {
           fontSize: '28px', color: '#ffcc44', fontStyle: 'bold',
           backgroundColor: '#000000dd', padding: { x: 30, y: 10 },
         }).setOrigin(0.5).setDepth(500).setAlpha(0);
@@ -384,7 +385,7 @@ export class BattleScene extends Phaser.Scene {
       this.time.delayedCall(500, () => this.safeShowCommands());
     } else {
       const fastest = this.enemies.find(e => e.spd === fastestEnemySpd && e.hp > 0);
-      this.logText.setText((fastest?.name || 'Enemy') + ' acts first!');
+      this.logText.setText((fastest?.name ? enemyDisplayName(fastest.name) : 'Enemy') + ' acts first!');
       this.startEnemyPhase();
     }
   }
@@ -446,12 +447,12 @@ export class BattleScene extends Phaser.Scene {
 
     // 状态检定：冻结/束缚/封印/眩晕 → 无法行动
     if (isEnemyBlocked(ks)) {
-      this.logText.setText(`${enemy.name} 被控制，无法行动！${getEnemyStatusIcons(ks)}`);
+      this.logText.setText(`${enemyDisplayName(enemy.name)} 被控制，无法行动！${getEnemyStatusIcons(ks)}`);
       return;
     }
     // 恐惧 → 30%概率跳过
     if (doesEnemySkipFromFear(ks)) {
-      this.logText.setText(`${enemy.name} 陷入恐惧，不敢行动！`);
+      this.logText.setText(`${enemyDisplayName(enemy.name)} 陷入恐惧，不敢行动！`);
       return;
     }
 
@@ -518,7 +519,7 @@ export class BattleScene extends Phaser.Scene {
         statusMsg = ' [你抵抗了异常]';
       }
     }
-    this.logText.setText(`${enemy.name} 使用 ${skill.name}！${crit ? '暴击！' : ''}造成 ${actualDamage} 伤害！${reflectMsg}${absorbMsg}${statusMsg}`);
+    this.logText.setText(`${enemyDisplayName(enemy.name)} 使用 ${skill.name}！${crit ? '暴击！' : ''}造成 ${actualDamage} 伤害！${reflectMsg}${absorbMsg}${statusMsg}`);
     this.flashPlayer();
     if (sprite) this.tweens.add({ targets: sprite, tint: 0xffffff, duration: 150, yoyo: true });
   }
@@ -664,7 +665,7 @@ export class BattleScene extends Phaser.Scene {
     const tex = enemy.type === '妖将' || enemy.type === '妖王' ? 'enemy_boss' : 'enemy_elite';
     const sprite = this.add.sprite(pos.x, pos.y, tex).setScale(big ? 2.2 : 1.6).setAlpha(0);
     this.enemySprites.push(sprite);
-    this.enemyNameTexts.push(this.add.text(pos.x, pos.y + (big ? -70 : -48), enemy.name, { fontSize: big ? '13px' : '11px', color: '#ff6666', fontFamily: 'serif', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5).setVisible(true));
+    this.enemyNameTexts.push(this.add.text(pos.x, pos.y + (big ? -70 : -48), enemyDisplayName(enemy.name), { fontSize: big ? '13px' : '11px', color: '#ff6666', fontFamily: 'serif', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5).setVisible(true));
     this.enemyTypeTexts.push(this.add.text(pos.x, pos.y + (big ? -54 : -36), enemy.type, { fontSize: '8px', color: '#994444', padding: { y: 1 } }).setOrigin(0.5).setVisible(true));
     const ebw = big ? 100 : 70;
     this.enemyHpBars.push(new SkinBar(this, { x: pos.x - ebw / 2, y: pos.y + 40, w: ebw, h: 7, depth: 30, pad: 1 }));
@@ -694,7 +695,7 @@ export class BattleScene extends Phaser.Scene {
       if (rt.shield > 0) {
         const absorbed = Math.min(rt.shield, d);
         rt.shield -= absorbed; d -= absorbed;
-        if (rt.shield <= 0) { rt.vulnerable = true; this.log(`⚠ ${enemy.name} 的护盾破碎！陷入易伤！`); this.flashEnemy(index); }
+        if (rt.shield <= 0) { rt.vulnerable = true; this.log(`⚠ ${enemyDisplayName(enemy.name)} 的护盾破碎！陷入易伤！`); this.flashEnemy(index); }
       } else if (rt.vulnerable) {
         d = Math.round(d * 1.2);
       }
@@ -851,12 +852,12 @@ export class BattleScene extends Phaser.Scene {
           if (hit) {
             const sub = skill.effect.subtype;
             if (this.bossImmuneTo(this.selectedEnemyIndex)) {
-              msg = `${skill.name}！但 ${enemy.name} 免疫异常！`;
+              msg = `${skill.name}！但 ${enemyDisplayName(enemy.name)} 免疫异常！`;
             } else {
               const statusMsg = applyStatusToEnemy(ks, sub, turns, enemy.maxHp);
-              msg = `${skill.name}！${enemy.name} ${statusMsg}！`;
+              msg = `${skill.name}！${enemyDisplayName(enemy.name)} ${statusMsg}！`;
             }
-          } else { msg = `${skill.name}！但 ${enemy.name} 抵抗了...`; }
+          } else { msg = `${skill.name}！但 ${enemyDisplayName(enemy.name)} 抵抗了...`; }
           break;
         }
         case 'heal': {
@@ -941,7 +942,7 @@ export class BattleScene extends Phaser.Scene {
     const crit = base.crit || Math.random() < this.getCritBonus();
     const titleMult = GameState.getTitleDamageMult(enemy.type);
     const dmg = (this.hellActive ? base.damage * 2 : (crit && !base.crit ? Math.round(base.damage * 1.5) : base.damage)) * titleMult;
-    let logMsg = crit ? `暴击！造成 ${dmg} 伤害！` : `攻击 ${enemy.name}！造成 ${dmg} 伤害！`;
+    let logMsg = crit ? `暴击！造成 ${dmg} 伤害！` : `攻击 ${enemyDisplayName(enemy.name)}！造成 ${dmg} 伤害！`;
     if (elemMult > 1.0) logMsg += ' [克制]';
     else if (elemMult < 1.0) logMsg += ' [抵抗]';
     if (titleMult > 1.0) logMsg += ' [称号]';
@@ -1200,9 +1201,9 @@ export class BattleScene extends Phaser.Scene {
         seal: '封印', slow: '减速', bind: '禁锢', freeze: '冻结', stun: '眩晕', poison: '中毒',
         burn: '灼烧', parasite: '寄生', taunt: '嘲讽', fear: '恐惧', atkDown: '攻降', defDown: '防降', matkDown: '降灵压',
       };
-      this.logText.setText(`${enemy.name} ${effectNames[se.subtype] || se.subtype} ${se.turns} 回合！`);
+      this.logText.setText(`${enemyDisplayName(enemy.name)} ${effectNames[se.subtype] || se.subtype} ${se.turns} 回合！`);
     } else {
-      this.logText.setText(`${enemy.name} 抵抗了控制...`);
+      this.logText.setText(`${enemyDisplayName(enemy.name)} 抵抗了控制...`);
     }
   }
 

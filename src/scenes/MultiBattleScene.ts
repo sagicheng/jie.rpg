@@ -25,6 +25,7 @@ import type { Item } from '../managers/Inventory';
 import type { EnemyData } from '../managers/BattleData';
 import { PET_SKILLS_CLIENT } from '../managers/PetSystem';
 import { SkinBar, SkinButton, cardFrame, tagBg, panel, cardHl, menuRow, menuBack, floatDamage, hpColor, SKIN } from '../ui/BattleSkin';
+import { enemyDisplayName } from '../config/entityNames';
 
 interface Card {
   root: Phaser.GameObjects.Container;
@@ -1076,10 +1077,10 @@ export class MultiBattleScene extends Phaser.Scene {
       } else {
         card.portrait.setVisible(false);
       }
-      card.name.setText(`${c.name}${c.alive ? '' : '（倒下）'}`);
+      card.name.setText(`${enemyDisplayName(c.name)}${c.alive ? '' : '（倒下）'}`);
       // 出战灵宠卡片：🐾 标识，与人物区分
       if (c.isPet) {
-        card.name.setText(`🐾 ${c.name}${c.alive ? '' : '（倒下）'}`);
+        card.name.setText(`🐾 ${enemyDisplayName(c.name)}${c.alive ? '' : '（倒下）'}`);
       }
       this.drawHpBar(card, c.hp, c.maxHp);
       this.drawStatusIcons(card, c);

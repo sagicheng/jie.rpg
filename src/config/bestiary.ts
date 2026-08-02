@@ -8,13 +8,13 @@ import type { NamedEnemyDef, NamedEquipDrop, BestiaryTier } from '../managers/Be
 
 export const ZONE1_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '低级虚',
+    name: 'm_low_void',
     type: '杂妖', element: '无',
     statusResist: { 冻结: 0.30, 灼烧: 0.50 },
     lore: '空座町最常见的虚。没有自主意识，凭本能捕食人类的灵魂。',
   },
   {
-    name: '蛇虚',
+    name: 'm_serpent_void',
     type: '杂妖', element: '土', weakness: '风',
     statusResist: { 冻结: 0.30, 减速: 0.50 },
     skills: [
@@ -27,7 +27,7 @@ export const ZONE1_ENEMIES: NamedEnemyDef[] = [
     lore: '蛇形虚，盘踞在空座町的暗巷。鳞片坚硬但惧风。',
   },
   {
-    name: '飞虚',
+    name: 'm_fly_void',
     type: '杂妖', element: '风', weakness: '火',
     statusResist: { 眩晕: 0.30, 减速: 0.60 },
     skills: [
@@ -40,7 +40,7 @@ export const ZONE1_ENEMIES: NamedEnemyDef[] = [
     lore: '拥有薄翼的虚，行动迅捷。翅膀脆弱，畏惧火焰。',
   },
   {
-    name: '大虚·基利安',
+    name: 'm_gillian',
     type: '恶妖', element: '无',
     statusResist: { 冻结: 0.50, 眩晕: 0.50, 恐惧: 0.70 },
     skills: [
@@ -58,7 +58,7 @@ export const ZONE1_ENEMIES: NamedEnemyDef[] = [
   },
   // ── 区域①Boss ──
   {
-    name: '大虚·亚丘卡斯',
+    name: 'm_adjuchas_boss',
     type: '妖将', element: '无',
     weakness: undefined,
     statusResist: { 冻结: 0.70, 眩晕: 0.80, 恐惧: 0.90, 中毒: 0.50 },
@@ -81,26 +81,26 @@ export const ZONE1_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE2_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '中级虚', type: '杂妖', element: '无',
+    name: 'm_mid_void', type: '杂妖', element: '无',
     statusResist: { 冻结: 0.40, 灼烧: 0.40 },
     lore: '比低级虚稍强，有基本的战斗本能。空座町住宅区常见的虚。',
   },
   {
-    name: '飞虚·改', type: '杂妖', element: '风', weakness: '火',
+    name: 'm_fly_void2', type: '杂妖', element: '风', weakness: '火',
     statusResist: { 眩晕: 0.40, 减速: 0.50 },
     skills: [{ name: '裂风俯冲', power: 1.3, desc: '高速俯冲带风刃', damageType: 'physical' }],
     drops: [{ item: '灵木枝', rate: 0.25 }, { item: '硬皮', rate: 0.10 }],
     lore: '飞虚的变种，翅膀更坚韧，速度更快。',
   },
   {
-    name: '蛇虚·改', type: '杂妖', element: '土', weakness: '风',
+    name: 'm_serpent_void2', type: '杂妖', element: '土', weakness: '风',
     statusResist: { 冻结: 0.40, 减速: 0.40 },
     skills: [{ name: '毒牙撕咬', power: 1.2, desc: '带强烈毒素的撕咬', damageType: 'physical' }],
     drops: [{ item: '铁矿石', rate: 0.30 }, { item: '毒腺', rate: 0.15 }],
     lore: '蛇虚的变种，毒性更强，鳞片更硬。',
   },
   {
-    name: '虚群', type: '杂妖', element: '无',
+    name: 'm_void_swarm', type: '杂妖', element: '无',
     statusResist: { 冻结: 0.20, 眩晕: 0.30 },
     lore: '多只低级虚聚集形成的虚群。个体弱小但数量多，围攻时危险。',
   },
@@ -108,20 +108,20 @@ export const ZONE2_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE3_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '流魂街强盗', type: '杂妖', element: '土', weakness: '风',
+    name: 'm_sl_thug', type: '杂妖', element: '土', weakness: '风',
     statusResist: { 眩晕: 0.30, 恐惧: 0.40 },
     skills: [{ name: '横劈', power: 1.1, desc: '粗犷的刀法横劈', damageType: 'physical' }],
     drops: [{ item: '铁矿石', rate: 0.25 }, { item: '麻布片', rate: 0.30 }],
     lore: '流魂街的流浪者堕落为盗匪。武艺粗浅但穷凶极恶。',
   },
   {
-    name: '暴走虚', type: '杂妖', element: '无',
+    name: 'm_berserk_void', type: '杂妖', element: '无',
     statusResist: { 眩晕: 0.60, 恐惧: 0.70, 禁锢: 0.40 },
     skills: [{ name: '疯狂乱抓', power: 1.3, desc: '失去理智的连续抓击', damageType: 'physical' }],
     lore: '失去理智暴走的虚。攻击毫无章法但异常凶猛。',
   },
   {
-    name: '叛逆队员', type: '杂妖', element: '无',
+    name: 'm_rebel_grunt', type: '杂妖', element: '无',
     statusResist: { 眩晕: 0.30, 恐惧: 0.30 },
     skills: [{ name: '斩击', power: 1.1, desc: '死神队员的基本斩击', damageType: 'physical' }],
     drops: [{ item: '浅打碎片', rate: 0.10 }, { item: '麻布片', rate: 0.25 }],
@@ -131,14 +131,14 @@ export const ZONE3_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE4_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '流魂街暴徒', type: '杂妖', element: '土', weakness: '风',
+    name: 'm_sl_brute', type: '杂妖', element: '土', weakness: '风',
     statusResist: { 眩晕: 0.30, 恐惧: 0.40 },
     skills: [{ name: '重击', power: 1.2, desc: '力量型重击', damageType: 'physical' }],
     drops: [{ item: '铁矿石', rate: 0.25 }, { item: '麻布片', rate: 0.25 }],
     lore: '比强盗更暴力的流魂街暴徒。力量更强但更莽撞。',
   },
   {
-    name: '暴走虚·改', type: '杂妖', element: '无',
+    name: 'm_berserk_void2', type: '杂妖', element: '无',
     statusResist: { 眩晕: 0.70, 恐惧: 0.80, 禁锢: 0.50 },
     skills: [{ name: '狂暴连爪', power: 1.4, desc: '更狂暴的连续爪击', damageType: 'physical' }],
     statMult: { HP: 1.1, ATK: 1.1 },
@@ -148,14 +148,14 @@ export const ZONE4_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE5_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '武装暴徒', type: '杂妖', element: '土', weakness: '风',
+    name: 'm_armed_brute', type: '杂妖', element: '土', weakness: '风',
     statusResist: { 眩晕: 0.30, 恐惧: 0.30 },
     skills: [{ name: '武装斩击', power: 1.3, desc: '持武器的高级斩击', damageType: 'physical' }],
     drops: [{ item: '铁矿石', rate: 0.30 }, { item: '浅打碎片', rate: 0.08 }],
     lore: '全副武装的流魂街暴徒。装备精良，战斗力不俗。',
   },
   {
-    name: '叛逆队员·长', type: '杂妖', element: '无',
+    name: 'm_rebel_cap', type: '杂妖', element: '无',
     statusResist: { 眩晕: 0.30, 恐惧: 0.30 },
     skills: [{ name: '连斩', power: 1.2, desc: '快速连续斩击', damageType: 'physical' }],
     statMult: { HP: 1.1, ATK: 1.1 },
@@ -163,7 +163,7 @@ export const ZONE5_ENEMIES: NamedEnemyDef[] = [
     lore: '叛逆队员的小队长。战斗经验更丰富。',
   },
   {
-    name: '叛逆死神', type: '恶妖', element: '无',
+    name: 'm_fallen_shi', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.40, 恐惧: 0.50, 禁锢: 0.40 },
     skills: [{ name: '鬼道·白伏', power: 1.4, desc: '中级鬼道攻击', damageType: 'magical' }],
     statMult: { HP: 1.2, ATK: 1.1, MATK: 1.2 },
@@ -175,7 +175,7 @@ export const ZONE5_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE6_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '护廷队士', type: '杂妖', element: '无',
+    name: 'm_gotei_priv', type: '杂妖', element: '无',
     statusResist: { 眩晕: 0.30, 恐惧: 0.30 },
     skills: [{ name: '护廷斩术', power: 1.2, desc: '护廷十三队标准斩术', damageType: 'physical' }],
     drops: [{ item: '浅打碎片', rate: 0.15 }, { item: '麻布片', rate: 0.20 }],
@@ -185,7 +185,7 @@ export const ZONE6_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE7_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '上级死神', type: '杂妖', element: '无',
+    name: 'm_senior_shi', type: '杂妖', element: '无',
     statusResist: { 眩晕: 0.40, 恐惧: 0.40, 禁锢: 0.30 },
     skills: [{ name: '上级斩术', power: 1.3, desc: '高阶死神斩术', damageType: 'physical' }],
     statMult: { HP: 1.2, ATK: 1.2 },
@@ -193,7 +193,7 @@ export const ZONE7_ENEMIES: NamedEnemyDef[] = [
     lore: '护廷十三队的上级死神。实力强劲，是队士的数倍。',
   },
   {
-    name: '叛逆死神·长', type: '恶妖', element: '无',
+    name: 'm_fallen_cap', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.50, 恐惧: 0.50, 禁锢: 0.40 },
     skills: [
       { name: '鬼道·苍火坠', power: 1.5, desc: '火系鬼道', damageType: 'magical' },
@@ -208,7 +208,7 @@ export const ZONE7_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE8_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '基利安', type: '杂妖', element: '无',
+    name: 'm_gillian2', type: '杂妖', element: '无',
     statusResist: { 冻结: 0.50, 眩晕: 0.50, 恐惧: 0.60 },
     skills: [{ name: '虚闪', power: 1.5, desc: '黑色灵力射线', damageType: 'magical' }],
     statMult: { HP: 1.3, MATK: 1.2 },
@@ -217,7 +217,7 @@ export const ZONE8_ENEMIES: NamedEnemyDef[] = [
     lore: '断界中游荡的大虚。比空座町的基利安更强。',
   },
   {
-    name: '亚丘卡斯', type: '恶妖', element: '无',
+    name: 'm_adjuchas', type: '恶妖', element: '无',
     statusResist: { 冻结: 0.60, 眩晕: 0.60, 恐惧: 0.70, 中毒: 0.40 },
     skills: [
       { name: '虚闪·强', power: 1.7, desc: '强化虚闪', damageType: 'magical' },
@@ -229,7 +229,7 @@ export const ZONE8_ENEMIES: NamedEnemyDef[] = [
     lore: '断界中的亚丘卡斯级大虚。有自主意识，能使用强化虚闪。',
   },
   {
-    name: '破面·下级', type: '杂妖', element: '无',
+    name: 'm_frac_low', type: '杂妖', element: '无',
     statusResist: { 冻结: 0.50, 眩晕: 0.50, 恐惧: 0.60 },
     skills: [{ name: '虚闪', power: 1.5, desc: '基本虚闪', damageType: 'magical' }],
     statMult: { HP: 1.3, ATK: 1.2 },
@@ -237,12 +237,12 @@ export const ZONE8_ENEMIES: NamedEnemyDef[] = [
     lore: '摘下面具的下级破面。拥有虚的力量和类似死神的外观。',
   },
   {
-    name: '基利安群', type: '杂妖', element: '无',
+    name: 'm_gillian_swarm', type: '杂妖', element: '无',
     statusResist: { 冻结: 0.40, 眩晕: 0.40, 恐惧: 0.50 },
     lore: '多只基利安聚集。个体实力一般，但虚闪齐射威力惊人。',
   },
   {
-    name: '破面·上级', type: '恶妖', element: '无',
+    name: 'm_frac_high', type: '恶妖', element: '无',
     statusResist: { 冻结: 0.60, 眩晕: 0.60, 恐惧: 0.70, 中毒: 0.40 },
     skills: [
       { name: '王虚的闪光', power: 1.8, desc: '破面专属强力虚闪', damageType: 'magical' },
@@ -254,7 +254,7 @@ export const ZONE8_ENEMIES: NamedEnemyDef[] = [
     lore: '实力强劲的上级破面。掌握响转，速度极快。',
   },
   {
-    name: '破面·中级', type: '恶妖', element: '无',
+    name: 'm_frac_mid', type: '恶妖', element: '无',
     statusResist: { 冻结: 0.55, 眩晕: 0.55, 恐惧: 0.65 },
     skills: [{ name: '虚闪·中', power: 1.6, desc: '中级虚闪', damageType: 'magical' }],
     statMult: { HP: 1.4, ATK: 1.2 },
@@ -263,7 +263,7 @@ export const ZONE8_ENEMIES: NamedEnemyDef[] = [
     lore: '中等实力的破面。介于下级与上级之间。',
   },
   {
-    name: '亚丘卡斯·改', type: '恶妖', element: '无',
+    name: 'm_adjuchas2', type: '恶妖', element: '无',
     statusResist: { 冻结: 0.65, 眩晕: 0.65, 恐惧: 0.75, 中毒: 0.45 },
     skills: [
       { name: '虚闪·极', power: 1.9, desc: '极强虚闪', damageType: 'magical' },
@@ -275,7 +275,7 @@ export const ZONE8_ENEMIES: NamedEnemyDef[] = [
     lore: '亚丘卡斯的强化形态。接近瓦史托德级别的实力。',
   },
   {
-    name: '瓦史托德', type: '恶妖', element: '无',
+    name: 'm_vasto', type: '恶妖', element: '无',
     statusResist: { 冻结: 0.70, 眩晕: 0.70, 恐惧: 0.80, 中毒: 0.50, 禁锢: 0.50 },
     skills: [
       { name: '虚闪·王', power: 2.0, desc: '大虚之王虚闪', damageType: 'magical' },
@@ -290,7 +290,7 @@ export const ZONE8_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE9_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '完现虚', type: '杂妖', element: '无',
+    name: 'm_fb_void', type: '杂妖', element: '无',
     statusResist: { 冻结: 0.50, 眩晕: 0.50, 恐惧: 0.60 },
     skills: [{ name: '完现爪击', power: 1.4, desc: '附带完现术的爪击', damageType: 'physical' }],
     statMult: { HP: 1.3, ATK: 1.2 },
@@ -298,7 +298,7 @@ export const ZONE9_ENEMIES: NamedEnemyDef[] = [
     lore: '受到完现术影响的虚。力量异变，比普通虚更强。',
   },
   {
-    name: '完现者(敌)', type: '恶妖', element: '无',
+    name: 'm_fb_foe', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.50, 恐惧: 0.50, 禁锢: 0.40, 降灵压: 0.30 },
     skills: [
       { name: '完现术·武器', power: 1.5, desc: '完现术具现化武器攻击', damageType: 'physical' },
@@ -310,7 +310,7 @@ export const ZONE9_ENEMIES: NamedEnemyDef[] = [
     lore: '敌对的完现术使用者。能将物品具现化为武器。',
   },
   {
-    name: '完现虚·改', type: '杂妖', element: '无',
+    name: 'm_fb_void2', type: '杂妖', element: '无',
     statusResist: { 冻结: 0.60, 眩晕: 0.60, 恐惧: 0.70 },
     skills: [{ name: '完现·暴走爪', power: 1.6, desc: '暴走的完现爪击', damageType: 'physical' }],
     statMult: { HP: 1.4, ATK: 1.3 },
@@ -318,7 +318,7 @@ export const ZONE9_ENEMIES: NamedEnemyDef[] = [
     lore: '完现虚的强化形态。完现术的力量更加不稳定。',
   },
   {
-    name: '完现者·长', type: '恶妖', element: '无',
+    name: 'm_fb_elder', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.60, 恐惧: 0.60, 禁锢: 0.50, 降灵压: 0.40 },
     skills: [
       { name: '完现术·神兵', power: 1.7, desc: '强力完现武器', damageType: 'physical' },
@@ -330,7 +330,7 @@ export const ZONE9_ENEMIES: NamedEnemyDef[] = [
     lore: '完现者组织的干部。完现术造诣深厚。',
   },
   {
-    name: '完现者·精英', type: '恶妖', element: '无',
+    name: 'm_fb_elite', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.65, 恐惧: 0.65, 禁锢: 0.55, 降灵压: 0.50 },
     skills: [
       { name: '完现术·极', power: 1.9, desc: '精英级完现术', damageType: 'physical' },
@@ -342,7 +342,7 @@ export const ZONE9_ENEMIES: NamedEnemyDef[] = [
     lore: '完现者中的精英战士。实力接近队长级。',
   },
   {
-    name: '完现术·暴走', type: '恶妖', element: '无',
+    name: 'm_fb_rampage', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.80, 恐惧: 0.90, 禁锢: 0.60, 降灵压: 0.50 },
     skills: [
       { name: '暴走冲击', power: 2.0, desc: '失控的完现术冲击', damageType: 'physical' },
@@ -357,14 +357,14 @@ export const ZONE9_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '圣兵', type: '杂妖', element: '无',
+    name: 'm_soldat', type: '杂妖', element: '无',
     statusResist: { 眩晕: 0.40, 恐惧: 0.40 },
     skills: [{ name: '圣击', power: 1.3, desc: '灵银武器攻击', damageType: 'physical' }],
     drops: [{ item: '灵银碎片', rate: 0.20 }, { item: '麻布片', rate: 0.20 }],
     lore: '无形帝国的基础士兵。装备灵银武器，对死神特攻。',
   },
   {
-    name: '星十字骑士', type: '恶妖', element: '无',
+    name: 'm_stern', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.50, 恐惧: 0.50, 禁锢: 0.40, 降灵压: 0.30 },
     skills: [
       { name: '圣文字·击', power: 1.6, desc: '圣文字能力攻击', damageType: 'magical' },
@@ -376,7 +376,7 @@ export const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
     lore: '无形帝国的精锐骑士。每人拥有独特的圣文字能力。',
   },
   {
-    name: '虚化兵', type: '杂妖', element: '无',
+    name: 'm_visard', type: '杂妖', element: '无',
     statusResist: { 冻结: 0.50, 眩晕: 0.50, 恐惧: 0.60 },
     skills: [{ name: '虚化突击', power: 1.4, desc: '虚化后突击', damageType: 'physical' }],
     statMult: { HP: 1.3, ATK: 1.2 },
@@ -384,7 +384,7 @@ export const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
     lore: '被虚化的无形帝国兵。兼具死神与虚的特征。',
   },
   {
-    name: '圣兵精英', type: '恶妖', element: '无',
+    name: 'm_soldat_elite', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.50, 恐惧: 0.50, 禁锢: 0.40 },
     skills: [{ name: '圣击·烈', power: 1.5, desc: '强化圣击', damageType: 'physical' }],
     statMult: { HP: 1.4, ATK: 1.3 },
@@ -393,7 +393,7 @@ export const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
     lore: '圣兵中的精英。装备和训练都优于普通圣兵。',
   },
   {
-    name: '星十字骑士·长', type: '恶妖', element: '无',
+    name: 'm_stern_cap', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.60, 恐惧: 0.60, 禁锢: 0.50, 降灵压: 0.40 },
     skills: [
       { name: '圣文字·烈', power: 1.8, desc: '强化圣文字', damageType: 'magical' },
@@ -405,7 +405,7 @@ export const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
     lore: '星十字骑士的队长级。圣文字能力更加强大。',
   },
   {
-    name: '亲卫队', type: '恶妖', element: '无',
+    name: 'm_guard', type: '恶妖', element: '无',
     statusResist: { 眩晕: 0.70, 恐惧: 0.70, 禁锢: 0.60, 降灵压: 0.50, 中毒: 0.50 },
     skills: [
       { name: '圣文字·极', power: 2.0, desc: '亲卫队级圣文字', damageType: 'magical' },
@@ -417,7 +417,7 @@ export const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
     lore: '护卫星十字骑士团最高层的精锐。实力远超普通骑士。',
   },
   {
-    name: '虚化兵·改', type: '杂妖', element: '无',
+    name: 'm_visard2', type: '杂妖', element: '无',
     statusResist: { 冻结: 0.60, 眩晕: 0.60, 恐惧: 0.70 },
     skills: [{ name: '虚化·暴走', power: 1.6, desc: '虚化暴走突击', damageType: 'physical' }],
     statMult: { HP: 1.4, ATK: 1.3 },
@@ -428,7 +428,7 @@ export const ZONE10_11_ENEMIES: NamedEnemyDef[] = [
 
 export const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
   {
-    name: '咎人', type: '杂妖', element: '无',
+    name: 'm_sinner', type: '杂妖', element: '无',
     statusResist: { 灼烧: 0.60, 恐惧: 0.50, 降灵压: 0.30 },
     skills: [{ name: '罪业抓击', power: 1.4, desc: '充满怨念的抓击', damageType: 'physical' }],
     statMult: { HP: 1.3, ATK: 1.2 },
@@ -436,7 +436,7 @@ export const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
     lore: '生前罪孽深重被堕入地狱的灵魂。充满怨念与仇恨。',
   },
   {
-    name: '地狱犬', type: '恶妖', element: '火', weakness: '水',
+    name: 'm_hellhound', type: '恶妖', element: '火', weakness: '水',
     statusResist: { 灼烧: 0.90, 冻结: 0.30, 恐惧: 0.70 },
     skills: [
       { name: '地狱火息', power: 1.6, desc: '喷吐地狱之火', damageType: 'magical' },
@@ -448,7 +448,7 @@ export const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
     lore: '地狱的看门犬。全身燃烧地狱之火，免疫火焰。',
   },
   {
-    name: '混沌兽', type: '恶妖', element: '无',
+    name: 'm_chaos', type: '恶妖', element: '无',
     statusResist: { 灼烧: 0.50, 冻结: 0.50, 眩晕: 0.60, 恐惧: 0.60, 降灵压: 0.40 },
     skills: [
       { name: '混沌冲击', power: 1.7, desc: '混沌之力冲击', damageType: 'magical' },
@@ -460,7 +460,7 @@ export const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
     lore: '由地狱怨念凝聚而成的混沌之兽。形态不定，极其危险。',
   },
   {
-    name: '地狱守卫', type: '恶妖', element: '土', weakness: '风',
+    name: 'm_hell_ward', type: '恶妖', element: '土', weakness: '风',
     statusResist: { 灼烧: 0.50, 冻结: 0.50, 眩晕: 0.70, 恐惧: 0.70, 禁锢: 0.50 },
     skills: [
       { name: '大地震荡', power: 1.6, desc: '震撼大地的重击', damageType: 'physical' },
@@ -472,7 +472,7 @@ export const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
     lore: '地狱的守卫。身躯庞大，防御极高，很难被击倒。',
   },
   {
-    name: '咎人·怨', type: '杂妖', element: '无',
+    name: 'm_sinner_wrath', type: '杂妖', element: '无',
     statusResist: { 灼烧: 0.70, 恐惧: 0.60, 降灵压: 0.40 },
     skills: [{ name: '怨念爆发', power: 1.5, desc: '释放怨念攻击', damageType: 'magical' }],
     statMult: { HP: 1.4, MATK: 1.3 },
@@ -480,7 +480,7 @@ export const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
     lore: '怨念更深重的咎人。能释放怨念作为攻击手段。',
   },
   {
-    name: '终焉之兽', type: '恶妖', element: '无',
+    name: 'm_ending_beast', type: '恶妖', element: '无',
     statusResist: { 灼烧: 0.60, 冻结: 0.60, 眩晕: 0.70, 恐惧: 0.70, 降灵压: 0.50, 中毒: 0.50 },
     skills: [
       { name: '终焉咆哮', power: 1.9, desc: '终结一切的咆哮', damageType: 'magical' },
@@ -492,7 +492,7 @@ export const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
     lore: '预示终结的巨兽。传说它的出现意味着世界的终焉。',
   },
   {
-    name: '混沌兽·极', type: '恶妖', element: '无',
+    name: 'm_chaos_ext', type: '恶妖', element: '无',
     statusResist: { 灼烧: 0.60, 冻结: 0.60, 眩晕: 0.70, 恐惧: 0.70, 降灵压: 0.50, 中毒: 0.50 },
     skills: [
       { name: '混沌·极致', power: 2.0, desc: '混沌之力的极致释放', damageType: 'magical' },
@@ -504,7 +504,7 @@ export const ZONE12_13_ENEMIES: NamedEnemyDef[] = [
     lore: '混沌兽的终极形态。混沌之力达到极致。',
   },
   {
-    name: '地狱之王', type: '妖王', element: '无',
+    name: 'm_hell_king', type: '妖王', element: '无',
     statusResist: { 灼烧: 0.90, 冻结: 0.80, 眩晕: 0.90, 恐惧: 1.0, 降灵压: 0.60, 中毒: 0.70, 禁锢: 0.70 },
     skills: [
       { name: '地狱审判', power: 2.2, desc: '地狱之王的终极审判', damageType: 'magical' },

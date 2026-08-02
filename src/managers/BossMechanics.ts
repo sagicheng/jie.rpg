@@ -4,13 +4,14 @@
 //   - 开局随从 retinue（Boss 自带，4~7 只，参照飘流幻境）
 //   - 死亡增援 reinforcement（随从阵亡后补波，封顶 maxWaves）
 //   - 多人难度缩放 partySize（当前单人=1，4 人组队自动上调）
-// 行为配置按 BOSS 名索引（均为简体中文，与 Zones.ts 节点一致），改名字/机制只动本文件。
+// 行为配置按 BOSS 稳定 id（b_xxx）索引，显示名在 entityNames.ts 的 BOSS_NAME，改名字只动那里。
 // ═══════════════════════════════════════════════════════════════════
 
 import type { EnemyData, EnemyType } from './BattleData';
 import { createEnemyData } from './BattleData';
 import { GameState } from './GameState';
 import type { BattleScene } from '../scenes/BattleScene';
+import { enemyDisplayName } from '../config/entityNames';
 
 // ── 难度参数（集中可调；当前单人 partySize=1，4 人组队自动上调） ──
 const BOSS_HP_MULT = 0.35;       // 每多 1 名队员，Boss 血量 +35%
@@ -56,11 +57,11 @@ export interface BossConfig {
   mechanics: BossMechanic[];
 }
 
-// ── 21 个区域 Boss 配置（名字与 Zones.ts 节点一致，均为简体中文） ──
+// ── 21 个区域 Boss 配置（键 = entityNames.ts 的 b_xxx id；随从/召唤名沿用 SUMMON_NAME 的旧中文 key） ──
 export const BOSS_CONFIG: Record<string, BossConfig> = {
   // 1 浦原商店街
-  '葛兰德·费舍尔': {
-    name: '葛兰德·费舍尔', zone: 1,
+  'b_grand_fisher': {
+    name: 'b_grand_fisher', zone: 1,
     retinue: [
       { name: '虚·触手', type: '恶妖', element: '无' },
       { name: '虚·牙', type: '恶妖', element: '无' },
@@ -73,8 +74,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 2 空座高校
-  '酸蚀虚': {
-    name: '酸蚀虚', zone: 2,
+  'b_acid_void': {
+    name: 'b_acid_void', zone: 2,
     retinue: [
       { name: '虚·酸', type: '恶妖', element: '火' },
       { name: '虚·蚀', type: '恶妖', element: '火' },
@@ -87,8 +88,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 3 河川敷
-  '梅塔史塔西亚': {
-    name: '梅塔史塔西亚', zone: 3,
+  'b_metastacia': {
+    name: 'b_metastacia', zone: 3,
     retinue: [
       { name: '虚·寄生', type: '恶妖', element: '水' },
       { name: '虚·缠', type: '恶妖', element: '水' },
@@ -101,8 +102,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 4 润林安
-  '萧隆·库方': {
-    name: '萧隆·库方', zone: 4,
+  'b_cirucci': {
+    name: 'b_cirucci', zone: 4,
     retinue: [
       { name: '虚·刃', type: '恶妖', element: '风' },
       { name: '虚·风牙', type: '恶妖', element: '风' },
@@ -117,8 +118,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 5 戌吊
-  '多尔多尼': {
-    name: '多尔多尼', zone: 5,
+  'b_dordonii': {
+    name: 'b_dordonii', zone: 5,
     retinue: [
       { name: '虚·岩', type: '恶妖', element: '土' },
       { name: '虚·拳', type: '恶妖', element: '土' },
@@ -132,8 +133,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 6 草鹿
-  '琪露诺': {
-    name: '琪露诺', zone: 6,
+  'b_qilunu': {
+    name: 'b_qilunu', zone: 6,
     retinue: [
       { name: '虚·翼', type: '恶妖', element: '雷' },
       { name: '虚·雷羽', type: '恶妖', element: '雷' },
@@ -147,8 +148,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 7 一番队舍（原创）
-  '虚·噬魂(原创)': {
-    name: '虚·噬魂(原创)', zone: 7,
+  'b_devour_soul': {
+    name: 'b_devour_soul', zone: 7,
     retinue: [
       { name: '虚·怨', type: '恶妖', element: '无' },
       { name: '虚·魂', type: '恶妖', element: '无' },
@@ -163,8 +164,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 8 技術開発局
-  '涅茧利': {
-    name: '涅茧利', zone: 8,
+  'b_mayuri': {
+    name: 'b_mayuri', zone: 8,
     retinue: [
       { name: '义骸卫士', type: '妖将', element: '毒' },
       { name: '毒蝶', type: '恶妖', element: '毒' },
@@ -180,8 +181,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 9 真央霊術院（原创）
-  '虚·学鬼(原创)': {
-    name: '虚·学鬼(原创)', zone: 9,
+  'b_scholar_ghost': {
+    name: 'b_scholar_ghost', zone: 9,
     retinue: [
       { name: '虚·书', type: '恶妖', element: '火' },
       { name: '虚·卷', type: '恶妖', element: '火' },
@@ -196,8 +197,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 10 白砂原
-  '葛力姆乔': {
-    name: '葛力姆乔', zone: 10,
+  'b_grimmjow': {
+    name: 'b_grimmjow', zone: 10,
     retinue: [
       { name: '破面·从属', type: '妖将', element: '无' },
       { name: '虚·砂', type: '恶妖', element: '无' },
@@ -212,8 +213,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 11 黒腔深部
-  '乌尔奇奥拉': {
-    name: '乌尔奇奥拉', zone: 11,
+  'b_ulquiorra': {
+    name: 'b_ulquiorra', zone: 11,
     retinue: [
       { name: '破面·从属', type: '妖将', element: '无' },
       { name: '虚·暗', type: '恶妖', element: '无' },
@@ -229,8 +230,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 12 虚夜宫
-  '诺伊特拉': {
-    name: '诺伊特拉', zone: 12,
+  'b_nnoitra': {
+    name: 'b_nnoitra', zone: 12,
     retinue: [
       { name: '破面·从属', type: '妖将', element: '无' },
       { name: '虚·枪', type: '恶妖', element: '无' },
@@ -246,8 +247,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 13 戦迹
-  '扎艾尔阿波罗': {
-    name: '扎艾尔阿波罗', zone: 13,
+  'b_szayel': {
+    name: 'b_szayel', zone: 13,
     retinue: [
       { name: '破面·从属', type: '妖将', element: '毒' },
       { name: '虚·蛊', type: '恶妖', element: '毒' },
@@ -264,8 +265,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 14 XCUTION基地
-  '银城空吾': {
-    name: '银城空吾', zone: 14,
+  'b_ginjo': {
+    name: 'b_ginjo', zone: 14,
     retinue: [
       { name: '完现术者', type: '妖将', element: '无' },
       { name: '虚·闇', type: '恶妖', element: '无' },
@@ -282,8 +283,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 15 完現術総本山
-  '月岛秀九郎': {
-    name: '月岛秀九郎', zone: 15,
+  'b_tsukishima': {
+    name: 'b_tsukishima', zone: 15,
     retinue: [
       { name: '完现术者', type: '妖将', element: '无' },
       { name: '虚·书', type: '恶妖', element: '无' },
@@ -300,8 +301,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 16 影の領域
-  '村正': {
-    name: '村正', zone: 16,
+  'b_murasaki': {
+    name: 'b_murasaki', zone: 16,
     retinue: [
       { name: '刀魄', type: '妖将', element: '无' },
       { name: '虚·影', type: '恶妖', element: '无' },
@@ -318,8 +319,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 17 星十字宮
-  '巴兹比': {
-    name: '巴兹比', zone: 17,
+  'b_bazz_b': {
+    name: 'b_bazz_b', zone: 17,
     retinue: [
       { name: '圣兵', type: '妖将', element: '火' },
       { name: '虚·炎', type: '恶妖', element: '火' },
@@ -336,8 +337,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 18 銀架城
-  '哈斯沃德': {
-    name: '哈斯沃德', zone: 18,
+  'b_haschwalth': {
+    name: 'b_haschwalth', zone: 18,
     retinue: [
       { name: '圣兵', type: '妖将', element: '无' },
       { name: '虚·光', type: '恶妖', element: '无' },
@@ -354,8 +355,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 19 咎人の門（剧场版）
-  '黑刀': {
-    name: '黑刀', zone: 19,
+  'b_black_blade': {
+    name: 'b_black_blade', zone: 19,
     retinue: [
       { name: '狱卒', type: '妖将', element: '无' },
       { name: '虚·狱', type: '恶妖', element: '无' },
@@ -372,8 +373,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 20 無間（剧场版）
-  '朱莲': {
-    name: '朱莲', zone: 20,
+  'b_shuren': {
+    name: 'b_shuren', zone: 20,
     retinue: [
       { name: '炎鬼', type: '妖将', element: '火' },
       { name: '虚·焰', type: '恶妖', element: '火' },
@@ -390,8 +391,8 @@ export const BOSS_CONFIG: Record<string, BossConfig> = {
     ],
   },
   // 21 終焉之淵（最终）
-  '蓝染惣右介': {
-    name: '蓝染惣右介', zone: 21,
+  'b_aizen': {
+    name: 'b_aizen', zone: 21,
     retinue: [
       { name: '虚圈使徒', type: '妖将', element: '无' },
       { name: '虚·镜', type: '恶妖', element: '无' },
@@ -453,7 +454,7 @@ export function setupBoss(scene: BattleScene, boss: EnemyData): void {
   if (cfg.retinue) {
     cfg.retinue.forEach(r => scene.spawnAdd(createEnemyData(r.name, r.type as EnemyType, r.element, cfg.zone)));
   }
-  scene.log(`【Boss】${boss.name} 降临！随从 ${cfg.retinue?.length || 0} 只`);
+  scene.log(`【Boss】${enemyDisplayName(boss.name)} 降临！随从 ${cfg.retinue?.length || 0} 只`);
 }
 
 /** Boss 每次行动时触发机制；返回 true 表示占用本回合（已播放动画/延时） */
@@ -470,31 +471,31 @@ export function runBossMechanics(scene: BattleScene, enemy: EnemyData, index: nu
       const heal = Math.round(enemy.maxHp * (m.pct || 0.2));
       enemy.hp = Math.min(enemy.maxHp, enemy.hp + heal);
       rt.regenUsed = true; consumed = true;
-      scene.log(`⚠ ${enemy.name} 发动【再生】！回复 ${heal} HP`);
+      scene.log(`⚠ ${enemyDisplayName(enemy.name)} 发动【再生】！回复 ${heal} HP`);
       scene.flashEnemy(index);
     }
 
     if (m.kind === 'summon' && !rt.summonUsed[mi] && m.threshold && ratio <= m.threshold && m.enemies) {
       m.enemies.forEach(nm => scene.spawnAdd(createEnemyData(nm, '恶妖', m.element || '无', rt.config.zone)));
       rt.summonUsed[mi] = true; consumed = true;
-      scene.log(`⚠ ${enemy.name} 召唤了眷属！`);
+      scene.log(`⚠ ${enemyDisplayName(enemy.name)} 召唤了眷属！`);
     }
 
     if (m.kind === 'buffSelf' && m.every && m.stat && m.value !== undefined && rt.turnCount % m.every === 0) {
       (enemy as any)[m.stat] = ((enemy as any)[m.stat] || 0) + m.value;
-      scene.log(`${enemy.name} 强化了自身 ${m.stat}！`);
+      scene.log(`${enemyDisplayName(enemy.name)} 强化了自身 ${m.stat}！`);
     }
 
     if (m.kind === 'debuffPlayer' && m.every && m.status && rt.turnCount % m.every === 0) {
       scene.applyPlayerStatus(m.status, m.rate || 0.5, m.turns || 2);
-      scene.log(`${enemy.name} 对你施加了【${m.status}】`);
+      scene.log(`${enemyDisplayName(enemy.name)} 对你施加了【${m.status}】`);
     }
 
     if (m.kind === 'phase' && !rt.phaseUsed && m.threshold && ratio <= m.threshold) {
       rt.phaseUsed = true; consumed = true;
-      if (m.enrage) { enemy.atk = Math.round(enemy.atk * 1.5); enemy.spd = Math.round(enemy.spd * 1.4); scene.log(`⚠ ${enemy.name} 进入【狂暴】！攻速暴涨`); }
+      if (m.enrage) { enemy.atk = Math.round(enemy.atk * 1.5); enemy.spd = Math.round(enemy.spd * 1.4); scene.log(`⚠ ${enemyDisplayName(enemy.name)} 进入【狂暴】！攻速暴涨`); }
       if (m.stat && m.value) { (enemy as any)[m.stat] = Math.round((enemy as any)[m.stat] * (1 + m.value)); }
-      if (m.immune) { rt.immune = true; scene.log(`⚠ ${enemy.name} 获得【异常免疫】`); }
+      if (m.immune) { rt.immune = true; scene.log(`⚠ ${enemyDisplayName(enemy.name)} 获得【异常免疫】`); }
       scene.flashEnemy(index);
     }
   });
@@ -515,8 +516,8 @@ export function onBossAddDeath(scene: BattleScene): void {
     const b = scene.getBossEnemy();
     if (!b || b.hp <= 0) return;
     for (let i = 0; i < cfg.perWave; i++) {
-      scene.spawnAdd(createEnemyData(`${b.name}的增援`, cfg.type as EnemyType, cfg.element, rt.config.zone));
+      scene.spawnAdd(createEnemyData(`${enemyDisplayName(b.name)}的增援`, cfg.type as EnemyType, cfg.element, rt.config.zone));
     }
-    scene.log(`⚠ ${b.name} 的增援到来！(${rt.wavesUsed}/${cfg.maxWaves})`);
+    scene.log(`⚠ ${enemyDisplayName(b.name)} 的增援到来！(${rt.wavesUsed}/${cfg.maxWaves})`);
   });
 }

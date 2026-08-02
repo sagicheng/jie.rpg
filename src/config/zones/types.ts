@@ -2,7 +2,8 @@
 export interface ZoneNPC {
   id: string;
   x: number; y: number;
-  name: string;
+  /** NPC 显示名已集中到 entityNames.ts（npcDisplayName(id)）。区域配置不再内联 name，留作可选兼容字段。 */
+  name?: string;
   role: 'merchant' | 'return_point' | 'quest' | 'lore' | 'craft' | 'side_quest' | 'enhance' | 'quest_board';
   dialogue: Array<{
     speaker: string;

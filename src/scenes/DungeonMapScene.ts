@@ -22,6 +22,7 @@ import { Inventory } from '../managers/Inventory';
 import { buildDungeonParty, buildClientBattleLoadout, getDungeonStageVisual } from '../managers/dungeon';
 import { EnemyData } from '../managers/BattleData';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
+import { enemyDisplayName } from '../config/entityNames';
 import { bossPortraitKey, ensureBossPortrait, monsterPortraitKey, ensureMonsterPortrait } from '../core/portraitLoader';
 // 复用 GameScene 同一套面板系统（背包/属性/鬼道/图鉴/任务/标题），让副本内也能开 C/B 等界面。
 // DungeonMapScene 实现与 GameScene 同款的「面板宿主契约」（公开字段 + pauseForMenu/resumeFromMenu），
@@ -205,7 +206,7 @@ export class DungeonMapScene extends Phaser.Scene {
       // 只显示有真实立绘的怪：无图则不显示、不参与碰撞（取消 enemy 通用占位）
       // 占位纹理用程序化 enemy_boss（BootScene 生成，且 setVisible(false) 永不显示），真立绘就绪后由 applyPortrait 替换；无图则始终不可见、不参与碰撞
       const sprite = this.physics.add.sprite(ex, ey, 'enemy_boss').setDepth(5).setVisible(false);
-      const label = this.add.text(ex, ey, isBoss ? `【BOSS】${data.name}` : data.name, {
+      const label = this.add.text(ex, ey, isBoss ? `【BOSS】${enemyDisplayName(data.name)}` : enemyDisplayName(data.name), {
         fontSize: '11px', color: isBoss ? '#ffcc44' : data.type === '恶妖' ? '#ff8866' : '#aaaabb',
         fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 },
       }).setOrigin(0.5).setDepth(6).setVisible(false);

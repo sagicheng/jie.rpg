@@ -7,11 +7,11 @@ import { shop } from './shop';
     backgroundMode: 'cover',
     groundColor: 0x445577,
     npcs: [
-      { x: 0.45, y: 0.35, id: 'npc_m02', name: '安和集', role: 'merchant', dialogue: [
+      { x: 0.45, y: 0.35, id: 'npc_m02', role: 'merchant', dialogue: [
         { speaker: '安和集', text: '嘿嘿，我从浦原大叔那里进了些货。虽然不太会用，但装备还是靠谱的！', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(1, '校园', ['school_hat', 'school_armor', 'school_bracer', 'school_boots', 'school_belt', 'school_ring', 'school_necklace', 'school_charm', 'school_pendant']) },
-      { x: 0.75, y: 0.5, id: 'npc_q02', name: '夏萤', role: 'quest', dialogue: [
+      { x: 0.75, y: 0.5, id: 'npc_q02', role: 'quest', dialogue: [
         { speaker: '夏萤', text: '学校附近出现了奇怪的影子……你能帮忙调查一下吗？', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '稍等', callback: 'closeDialogue' },
         ]},
@@ -27,18 +27,18 @@ import { shop } from './shop';
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, id: 'npc_f02', name: '校舍工', role: 'enhance', dialogue: [{ speaker: '校舍工', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
-      { x: 0.2, y: 0.7, id: 'npc_s08', name: '千代', role: 'side_quest', dialogue: [
+      { x: 0.55, y: 0.38, id: 'npc_f02', role: 'enhance', dialogue: [{ speaker: '校舍工', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.2, y: 0.7, id: 'npc_s08', role: 'side_quest', dialogue: [
         { speaker: '千代', text: '我的书包被虚叼走了！帮我抢回来……对付几只低级虚就行。' },
       ]},
-      { x: 0.65, y: 0.8, id: 'npc_s09', name: '水镜', role: 'side_quest', dialogue: [
+      { x: 0.65, y: 0.8, id: 'npc_s09', role: 'side_quest', dialogue: [
         { speaker: '水镜', text: '学校天台的灵木可以用来做护身符。帮我收集一些？' },
       ]},
-      { x: 0.15, y: 0.5, id: 'npc_s07', name: '游鱼', role: 'lore', dialogue: [
+      { x: 0.15, y: 0.5, id: 'npc_s07', role: 'lore', dialogue: [
         { speaker: '游鱼', text: '哥哥总是不在家……你是不是也像哥哥一样能看见幽灵？' },
         { speaker: '游鱼', text: '一护哥哥说他要去尸魂界修行。流魂街在西边很远的地方。' },
       ]},
-      { x: 0.8, y: 0.65, id: 'npc_m02', name: '安和集', role: 'lore', dialogue: [
+      { x: 0.8, y: 0.65, id: 'npc_m02', role: 'lore', dialogue: [
         { speaker: '安和集', text: '最近镇子上的灵压越来越强了。虚被吸引过来了。' },
         { speaker: '安和集', text: '听说河川敷那边有更强的虚出没。小心点。' },
       ]},
@@ -46,38 +46,38 @@ import { shop } from './shop';
     ],
     enemies: [
 
-      { name: '低级虚', type: '杂妖', element: '无', x: 0.23, y: 0.71 },
-      { name: '飞虚', type: '杂妖', element: '风', x: 0.46, y: 0.13 },
-      { name: '蛇虚', type: '杂妖', element: '土', x: 0.58, y: 0.55 },
-      { name: '大虚·基利安', type: '恶妖', element: '无', x: 0.51, y: 0.72 },
-      { name: '低级虚', type: '杂妖', element: '无', x: 0.15, y: 0.3 },
-      { name: '飞虚', type: '杂妖', element: '风', x: 0.8, y: 0.4 },
+      { name: 'm_low_void', type: '杂妖', element: '无', x: 0.23, y: 0.71 },
+      { name: 'm_fly_void', type: '杂妖', element: '风', x: 0.46, y: 0.13 },
+      { name: 'm_serpent_void', type: '杂妖', element: '土', x: 0.58, y: 0.55 },
+      { name: 'm_gillian', type: '恶妖', element: '无', x: 0.51, y: 0.72 },
+      { name: 'm_low_void', type: '杂妖', element: '无', x: 0.15, y: 0.3 },
+      { name: 'm_fly_void', type: '杂妖', element: '风', x: 0.8, y: 0.4 },
       // ── 区域Boss（酸蚀虚） ──
-      { name: '酸蚀虚', type: '妖将', element: '火', x: 0.93, y: 0.88, isBoss: true },
-      { name: '低级虚', type: '杂妖', element: '无', x: 0.05, y: 0.08 },
-      { name: '飞虚', type: '杂妖', element: '风', x: 0.49, y: 0.33 },
-      { name: '蛇虚', type: '杂妖', element: '土', x: 0.93, y: 0.64 },
-      { name: '低级虚', type: '杂妖', element: '无', x: 0.3, y: 0.11 },
-      { name: '飞虚', type: '杂妖', element: '风', x: 0.75, y: 0.34 },
-      { name: '蛇虚', type: '杂妖', element: '土', x: 0.05, y: 0.91 },
-      { name: '低级虚', type: '杂妖', element: '无', x: 0.52, y: 0.08 },
-      { name: '飞虚', type: '杂妖', element: '风', x: 0.95, y: 0.37 },
-      { name: '蛇虚', type: '杂妖', element: '土', x: 0.27, y: 0.91 },
-      { name: '低级虚', type: '杂妖', element: '无', x: 0.7, y: 0.08 },
-      { name: '飞虚', type: '杂妖', element: '风', x: 0.06, y: 0.64 },
-      { name: '蛇虚', type: '杂妖', element: '土', x: 0.53, y: 0.92 },
-      { name: '低级虚', type: '杂妖', element: '无', x: 0.95, y: 0.08 },
-      { name: '飞虚', type: '杂妖', element: '风', x: 0.27, y: 0.65 },
-      { name: '蛇虚', type: '杂妖', element: '土', x: 0.75, y: 0.9 },
-      { name: '低级虚', type: '杂妖', element: '无', x: 0.05, y: 0.36 },
-      { name: '飞虚', type: '杂妖', element: '风', x: 0.5, y: 0.61 },
-      { name: '蛇虚', type: '杂妖', element: '土', x: 0.93, y: 0.92 },
-      { name: '低级虚', type: '杂妖', element: '无', x: 0.26, y: 0.35 },
-      { name: '飞虚', type: '杂妖', element: '风', x: 0.74, y: 0.65 },
-      { name: '大虚·基利安', type: '恶妖', element: '无', x: 0.05, y: 0.08 },
-      { name: '大虚·基利安', type: '恶妖', element: '无', x: 0.49, y: 0.39 },
-      { name: '大虚·基利安', type: '恶妖', element: '无', x: 0.95, y: 0.64 },
-      { name: '大虚·基利安', type: '恶妖', element: '无', x: 0.28, y: 0.08 },
+      { name: 'b_acid_void', type: '妖将', element: '火', x: 0.93, y: 0.88, isBoss: true },
+      { name: 'm_low_void', type: '杂妖', element: '无', x: 0.05, y: 0.08 },
+      { name: 'm_fly_void', type: '杂妖', element: '风', x: 0.49, y: 0.33 },
+      { name: 'm_serpent_void', type: '杂妖', element: '土', x: 0.93, y: 0.64 },
+      { name: 'm_low_void', type: '杂妖', element: '无', x: 0.3, y: 0.11 },
+      { name: 'm_fly_void', type: '杂妖', element: '风', x: 0.75, y: 0.34 },
+      { name: 'm_serpent_void', type: '杂妖', element: '土', x: 0.05, y: 0.91 },
+      { name: 'm_low_void', type: '杂妖', element: '无', x: 0.52, y: 0.08 },
+      { name: 'm_fly_void', type: '杂妖', element: '风', x: 0.95, y: 0.37 },
+      { name: 'm_serpent_void', type: '杂妖', element: '土', x: 0.27, y: 0.91 },
+      { name: 'm_low_void', type: '杂妖', element: '无', x: 0.7, y: 0.08 },
+      { name: 'm_fly_void', type: '杂妖', element: '风', x: 0.06, y: 0.64 },
+      { name: 'm_serpent_void', type: '杂妖', element: '土', x: 0.53, y: 0.92 },
+      { name: 'm_low_void', type: '杂妖', element: '无', x: 0.95, y: 0.08 },
+      { name: 'm_fly_void', type: '杂妖', element: '风', x: 0.27, y: 0.65 },
+      { name: 'm_serpent_void', type: '杂妖', element: '土', x: 0.75, y: 0.9 },
+      { name: 'm_low_void', type: '杂妖', element: '无', x: 0.05, y: 0.36 },
+      { name: 'm_fly_void', type: '杂妖', element: '风', x: 0.5, y: 0.61 },
+      { name: 'm_serpent_void', type: '杂妖', element: '土', x: 0.93, y: 0.92 },
+      { name: 'm_low_void', type: '杂妖', element: '无', x: 0.26, y: 0.35 },
+      { name: 'm_fly_void', type: '杂妖', element: '风', x: 0.74, y: 0.65 },
+      { name: 'm_gillian', type: '恶妖', element: '无', x: 0.05, y: 0.08 },
+      { name: 'm_gillian', type: '恶妖', element: '无', x: 0.49, y: 0.39 },
+      { name: 'm_gillian', type: '恶妖', element: '无', x: 0.95, y: 0.64 },
+      { name: 'm_gillian', type: '恶妖', element: '无', x: 0.28, y: 0.08 },
     ],
     gathering: [
       { x: 0.89, y: 0.49, type: '灵脉' },
