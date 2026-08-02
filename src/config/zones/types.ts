@@ -6,7 +6,8 @@ export interface ZoneNPC {
   name?: string;
   role: 'merchant' | 'return_point' | 'quest' | 'lore' | 'craft' | 'side_quest' | 'enhance' | 'quest_board';
   dialogue: Array<{
-    speaker: string;
+    /** @deprecated 对话框标题已统一由 npcDisplayName(id) 提供，此字段不再被读取。勿新增。 */
+    speaker?: string;
     text: string;
     choices?: Array<{ text: string; callback: string }>;
   }>;

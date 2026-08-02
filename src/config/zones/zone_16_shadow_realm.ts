@@ -8,39 +8,39 @@ import { shop } from './shop';
     groundColor: 0x334455,
     npcs: [
       { x: 0.45, y: 0.3, id: 'npc_m14', role: 'merchant', dialogue: [
-        { speaker: '天衡阁', text: '无形帝国的装备，以灭却师之力锻造。', choices: [{ text: '交易', callback: 'openShop' }] },
+        { text: '无形帝国的装备，以灭却师之力锻造。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(8, '星十字', ['flame_hat', 'flame_armor', 'flame_bracer', 'flame_boots', 'flame_belt', 'ruby_ring', 'flame_heart_necklace', 'flame_charm', 'flame_pendant']) },
       { x: 0.2, y: 0.65, id: 'npc_q13', role: 'quest', dialogue: [
-        { speaker: '灼燃', text: '你身上流着死神的血。但圣文字也能为你所用——想试试吗？', choices: [
+        { text: '你身上流着死神的血。但圣文字也能为你所用——想试试吗？', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.1, y: 0.25, id: 'sys_portal_shadow', name: '影之领域', role: 'return_point', dialogue: [
-        { speaker: '影之领域', text: '灭却师的影之通道。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
+      { x: 0.1, y: 0.25, id: 'sys_portal_shadow', role: 'return_point', dialogue: [
+        { text: '灭却师的影之通道。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
-        { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
+      { x: 0.5, y: 0.3, id: 'sys_craft', role: 'craft', dialogue: [
+        { text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.75, y: 0.65, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
-        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+      { x: 0.75, y: 0.65, id: 'sys_board', role: 'quest_board', dialogue: [
+        { text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, id: 'npc_f16', role: 'enhance', dialogue: [{ speaker: '影铁匠', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.55, y: 0.38, id: 'npc_f16', role: 'enhance', dialogue: [{ text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.85, y: 0.85, id: 'npc_s33', role: 'side_quest', dialogue: [
-        { speaker: '恐惧', text: '恐惧……让我看看你能收集多少灵脉来对抗我的恐惧。' },
+        { text: '恐惧……让我看看你能收集多少灵脉来对抗我的恐惧。' },
       ]},
       { x: 0.4, y: 0.7, id: 'npc_q17', role: 'side_quest', dialogue: [
-        { speaker: '爆音', text: '无聊死了！帮我炸几只圣兵练练手！' },
+        { text: '无聊死了！帮我炸几只圣兵练练手！' },
       ]},
       { x: 0.75, y: 0.5, id: 'npc_m16', role: 'lore', dialogue: [
-        { speaker: '孤影集', text: '全知全能。这就是我的圣文字"A"的力量。你配拥有什么字母？' },
-        { speaker: '孤影集', text: '东边的星十字宫——灭却师的圣域。那里有更强大的骑士在等你。' },
+        { text: '全知全能。这就是我的圣文字"A"的力量。你配拥有什么字母？' },
+        { text: '东边的星十字宫——灭却师的圣域。那里有更强大的骑士在等你。' },
       ]},
       { x: 0.25, y: 0.15, id: 'npc_s39', role: 'lore', dialogue: [
-        { speaker: '石田龙弦', text: '圣文字是每个灭却师体内刻印的字母。代表他们独特的能力。' },
-        { speaker: '石田龙弦', text: '银架城在更东边。友哈巴赫的王座在那里。但地狱……那是最深的秘密。' },
+        { text: '圣文字是每个灭却师体内刻印的字母。代表他们独特的能力。' },
+        { text: '银架城在更东边。友哈巴赫的王座在那里。但地狱……那是最深的秘密。' },
       ]},
 
     ],

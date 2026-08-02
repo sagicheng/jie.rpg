@@ -750,10 +750,14 @@ export class MultiBattleScene extends Phaser.Scene {
    * actorSid 兼容人物(ownerSid)与灵宠(ownerSid:pet)；targetId 为敌人 id。
    */
   private playAttackFx(actorSid: string, targetId: string | undefined, kind: 'melee' | 'cast'): void {
-    const actorCard = this.playerCards.get(actorSid);
+    // 攻击者可能在 playerCards（人物/宠物）也可能在 enemyCards（怪物）——两侧都要查，
+    // 否则怪物攻击会整体 early-return：既无冲砍滑移，目标也无受击后仰。
+    const actorCard = this.playerCards.get(actorSid) ?? this.enemyCards.get(actorSid);
     if (!actorCard) return;
     const actor = actorCard.root;
-    const targetCard = targetId ? this.enemyCards.get(targetId) : undefined;
+    const targetCard = targetId
+      ? (this.enemyCards.get(targetId) ?? this.playerCards.get(targetId))
+      : undefined;
     const target = targetCard?.root;
     const homeX = actor.x, homeY = actor.y;
 
@@ -1114,6 +1118,17 @@ export class MultiBattleScene extends Phaser.Scene {
     const portrait = this.add.image(0, 0, GameState.gender).setDisplaySize(120, 180).setDepth(15).setVisible(false);
     const hl = cardHl(this).setDisplaySize(190, 290); // 高亮框包住立绘+血条
     root.add([hpBar.frame, hpBar.fill, hpText, name, portrait, hl]);
+    // 待机呼吸：所有卡牌（人物/宠物/敌人）共享同一呼吸脉动，营造生命感。
+    // 只缩放 root 的 scaleY —— root 的 position/alpha 由 syncCards 每帧管理，互不冲突；
+    // scale 独立于 x/y，也不会与 shakeCard(改x)/playAttackFx(改x,y) 抢属性。
+    this.tweens.add({
+      targets: root,
+      scaleY: 1.035,
+      duration: 1100,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
     return { root, name, hpBar, hpText, portrait, hl, lastHp: -1, statusIcons: [] };
   }
 

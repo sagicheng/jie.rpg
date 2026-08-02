@@ -8,39 +8,39 @@ import { shop } from './shop';
     groundColor: 0x1a0a10,
     npcs: [
       { x: 0.45, y: 0.35, id: 'npc_m19', role: 'merchant', dialogue: [
-        { speaker: '寂灭阁', text: '终焉之渊——所有灵魂的终点。这里的装备是地狱最高级的。', choices: [{ text: '交易', callback: 'openShop' }] },
+        { text: '终焉之渊——所有灵魂的终点。这里的装备是地狱最高级的。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(11, '终焉', ['final_hat', 'final_armor', 'final_bracer', 'final_boots', 'final_belt', 'final_ring', 'final_necklace', 'final_charm', 'final_pendant']) },
       { x: 0.7, y: 0.5, id: 'npc_q16', role: 'quest', dialogue: [
-        { speaker: '残影·雪', text: '最终试炼——终焉之兽。它是所有负面灵魂的集合体。打败它，完成你的使命。', choices: [
+        { text: '最终试炼——终焉之兽。它是所有负面灵魂的集合体。打败它，完成你的使命。', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, id: 'sys_hell_return', name: '地狱之门', role: 'return_point', dialogue: [
-        { speaker: '地狱之门', text: '终焉之渊的传送门——通往你已走过的所有世界。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
+      { x: 0.85, y: 0.2, id: 'sys_hell_return', role: 'return_point', dialogue: [
+        { text: '终焉之渊的传送门——通往你已走过的所有世界。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
-        { speaker: '魔法阵', text: '嗡……最后的制造阵法。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
+      { x: 0.5, y: 0.3, id: 'sys_craft', role: 'craft', dialogue: [
+        { text: '嗡……最后的制造阵法。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.8, y: 0.7, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
-        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+      { x: 0.8, y: 0.7, id: 'sys_board', role: 'quest_board', dialogue: [
+        { text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, id: 'npc_f21', role: 'enhance', dialogue: [{ speaker: '终焉锻造', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.55, y: 0.38, id: 'npc_f21', role: 'enhance', dialogue: [{ text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.2, y: 0.7, id: 'npc_s35', role: 'side_quest', dialogue: [
-        { speaker: '狱王', text: '你竟然走到了这里……帮我击败终焉之兽的爪牙，我给你地狱之王的宝物。' },
+        { text: '你竟然走到了这里……帮我击败终焉之兽的爪牙，我给你地狱之王的宝物。' },
       ]},
       { x: 0.65, y: 0.8, id: 'npc_s34', role: 'side_quest', dialogue: [
-        { speaker: '囚灵', text: '终焉之渊的灵脉是最后的力量源泉。帮我采集，我为你祝福。' },
+        { text: '终焉之渊的灵脉是最后的力量源泉。帮我采集，我为你祝福。' },
       ]},
       { x: 0.15, y: 0.5, id: 'npc_s01', role: 'lore', dialogue: [
-        { speaker: '残影·护', text: '你的旅途到这里就快结束了。始解、卍解、虚化、完现术、圣文字、狱解——六大力量体系。' },
-        { speaker: '残影·护', text: '记住：力量不是为了毁灭，而是为了守护。这才是死神真正的意义。' },
+        { text: '你的旅途到这里就快结束了。始解、卍解、虚化、完现术、圣文字、狱解——六大力量体系。' },
+        { text: '记住：力量不是为了毁灭，而是为了守护。这才是死神真正的意义。' },
       ]},
       { x: 0.8, y: 0.65, id: 'npc_m01', role: 'lore', dialogue: [
-        { speaker: '云行商', text: '哟，最后了啊。从浦原商店街到这里——你走了很远的路。' },
-        { speaker: '云行商', text: '终焉之兽在等着你。打败它——然后回来。我请你喝茶。' },
+        { text: '哟，最后了啊。从浦原商店街到这里——你走了很远的路。' },
+        { text: '终焉之兽在等着你。打败它——然后回来。我请你喝茶。' },
       ]},
 
     ],

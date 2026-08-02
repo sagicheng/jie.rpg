@@ -869,6 +869,9 @@ export class BattleRoom extends Room<BattleRoomState> {
     if (target.hp <= 0) { target.alive = false; this.logMsg('system', `${target.name} 倒下了！`); }
     // 敌人攻击附带异常状态（按 rate 概率）
     if (sk?.statusEffect && target.hp > 0) this.rollApplyStatusToPlayer(target, sk.statusEffect);
+    // 驱动客户端攻击演出：怪物冲砍滑移 + 目标（玩家）受击后仰。
+    // 此前漏掉此广播，导致怪物攻击无任何演出（客户端 playAttackFx 收不到事件）。
+    this.broadcastFx(eid, target.sessionId, magical ? 'cast' : 'melee');
     this.scheduleExecuteNext();
   }
 

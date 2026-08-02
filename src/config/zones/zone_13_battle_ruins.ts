@@ -8,39 +8,39 @@ import { shop } from './shop';
     groundColor: 0x445566,
     npcs: [
       { x: 0.55, y: 0.35, id: 'npc_m13', role: 'merchant', dialogue: [
-        { speaker: '银镜坊', text: '完现术者的装备——利用身边的一切物质强化战斗。', choices: [{ text: '交易', callback: 'openShop' }] },
+        { text: '完现术者的装备——利用身边的一切物质强化战斗。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(7, '显灵', ['scale_hat', 'scale_armor', 'scale_bracer', 'scale_boots', 'scale_belt', 'royal_ring', 'royal_necklace', 'royal_charm', 'windwalker_pendant']) },
       { x: 0.2, y: 0.7, id: 'npc_q11', role: 'quest', dialogue: [
-        { speaker: '花铃', text: '欢迎回来——空座町还是老样子。想学完现术？找我吧。', choices: [
+        { text: '欢迎回来——空座町还是老样子。想学完现术？找我吧。', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.3, y: 0.2, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
-        { speaker: '穿界门', text: '回到现世的穿界门。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
+      { x: 0.3, y: 0.2, id: 'sys_return', role: 'return_point', dialogue: [
+        { text: '回到现世的穿界门。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
-        { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
+      { x: 0.5, y: 0.3, id: 'sys_craft', role: 'craft', dialogue: [
+        { text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.55, y: 0.75, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
-        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+      { x: 0.55, y: 0.75, id: 'sys_board', role: 'quest_board', dialogue: [
+        { text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, id: 'npc_f13', role: 'enhance', dialogue: [{ speaker: '战迹翁', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.55, y: 0.38, id: 'npc_f13', role: 'enhance', dialogue: [{ text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.85, y: 0.25, id: 'npc_s29', role: 'side_quest', dialogue: [
-        { speaker: '电光', text: '我的靴子被虚咬坏了。帮我收集矿脉做双新的。' },
+        { text: '我的靴子被虚咬坏了。帮我收集矿脉做双新的。' },
       ]},
       { x: 0.15, y: 0.5, id: 'npc_s30', role: 'side_quest', dialogue: [
-        { speaker: '雪绪', text: '游戏需要数据。帮我击败几只完现虚收集战斗数据。' },
+        { text: '游戏需要数据。帮我击败几只完现虚收集战斗数据。' },
       ]},
       { x: 0.8, y: 0.6, id: 'npc_q12', role: 'lore', dialogue: [
-        { speaker: '残影·墨', text: '完现术——将物质中的灵魂觉醒化为己用的力量。我曾经的"终结之书"能改写一切。' },
-        { speaker: '残影·墨', text: '无形帝国在东边。他们自称灭却师的后裔。圣文字的力量……非常危险。' },
+        { text: '完现术——将物质中的灵魂觉醒化为己用的力量。我曾经的"终结之书"能改写一切。' },
+        { text: '无形帝国在东边。他们自称灭却师的后裔。圣文字的力量……非常危险。' },
       ]},
       { x: 0.45, y: 0.6, id: 'npc_s28', role: 'lore', dialogue: [
-        { speaker: '雨龙', text: '灭却师和死神的本质不同。无形帝国的敌人……他们用的是"圣文字"。' },
-        { speaker: '雨龙', text: 'XCUTION基地在东边。银城在那里等你。但真正的敌人——无形帝国——更东边。' },
+        { text: '灭却师和死神的本质不同。无形帝国的敌人……他们用的是"圣文字"。' },
+        { text: 'XCUTION基地在东边。银城在那里等你。但真正的敌人——无形帝国——更东边。' },
       ]},
 
     ],

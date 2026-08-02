@@ -8,39 +8,39 @@ import { shop } from './shop';
     groundColor: 0x999988,
     npcs: [
       { x: 0.45, y: 0.35, id: 'npc_m08', role: 'merchant', dialogue: [
-        { speaker: '巧手商', text: '技术开发局的装备——全都是最新研究成果。哼，别弄坏了。', choices: [{ text: '交易', callback: 'openShop' }] },
+        { text: '技术开发局的装备——全都是最新研究成果。哼，别弄坏了。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(4, '技術局', ['tech_hat', 'tech_armor', 'tech_bracer', 'tech_boots', 'tech_belt', 'tech_ring', 'tech_necklace', 'tech_charm', 'tech_pendant']) },
       { x: 0.7, y: 0.5, id: 'npc_q07', role: 'quest', dialogue: [
-        { speaker: '静言', text: '父亲大人的虚化研究有了突破。帮我收集一些灵脉样本，我让你看数据。', choices: [
+        { text: '父亲大人的虚化研究有了突破。帮我收集一些灵脉样本，我让你看数据。', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '稍等', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
-        { speaker: '穿界门', text: '技术开发局的传送门。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
+      { x: 0.85, y: 0.2, id: 'sys_return', role: 'return_point', dialogue: [
+        { text: '技术开发局的传送门。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
-        { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
+      { x: 0.5, y: 0.3, id: 'sys_craft', role: 'craft', dialogue: [
+        { text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.7, y: 0.45, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
-        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+      { x: 0.7, y: 0.45, id: 'sys_board', role: 'quest_board', dialogue: [
+        { text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, id: 'npc_f08', role: 'enhance', dialogue: [{ speaker: '技开工', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.55, y: 0.38, id: 'npc_f08', role: 'enhance', dialogue: [{ text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.2, y: 0.7, id: 'npc_s24', role: 'side_quest', dialogue: [
-        { speaker: '近卫', text: '义骸的技术需要灵木。帮我采集5个灵木，我给你技术局的特制装备。' },
+        { text: '义骸的技术需要灵木。帮我采集5个灵木，我给你技术局的特制装备。' },
       ]},
       { x: 0.65, y: 0.8, id: 'npc_s25', role: 'side_quest', dialogue: [
-        { speaker: '鸦鸣', text: '叛逆死神偷了我们的研究资料！帮我抢回来——击败几只就行。' },
+        { text: '叛逆死神偷了我们的研究资料！帮我抢回来——击败几只就行。' },
       ]},
       { x: 0.15, y: 0.5, id: 'npc_m01', role: 'lore', dialogue: [
-        { speaker: '云行商', text: '我曾经也是技术开发局局长。虚化——是我最早的研究成果。' },
-        { speaker: '云行商', text: '东边的真央灵术院有卍解的最终试炼。完成后再去虚圈。' },
+        { text: '我曾经也是技术开发局局长。虚化——是我最早的研究成果。' },
+        { text: '东边的真央灵术院有卍解的最终试炼。完成后再去虚圈。' },
       ]},
       { x: 0.8, y: 0.65, id: 'npc_s21', role: 'lore', dialogue: [
-        { speaker: '冬凌', text: '卍解的试炼快完成了。去真央灵术院完成最后的修行。' },
-        { speaker: '冬凌', text: '虚圈在更东边。那里有虚化的觉醒——但你必须先掌握卍解。' },
+        { text: '卍解的试炼快完成了。去真央灵术院完成最后的修行。' },
+        { text: '虚圈在更东边。那里有虚化的觉醒——但你必须先掌握卍解。' },
       ]},
 
     ],

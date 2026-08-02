@@ -8,39 +8,39 @@ import { shop } from './shop';
     groundColor: 0x445577,
     npcs: [
       { x: 0.45, y: 0.35, id: 'npc_m02', role: 'merchant', dialogue: [
-        { speaker: '安和集', text: '嘿嘿，我从浦原大叔那里进了些货。虽然不太会用，但装备还是靠谱的！', choices: [{ text: '交易', callback: 'openShop' }] },
+        { text: '嘿嘿，我从浦原大叔那里进了些货。虽然不太会用，但装备还是靠谱的！', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(1, '校园', ['school_hat', 'school_armor', 'school_bracer', 'school_boots', 'school_belt', 'school_ring', 'school_necklace', 'school_charm', 'school_pendant']) },
       { x: 0.75, y: 0.5, id: 'npc_q02', role: 'quest', dialogue: [
-        { speaker: '夏萤', text: '学校附近出现了奇怪的影子……你能帮忙调查一下吗？', choices: [
+        { text: '学校附近出现了奇怪的影子……你能帮忙调查一下吗？', choices: [
           { text: '接受任务', callback: 'acceptQuest' }, { text: '稍等', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
-        { speaker: '穿界门', text: '学校后山的微型穿界门。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
+      { x: 0.85, y: 0.2, id: 'sys_return', role: 'return_point', dialogue: [
+        { text: '学校后山的微型穿界门。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
-        { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
+      { x: 0.5, y: 0.3, id: 'sys_craft', role: 'craft', dialogue: [
+        { text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.45, y: 0.6, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
-        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+      { x: 0.45, y: 0.6, id: 'sys_board', role: 'quest_board', dialogue: [
+        { text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, id: 'npc_f02', role: 'enhance', dialogue: [{ speaker: '校舍工', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.55, y: 0.38, id: 'npc_f02', role: 'enhance', dialogue: [{ text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.2, y: 0.7, id: 'npc_s08', role: 'side_quest', dialogue: [
-        { speaker: '千代', text: '我的书包被虚叼走了！帮我抢回来……对付几只低级虚就行。' },
+        { text: '我的书包被虚叼走了！帮我抢回来……对付几只低级虚就行。' },
       ]},
       { x: 0.65, y: 0.8, id: 'npc_s09', role: 'side_quest', dialogue: [
-        { speaker: '水镜', text: '学校天台的灵木可以用来做护身符。帮我收集一些？' },
+        { text: '学校天台的灵木可以用来做护身符。帮我收集一些？' },
       ]},
       { x: 0.15, y: 0.5, id: 'npc_s07', role: 'lore', dialogue: [
-        { speaker: '游鱼', text: '哥哥总是不在家……你是不是也像哥哥一样能看见幽灵？' },
-        { speaker: '游鱼', text: '一护哥哥说他要去尸魂界修行。流魂街在西边很远的地方。' },
+        { text: '哥哥总是不在家……你是不是也像哥哥一样能看见幽灵？' },
+        { text: '一护哥哥说他要去尸魂界修行。流魂街在西边很远的地方。' },
       ]},
       { x: 0.8, y: 0.65, id: 'npc_m02', role: 'lore', dialogue: [
-        { speaker: '安和集', text: '最近镇子上的灵压越来越强了。虚被吸引过来了。' },
-        { speaker: '安和集', text: '听说河川敷那边有更强的虚出没。小心点。' },
+        { text: '最近镇子上的灵压越来越强了。虚被吸引过来了。' },
+        { text: '听说河川敷那边有更强的虚出没。小心点。' },
       ]},
 
     ],

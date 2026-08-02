@@ -8,39 +8,39 @@ import { shop } from './shop';
     groundColor: 0x665544,
     npcs: [
       { x: 0.5, y: 0.2, id: 'npc_m04', role: 'merchant', dialogue: [
-        { speaker: '风鹤轩', text: '花火和武器都在我这。流魂街最好的装备店！', choices: [{ text: '交易', callback: 'openShop' }] },
+        { text: '花火和武器都在我这。流魂街最好的装备店！', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(2, '流魂', ['leather_hat', 'leather_armor', 'leather_bracer', 'leather_boots', 'leather_belt', 'copper_ring', 'bone_necklace', 'leather_charm', 'feather_pendant']) },
       { x: 0.75, y: 0.5, id: 'npc_q04', role: 'quest', dialogue: [
-        { speaker: '铁心', text: '喂！新人！想进静灵庭？先打几场让我看看你的本事！', choices: [
+        { text: '喂！新人！想进静灵庭？先打几场让我看看你的本事！', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.2, y: 0.85, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
-        { speaker: '穿界门', text: '流魂街的传送据点。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
+      { x: 0.2, y: 0.85, id: 'sys_return', role: 'return_point', dialogue: [
+        { text: '流魂街的传送据点。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
-        { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
+      { x: 0.5, y: 0.3, id: 'sys_craft', role: 'craft', dialogue: [
+        { text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.5, y: 0.55, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
-        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+      { x: 0.5, y: 0.55, id: 'sys_board', role: 'quest_board', dialogue: [
+        { text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, id: 'npc_f04', role: 'enhance', dialogue: [{ speaker: '润林锤', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.55, y: 0.38, id: 'npc_f04', role: 'enhance', dialogue: [{ text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.35, y: 0.4, id: 'npc_s13', role: 'side_quest', dialogue: [
-        { speaker: '弓月', text: '我需要5株灵木来制作新的武器配饰。帮我收集一些。' },
+        { text: '我需要5株灵木来制作新的武器配饰。帮我收集一些。' },
       ]},
       { x: 0.7, y: 0.2, id: 'npc_s14', role: 'side_quest', dialogue: [
-        { speaker: '修竹', text: '流魂街的强盗越来越嚣张了。帮我清理几个。' },
+        { text: '流魂街的强盗越来越嚣张了。帮我清理几个。' },
       ]},
       { x: 0.85, y: 0.7, id: 'npc_s15', role: 'lore', dialogue: [
-        { speaker: '浮云', text: '斩魄刀是死神的灵魂。始解的试炼在静灵庭南侧……去那里吧。' },
-        { speaker: '浮云', text: '我见过无数把斩魄刀。每把都有自己的故事——你也会找到属于你的。' },
+        { text: '斩魄刀是死神的灵魂。始解的试炼在静灵庭南侧……去那里吧。' },
+        { text: '我见过无数把斩魄刀。每把都有自己的故事——你也会找到属于你的。' },
       ]},
       { x: 0.25, y: 0.6, id: 'npc_s16', role: 'lore', dialogue: [
-        { speaker: '山田花太郎', text: '你也有斩魄刀吗？每把刀都有自己的名字。呼唤它，它就会回应。' },
-        { speaker: '山田花太郎', text: '始解是斩魄刀的第一次解放。你需要完成试炼才能听到刀的声音。' },
+        { text: '你也有斩魄刀吗？每把刀都有自己的名字。呼唤它，它就会回应。' },
+        { text: '始解是斩魄刀的第一次解放。你需要完成试炼才能听到刀的声音。' },
       ]},
 
     ],

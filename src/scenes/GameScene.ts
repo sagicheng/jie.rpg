@@ -1141,7 +1141,9 @@ export class GameScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(6);
 
       const dialogueLines: DialogueLine[] = c.dialogue.map((d, i) => {
-        const line: DialogueLine = { speaker: d.speaker, text: d.text };
+        // speaker 一律取自中枢（zone 数据里的 d.speaker 已废弃）：
+        // NPC 自称在对话框标题、头顶名牌、交互提示三处保持同一真相，改名只动 entityNames.ts。
+        const line: DialogueLine = { speaker: npcDisplayName(c.id), text: d.text };
         if (d.choices && i === 0) {
           line.choices = d.choices.map(ch => ({
             text: ch.text,

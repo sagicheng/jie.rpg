@@ -8,39 +8,39 @@ import { shop } from './shop';
     groundColor: 0x553366,
     npcs: [
       { x: 0.45, y: 0.35, id: 'npc_m13', role: 'merchant', dialogue: [
-        { speaker: '银镜坊', text: '完现术总本山——所有完现术者的圣地。这里的装备是最高级的。', choices: [{ text: '交易', callback: 'openShop' }] },
+        { text: '完现术总本山——所有完现术者的圣地。这里的装备是最高级的。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(8, '完现', ['fullbring_hat', 'fullbring_armor', 'fullbring_bracer', 'fullbring_boots', 'fullbring_belt', 'fullbring_ring', 'fullbring_necklace', 'fullbring_charm', 'fullbring_pendant']) },
       { x: 0.7, y: 0.5, id: 'npc_q12', role: 'quest', dialogue: [
-        { speaker: '残影·墨', text: '完现术的最终试炼——用你的灵魂改写现实。打败我，你就毕业了。', choices: [
+        { text: '完现术的最终试炼——用你的灵魂改写现实。打败我，你就毕业了。', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, id: 'sys_return', name: '穿界门', role: 'return_point', dialogue: [
-        { speaker: '穿界门', text: '完现术总本山的传送门。北边通往无形帝国。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
+      { x: 0.85, y: 0.2, id: 'sys_return', role: 'return_point', dialogue: [
+        { text: '完现术总本山的传送门。北边通往无形帝国。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
-        { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
+      { x: 0.5, y: 0.3, id: 'sys_craft', role: 'craft', dialogue: [
+        { text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.65, y: 0.7, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
-        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+      { x: 0.65, y: 0.7, id: 'sys_board', role: 'quest_board', dialogue: [
+        { text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, id: 'npc_f15', role: 'enhance', dialogue: [{ speaker: '完现锻', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.55, y: 0.38, id: 'npc_f15', role: 'enhance', dialogue: [{ text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.2, y: 0.7, id: 'npc_s31', role: 'side_quest', dialogue: [
-        { speaker: '铁臂', text: '我的右臂力量还不稳定……帮我采集灵木来调整。' },
+        { text: '我的右臂力量还不稳定……帮我采集灵木来调整。' },
       ]},
       { x: 0.65, y: 0.8, id: 'npc_q14', role: 'side_quest', dialogue: [
-        { speaker: '残影·祈', text: '双天归盾需要灵脉的能量。帮我采集，我为你强化护盾。' },
+        { text: '双天归盾需要灵脉的能量。帮我采集，我为你强化护盾。' },
       ]},
       { x: 0.15, y: 0.5, id: 'npc_m01', role: 'lore', dialogue: [
-        { speaker: '云行商', text: '你又回来了？完现术之后是灭却师……真是有趣的研究对象。' },
-        { speaker: '云行商', text: '无形帝国的门在北边。做好准备再去——那里的敌人不是虚，是灭却师。' },
+        { text: '你又回来了？完现术之后是灭却师……真是有趣的研究对象。' },
+        { text: '无形帝国的门在北边。做好准备再去——那里的敌人不是虚，是灭却师。' },
       ]},
       { x: 0.8, y: 0.65, id: 'npc_s28', role: 'lore', dialogue: [
-        { speaker: '雨龙', text: '灭却师……我的父亲说过，圣文字是灵魂深处的刻印。' },
-        { speaker: '雨龙', text: '北边的影之领域——无形帝国的入口。友哈巴赫在那里等着。' },
+        { text: '灭却师……我的父亲说过，圣文字是灵魂深处的刻印。' },
+        { text: '北边的影之领域——无形帝国的入口。友哈巴赫在那里等着。' },
       ]},
 
     ],

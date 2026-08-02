@@ -169,6 +169,17 @@ export const NPC_NAME: Record<string, string> = {
   npc_s33: '恐惧', npc_s34: '囚灵', npc_s35: '狱王', npc_s36: '桃影',
   npc_s37: '狂笑', npc_s38: '残影·虚王', npc_s39: '龙弦医', npc_s40: '奇迹使',
   npc_s41: '书记官',
+
+  // 公共功能 NPC（传送点/制造阵/任务公告板；每区域复用同一 id，立绘见 assets/characters/NPC/sys_*.png）
+  // 注：zone_*.ts 里这些条目虽仍保留 name 字段，但渲染侧已统一走 npcDisplayName(id)，
+  //     该字段实为死数据 —— 改名请只动本区块。
+  sys_return:        '穿界门',
+  sys_craft:         '神奇的魔法阵',
+  sys_board:         '任务公告板',
+  sys_portal_hueco:  '黑腔',
+  sys_portal_shadow: '影之领域',
+  sys_hell_return:   '地狱之门',
+  sys_abyss_return:  '终焉之渊',
 };
 
 export const npcName = (id: string): string => NPC_NAME[id] ?? id;

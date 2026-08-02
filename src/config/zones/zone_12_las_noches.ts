@@ -8,39 +8,39 @@ import { shop } from './shop';
     groundColor: 0x666677,
     npcs: [
       { x: 0.45, y: 0.35, id: 'npc_m12', role: 'merchant', dialogue: [
-        { speaker: '沧溟轩', text: '虚夜宫的装备——顶级的破面锻造品。蓝染大人走后，这些都归我了。', choices: [{ text: '交易', callback: 'openShop' }] },
+        { text: '虚夜宫的装备——顶级的破面锻造品。蓝染大人走后，这些都归我了。', choices: [{ text: '交易', callback: 'openShop' }] },
       ],
       shop: shop(6, '虚夜', ['noches_hat', 'noches_armor', 'noches_bracer', 'noches_boots', 'noches_belt', 'noches_ring', 'noches_necklace', 'noches_charm', 'noches_pendant']) },
       { x: 0.7, y: 0.5, id: 'npc_q10', role: 'quest', dialogue: [
-        { speaker: '残影·牙', text: '虚化的最终试炼——在虚夜宫的最深处释放你的虚。打败我！', choices: [
+        { text: '虚化的最终试炼——在虚夜宫的最深处释放你的虚。打败我！', choices: [
           { text: '接受任务', callback: 'acceptQuest' },
         ]},
       ]},
-      { x: 0.85, y: 0.2, id: 'sys_portal_hueco', name: '黑腔', role: 'return_point', dialogue: [
-        { speaker: '黑腔', text: '虚夜宫的黑腔出口。北边通往现世。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
+      { x: 0.85, y: 0.2, id: 'sys_portal_hueco', role: 'return_point', dialogue: [
+        { text: '虚夜宫的黑腔出口。北边通往现世。', choices: [{ text: '使用传送', callback: 'openReturn' }] },
       ]},
-      { x: 0.5, y: 0.3, id: 'sys_craft', name: '神奇的魔法阵', role: 'craft', dialogue: [
-        { speaker: '魔法阵', text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
+      { x: 0.5, y: 0.3, id: 'sys_craft', role: 'craft', dialogue: [
+        { text: '嗡……古老制造阵法的遗存。', choices: [{ text: '打开制造', callback: 'openCraft' }] },
       ]},
-      { x: 0.7, y: 0.6, id: 'sys_board', name: '任务公告板', role: 'quest_board', dialogue: [
-        { speaker: '任务公告板', text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
+      { x: 0.7, y: 0.6, id: 'sys_board', role: 'quest_board', dialogue: [
+        { text: '今日与本周的委托都张贴在这里。完成它们能稳定获取金币与经验。', choices: [
           { text: '查看任务板', callback: 'openQuestBoard' }, { text: '离开', callback: 'closeDialogue' },
         ]},
       ]},
-      { x: 0.55, y: 0.38, id: 'npc_f12', role: 'enhance', dialogue: [{ speaker: '虚夜锤', text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
+      { x: 0.55, y: 0.38, id: 'npc_f12', role: 'enhance', dialogue: [{ text: '装备的强化、精炼、分解都交给我吧。好的装备是战斗的基础。', choices: [{ text: '打开强化工坊', callback: 'openEnhance' }, { text: '离开', callback: 'closeDialogue' }] },] },
       { x: 0.2, y: 0.7, id: 'npc_s26', role: 'side_quest', dialogue: [
-        { speaker: '密牙', text: '虚夜宫的守卫越来越少了。帮我击败几只叛逆破面。' },
+        { text: '虚夜宫的守卫越来越少了。帮我击败几只叛逆破面。' },
       ]},
       { x: 0.65, y: 0.8, id: 'npc_m10', role: 'side_quest', dialogue: [
-        { speaker: '远行商', text: '虚夜宫的灵脉被污染了。帮我采集干净的灵脉，净化这里。' },
+        { text: '虚夜宫的灵脉被污染了。帮我采集干净的灵脉，净化这里。' },
       ]},
       { x: 0.15, y: 0.5, id: 'npc_q08', role: 'lore', dialogue: [
-        { speaker: '残影·冥', text: '虚化完成了。但你的旅途还没结束——现世有新的力量等你。' },
-        { speaker: '残影·冥', text: '完现术——将物质中的灵魂觉醒化为己用。北边的穿界门通往现世。' },
+        { text: '虚化完成了。但你的旅途还没结束——现世有新的力量等你。' },
+        { text: '完现术——将物质中的灵魂觉醒化为己用。北边的穿界门通往现世。' },
       ]},
       { x: 0.8, y: 0.65, id: 'npc_s38', role: 'lore', dialogue: [
-        { speaker: '蓝染惣右介(残影)', text: '一切都是镜花水月……你以为虚化是你选择的路？不，是命运选择了你。' },
-        { speaker: '蓝染惣右介(残影)', text: '现世的XCUTION……完现术者的组织。他们在等你。但无形帝国的威胁更近了。' },
+        { text: '一切都是镜花水月……你以为虚化是你选择的路？不，是命运选择了你。' },
+        { text: '现世的XCUTION……完现术者的组织。他们在等你。但无形帝国的威胁更近了。' },
       ]},
 
     ],
