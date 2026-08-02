@@ -71,15 +71,8 @@ export class BootScene extends Phaser.Scene {
       g.clear();
     }
 
-    // 妖魔占位（仅当对应真实纹理缺失时生成）
-    if (!this.textures.exists('enemy_small')) {
-      g.fillStyle(0xcc4444, 1);
-      g.fillRoundedRect(0, 0, 32, 48, 4);
-      g.fillStyle(0x331111, 1);
-      g.fillRoundedRect(6, 2, 20, 20, 4);
-      g.generateTexture('enemy_small', 32, 48);
-      g.clear();
-    }
+    // 妖魔「加载中」占位（仅当对应真实纹理缺失时生成；真立绘由 portraitLoader 就绪后替换）
+    // 注：原 enemy_small（32×48 红块）在怪物立绘全量接入后已无消费方，已于 2026-08-02 移除。
     if (!this.textures.exists('enemy_elite')) {
       g.fillStyle(0x993333, 1);
       g.fillRoundedRect(0, 0, 48, 64, 4);
