@@ -1,0 +1,8 @@
+  // ═══ 装备强化/精炼/分解/制造 — 委托到 world.equipment.ts ═══
+  equip(pw: PlayerWorld, itemId: string): OpResult { return _equip(this, pw, itemId); }
+  unequip(pw: PlayerWorld, slot: EquipSlot): OpResult { return _unequip(this, pw, slot); }
+  craft(pw: PlayerWorld, recipeName: string, zone?: number): OpResult { return _craft(this, pw, recipeName, zone); }
+  enhance(pw: PlayerWorld, itemId: string): OpResult { return _enhance(this, pw, itemId); }
+  refine(pw: PlayerWorld, itemId: string): OpResult { return _refine(this, pw, itemId); }
+  decompose(pw: PlayerWorld, itemId: string): OpResult { return _decompose(this, pw, itemId); }
+  refineReset(pw: PlayerWorld, itemId: string): OpResult { return _refineReset(this, pw, itemId); }
