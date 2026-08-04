@@ -4,6 +4,11 @@
 import { BattleFx } from '../../managers/BattleFx';
 import { GameState } from '../../managers/GameState';
 import { PLAYER_X, PLAYER_Y } from '../BattleScene';
+import { applyStatusToEnemy } from '../../managers/StatusSystem';
+import { enemyDisplayName } from '../../config/entityNames';
+import { getSkillTargetType } from '../../managers/Skills';
+
+declare function calcStatusHitRate(rate: number, subtype: string, name: string, res: number): number;
 
 export function lungeAt(scene: any, tx: number, ty: number, onHit: () => void): void {
   if (!scene.playerSprite) { onHit(); return; }
@@ -34,12 +39,6 @@ export function getEffectivePlayerDef(scene: any): number {
   return Math.round(scene.playerDef * getBuffMods(scene).def);
 }
 
-import { applyStatusToEnemy } from '../../managers/StatusSystem';
-import { enemyDisplayName } from '../../config/entityNames';
-
-// ── globals used in this file ──
-declare function calcStatusHitRate(rate: number, subtype: string, name: string, res: number): number;
-
 export function getEffectivePlayerMdef(scene: any): number {
   return Math.round(scene.playerMdef * getBuffMods(scene).mdef);
 }
@@ -64,37 +63,46 @@ export function applySkillStatus(scene: any, subtype: string, turns: number, idx
   const ks = scene.enemyStatuses[idx];
   if (!scene.bossImmuneTo(idx)) applyStatusToEnemy(ks, subtype, turns, scene.enemies[idx].maxHp);
 }
-  export function playerDefend(scene: any): void {
-    scene.clearTurnTimer();
-    scene.phase = 'executing';
-    scene.clearCommands();
-    scene.isDefending = true;
-    scene.logText.setText('防御！受到的伤害减少80%。');
+
+export function playerDefend(scene: any): void {
+  scene.clearTurnTimer();
+  scene.phase = 'executing';
+  scene.clearCommands();
+  scene.isDefending = true;
+  scene.logText.setText('\u9632\u5fa1\uff01\u53d7\u5230\u7684\u4f24\u5bb3\u51cf\u5c1180%\u3002');
+  scene.time.delayedCall(1000, () => scene.startEnemyPhase());
+}
+
+export function escapeBattle(scene: any): void {
+  scene.clearTurnTimer();
+  scene.phase = 'executing';
+  scene.clearCommands(); scene.clearSubMenu();
+  const alive = scene.getAliveEnemyIndices();
+  const avgEnemySpd = alive.length
+    ? alive.reduce((s: number, i: number) => s + scene.enemies[i].spd, 0) / alive.length
+    : 0;
+  let escapeRate = 0.5 + (scene.playerSpd - avgEnemySpd) * 0.03;
+  escapeRate = Math.max(0.1, Math.min(0.95, escapeRate));
+  if (Math.random() < escapeRate) {
+    scene.logText.setText('\u6210\u529f\u9003\u8131\uff01');
+    scene.time.delayedCall(900, () => {
+      GameState.hp = scene.playerHp;
+      GameState.mp = scene.playerMp;
+      scene.notifyGameScene('escape', 0);
+      scene.scene.stop(); scene.scene.resume('GameScene');
+      scene.scene.get('UIScene').events.emit('updateStats');
+    });
+  } else {
+    scene.logText.setText('\u9003\u8dd1\u5931\u8d25\uff01\u654c\u4eba\u5305\u56f4\u4e86\u4e0a\u6765\uff01');
     scene.time.delayedCall(1000, () => scene.startEnemyPhase());
   }
-  /** 逃跑：按速度差计算成功率（《飘流幻境》式），成功返回据点，失败进入敌人回合 */
+}
 
-  export function escapeBattle(scene: any): void {
-    scene.clearTurnTimer();
-    scene.phase = 'executing';
-    scene.clearCommands(); scene.clearSubMenu();
-    const alive = scene.getAliveEnemyIndices();
-    const avgEnemySpd = alive.length
-      ? alive.reduce((s: number, i: number) => s + scene.enemies[i].spd, 0) / alive.length
-      : 0;
-    let escapeRate = 0.5 + (scene.playerSpd - avgEnemySpd) * 0.03;
-    escapeRate = Math.max(0.1, Math.min(0.95, escapeRate));
-    if (Math.random() < escapeRate) {
-      scene.logText.setText('成功逃脱！');
-      scene.time.delayedCall(900, () => {
-        GameState.hp = scene.playerHp;
-        GameState.mp = scene.playerMp;
-        scene.notifyGameScene('escape', 0);
-        scene.scene.stop(); scene.scene.resume('GameScene');
-        scene.scene.get('UIScene').events.emit('updateStats');
-      });
-    } else {
-      scene.logText.setText('逃跑失败！敌人包围了上来！');
-      scene.time.delayedCall(1000, () => scene.startEnemyPhase());
-    }
+export function castPlayerSkill(scene: any, sk: any): void {
+  const tt = getSkillTargetType(sk);
+  if (tt === 'enemy') {
+    scene.startTargetSelect('skill', sk);
+  } else {
+    scene.executePlayerSkill(sk);
   }
+}

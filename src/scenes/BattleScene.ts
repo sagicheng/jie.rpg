@@ -17,7 +17,7 @@ import { BattleFx } from '../managers/BattleFx';
 import { tickKidoStatus as _tickKidoStatus, tickEnemyStatusDuration as _tickEnemyStatusDuration } from './systems/BattleScene.status';
 import { activateBankai as _activateBankai, activateHollow as _activateHollow, activateHell as _activateHell, showFormPortrait as _showFormPortrait, refreshPlayerFormSprite as _refreshPlayerFormSprite } from './systems/BattleScene.transforms';
 import { victory as _victory, defeat as _defeat } from './systems/BattleScene.ui';
-import { lungeAt as _lungeAt, getBuffMods as _getBuffMods, getCritBonus as _getCritBonus, getEffectivePlayerDef as _getEffectivePlayerDef, getEffectivePlayerMdef as _getEffectivePlayerMdef, playerDefend as _playerDefend, escapeBattle as _escapeBattle, applyControlToEnemy as _applyControlToEnemy, applySkillStatus as _applySkillStatus } from './systems/BattleScene.combat';
+import { lungeAt as _lungeAt, getBuffMods as _getBuffMods, getCritBonus as _getCritBonus, getEffectivePlayerDef as _getEffectivePlayerDef, getEffectivePlayerMdef as _getEffectivePlayerMdef, playerDefend as _playerDefend, escapeBattle as _escapeBattle, applyControlToEnemy as _applyControlToEnemy, applySkillStatus as _applySkillStatus, castPlayerSkill as _castPlayerSkill } from './systems/BattleScene.combat';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -946,16 +946,7 @@ export class BattleScene extends Phaser.Scene {
   private getEffectivePlayerMdef(): number { return _getEffectivePlayerMdef(this); }
   /** 技能菜单点击入口：按目标类型分流（参考《飘流幻境》四向模型） */
 
-  private castPlayerSkill(sk: SkillData): void {
-    const tt = getSkillTargetType(sk);
-    if (tt === 'enemy') {
-      // 敌方单体 → 进入选敌流程
-      this.startTargetSelect('skill', sk);
-    } else {
-      // 敌方全体 / 自身 / 友方单体 / 全队 → 直接释放（群体免选目标）
-      this.executePlayerSkill(sk);
-    }
-  }
+  private castPlayerSkill(sk: SkillData): void { _castPlayerSkill(this, sk); }
 
   private executePlayerSkill(sk: SkillData): void {
     this.clearTurnTimer();
