@@ -79,6 +79,7 @@ export function _create(scene: any): void {
     scene.createGatheringPoints();
 
     scene.cursors = scene.input.keyboard!.createCursorKeys();
+    scene.ctrlKey = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
     scene.keys = {
       W: scene.input.keyboard!.addKey('W'), A: scene.input.keyboard!.addKey('A'),
       S: scene.input.keyboard!.addKey('S'), D: scene.input.keyboard!.addKey('D'),
