@@ -768,6 +768,10 @@ export class MultiBattleScene extends Phaser.Scene {
       : undefined;
     const target = targetCard?.root;
     const homeX = actor.x, homeY = actor.y;
+    // 分组：本地玩家用自身元素色，敌方/他人统一破道默认色（服务端 actionFx 仅区分 melee/cast，不含元素）
+    const group = actorSid === this.mySessionId
+      ? BattleFx.groupFromElement(GameState.element)
+      : 'hado';
 
     if (kind === 'melee' && target) {
       const dx = target.x - homeX, dy = target.y - homeY;
@@ -778,32 +782,34 @@ export class MultiBattleScene extends Phaser.Scene {
       this.tweens.add({
         targets: actor, x: tx, y: ty, duration: 165, ease: 'Quad.Out',
         onComplete: () => {
-          // 物理近战沿用原演出（滑移 + 目标抖动 + 速度线），不叠序列帧特效。
-          this.shakeCard(target!);
-          this.spawnSpeedLines(target!, dx, dy);
+          // 物理近战：保留滑移 + 目标抖动 + 速度线，叠加序列帧命中特效（之前被"克制"掉了）
+          this.shakeCard(target);
+          this.spawnSpeedLines(target, dx, dy);
+          BattleFx.playMeleeHit(this, group, target.x, target.y);
           this.tweens.add({
             targets: actor, x: homeX, y: homeY, duration: 210, ease: 'Quad.InOut', delay: 90,
             onComplete: () => { actorCard.locked = false; },
           });
         },
       });
-    } else if (kind === 'cast') {
-      const dir = target ? (Math.sign(target.x - homeX) || 1) : 1;
+    } else if (kind === 'cast' && target) {
+      const dir = Math.sign(target.x - homeX) || 1;
       this.spawnAfterimage(actorCard, homeX, homeY);
-      actorCard.locked = true;
-      this.tweens.add({
-        targets: actor, x: homeX + dir * 20, duration: 130, yoyo: true, ease: 'Sine.InOut',
-        onYoyo: () => {
-          // 服务端 actionFx 只区分 melee/cast，拿不到元素或流派，
-          // 施法命中统一用破道的通用灵力爆炸。
-          if (target) {
-            this.shakeCard(target);
-            this.spawnSpeedLines(target, target.x - homeX, target.y - homeY);
-            BattleFx.playImpact(this, 'hado', target.x, target.y);
-          }
-        },
-        onComplete: () => { actorCard.locked = false; },
+      // 起手咏唱（搓招）——之前被吞掉，现在真正播放
+      BattleFx.playCast(this, group, actor.x, actor.y, dir);
+      // 咏唱演到一半再出弹道，飞向目标、落点炸开（完整距离释放，不再只是原地小前倾）
+      BattleFx.playSkillHit(this, group, actor.x, actor.y, target.x, target.y, { delay: BattleFx.castLead });
+      const impactAt = Math.round(BattleFx.castLead + BattleFx.flightTime(actor.x, actor.y, target.x, target.y));
+      this.time.delayedCall(impactAt, () => {
+        if (!target.active) return;
+        this.shakeCard(target);
+        this.spawnSpeedLines(target, target.x - homeX, target.y - homeY);
       });
+    } else if (kind === 'cast') {
+      // 无目标咏唱（群体/自身）：原地起手即可
+      const dir = 1;
+      this.spawnAfterimage(actorCard, homeX, homeY);
+      BattleFx.playCast(this, group, actor.x, actor.y, dir);
     } else {
       // 无目标普攻 / 兜底：原地小幅挥砍
       this.tweens.add({ targets: actor, angle: 5, duration: 90, yoyo: true, ease: 'Sine.InOut' });

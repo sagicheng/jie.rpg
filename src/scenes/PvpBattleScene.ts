@@ -191,6 +191,10 @@ export class PvpBattleScene extends Phaser.Scene {
           this.showResult('连接断开');
         });
         room.onMessage('system', () => {});
+        // 服务端在执行阶段广播的攻击演出事件：驱动搓招+弹道+命中特效
+        room.onMessage('actionFx', (data: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }) => {
+          this.playAttackFx(data.actorSid, data.targetId, data.kind);
+        });
         // 服务端权威结算：胜负 + 积分变动 + 段位
         room.onMessage('arenaResult', (r: any) => this.onArenaResult(r));
         this.renderState();
@@ -485,6 +489,32 @@ export class PvpBattleScene extends Phaser.Scene {
         card.root.destroy();
         map.delete(id);
       }
+    }
+  }
+
+  /**
+   * 攻击演出（服务端 actionFx 驱动）：搓招→弹道→落点爆炸 / 近战命中特效。
+   * 服务端 actionFx 仅区分 melee/cast，拿不到元素，统一用破道默认色。
+   * 只放特效精灵、不移动卡牌容器，避免与 syncCards 抢位置。
+   */
+  private playAttackFx(actorSid: string, targetId: string | undefined, kind: 'melee' | 'cast'): void {
+    const actorCard = this.allyCards.get(actorSid) ?? this.enemyCards.get(actorSid);
+    if (!actorCard) return;
+    const actor = actorCard.root;
+    const targetCard = targetId
+      ? (this.enemyCards.get(targetId) ?? this.allyCards.get(targetId))
+      : undefined;
+    const target = targetCard?.root;
+    const group = 'hado';
+
+    if (kind === 'melee' && target) {
+      BattleFx.playMeleeHit(this, group, target.x, target.y);
+    } else if (kind === 'cast' && target) {
+      const dir = Math.sign(target.x - actor.x) || 1;
+      BattleFx.playCast(this, group, actor.x, actor.y, dir);
+      BattleFx.playSkillHit(this, group, actor.x, actor.y, target.x, target.y, { delay: BattleFx.castLead });
+    } else if (kind === 'cast') {
+      BattleFx.playCast(this, group, actor.x, actor.y, 1);
     }
   }
 
