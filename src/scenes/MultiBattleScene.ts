@@ -73,6 +73,9 @@ export class MultiBattleScene extends Phaser.Scene {
   /** 攻击特效串行队列：上一条播完再播下一条，避免服务器连发导致演出重叠。 */
   private fxQueue: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }[] = [];
   private fxPlaying = false;
+  /** 待播死亡集合：死亡特效不再随状态同步立即播，而是等攻击落点(爆炸)演出后再触发，
+   *  以修正「怪物先播死亡动画、爆炸才出现」的时序倒挂。无攻击在跑时(如 DoT 致死)立即播。 */
+  private deathPending = new Set<string>();
   private playerName = '勇者';
 
   private playerCards: Map<string, Card> = new Map();
@@ -795,6 +798,8 @@ export class MultiBattleScene extends Phaser.Scene {
       ? (this.lastLocalKidoSchool ?? BattleFx.groupFromElement(GameState.element))
       : 'hado';
     if (isLocal) this.lastLocalKidoSchool = null; // 消费标志，防误用
+    // 回道(kaido)为自身/友方增益，蓄力特效居中于释放者；其余进攻类前移聚能。
+    const centered = group === 'kaido';
 
     // 演出整体时长估算（ms），用于 onDone 收尾与队列衔接
     const finish = (ms: number) => this.time.delayedCall(Math.round(ms), () => onDone?.());
@@ -818,16 +823,20 @@ export class MultiBattleScene extends Phaser.Scene {
           });
         },
       });
+      // 命中瞬间(滑到目标)后播待播死亡，确保「先命中爆、后死亡」
+      this.time.delayedCall(Math.round(BattleFx.lungeHitAt + 150), () => this.flushDeaths());
       finish(980); // 滑出165 + 命中爆炸(550+尾220)≈935，留余量
     } else if (kind === 'cast' && target) {
       const dir = Math.sign(target.x - homeX) || 1;
       this.spawnAfterimage(actorCard, homeX, homeY);
-      // 起手咏唱（搓招）——之前被吞掉，现在真正播放
-      BattleFx.playCast(this, group, actor.x, actor.y, dir);
+      // 起手咏唱（搓招）——之前被吞掉，现在真正播放（回道居中、其余前移聚能）
+      BattleFx.playCast(this, group, actor.x, actor.y, dir, centered);
       // 咏唱演到一半再出弹道，飞向目标、落点炸开（完整距离释放，不再只是原地小前倾）
       BattleFx.playSkillHit(this, group, actor.x, actor.y, target.x, target.y, { delay: BattleFx.castLead });
-      const total = BattleFx.castLead + BattleFx.flightTime(actor.x, actor.y, target.x, target.y)
-        + BattleFx.impactDuration + 260; // + 落点爆炸尾帧
+      const flight = BattleFx.flightTime(actor.x, actor.y, target.x, target.y);
+      // 落点爆炸出现后(+200ms)播待播死亡，确保「先爆后死」时序正确
+      this.time.delayedCall(Math.round(BattleFx.castLead + flight + 200), () => this.flushDeaths());
+      const total = BattleFx.castLead + flight + BattleFx.impactDuration + 260; // + 落点爆炸尾帧
       this.time.delayedCall(Math.round(total), () => {
         if (!target.active) return;
         this.shakeCard(target);
@@ -835,10 +844,10 @@ export class MultiBattleScene extends Phaser.Scene {
       });
       finish(total);
     } else if (kind === 'cast') {
-      // 无目标咏唱（群体/自身）：原地起手即可
+      // 无目标咏唱（群体/自身）：原地起手即可（回道居中）
       const dir = 1;
       this.spawnAfterimage(actorCard, homeX, homeY);
-      BattleFx.playCast(this, group, actor.x, actor.y, dir);
+      BattleFx.playCast(this, group, actor.x, actor.y, dir, centered);
       finish(900); // 起手咏唱 850 + 余量
     } else {
       // 无目标普攻 / 兜底：原地小幅挥砍
@@ -859,8 +868,23 @@ export class MultiBattleScene extends Phaser.Scene {
     if (!d) { this.fxPlaying = false; return; }
     this.fxPlaying = true;
     this.playAttackFx(d.actorSid, d.targetId, d.kind, () => {
+      this.flushDeaths();                                 // 兜底播待播死亡，确保「先爆后死」
       this.time.delayedCall(90, () => this.pumpFx()); // 首尾留极小间隔，避免硬切
     });
+  }
+
+  /** 播放并清空所有待播死亡（攻击落点/收尾时调用）。 */
+  private flushDeaths(): void {
+    if (this.deathPending.size === 0) return;
+    for (const cid of [...this.deathPending]) this.flushDeath(cid);
+  }
+
+  /** 播放单张待播死亡（若存在且该卡仍在场）。 */
+  private flushDeath(id: string): void {
+    if (!this.deathPending.has(id)) return;
+    this.deathPending.delete(id);
+    const card = this.enemyCards.get(id) ?? this.playerCards.get(id);
+    if (card && card.root.active) BattleFx.playDie(this, card.root.x, card.root.y);
   }
 
   /** 滑移起点克隆一张半透明残影，随演出淡出销毁。 */
@@ -1156,7 +1180,16 @@ export class MultiBattleScene extends Phaser.Scene {
       }
       this.drawHpBar(card, c.hp, c.maxHp);
       this.drawStatusIcons(card, c);
-      if (!c.alive && card.wasAlive !== false) BattleFx.playDie(this, card.root.x, card.root.y);
+      if (!c.alive && card.wasAlive !== false) {
+        // 死亡特效延后到攻击落点(爆炸)之后播，避免「先死再爆」：
+        // 有攻击在跑/排队时进 deathPending 等 flushDeaths；否则立即播(如 DoT 致死)。
+        if (this.fxPlaying || this.fxQueue.length > 0) {
+          this.deathPending.add(id);
+          this.time.delayedCall(2000, () => this.flushDeath(id)); // 兜底，防卡死
+        } else {
+          BattleFx.playDie(this, card.root.x, card.root.y);
+        }
+      }
       card.wasAlive = c.alive;
       card.root.setAlpha(c.alive ? 1 : 0.4);
       // 伤害 / 治疗飘字：检测 HP 变化（首帧 lastHp=-1 跳过，避免进战斗瞬间误报）

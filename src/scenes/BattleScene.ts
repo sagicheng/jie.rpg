@@ -787,7 +787,7 @@ export class BattleScene extends Phaser.Scene {
     if (skill.effect.type === 'heal' || skill.effect.type === 'shield' || skill.effect.type === 'revive') {
       BattleFx.playBuff(this, kfx.x, kfx.y);
     } else {
-      BattleFx.playCast(this, skill.school, kfx.x, kfx.y);
+      BattleFx.playCast(this, skill.school, kfx.x, kfx.y, 1, skill.school === 'kaido');
     }
     const execDelay = 600;
     const execute = () => {

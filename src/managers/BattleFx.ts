@@ -235,9 +235,13 @@ export class BattleFx {
    * 起手咏唱。dir 为施法者朝向（+1 向右 / -1 向左），
    * 特效沿该方向前移，避免与角色立绘完全重叠而看不出来。
    */
-  static playCast(scene: Phaser.Scene, group: string, x: number, y: number, dir = 1): void {
+  static playCast(scene: Phaser.Scene, group: string, x: number, y: number, dir = 1, centered = false): void {
     const key = BattleFx.resolveKey(scene, group, 'cast');
-    if (key) BattleFx.play(scene, key, x + CAST_OFFSET_X * Math.sign(dir || 1), y);
+    if (!key) return;
+    // 进攻类(gif/scaling 向敌人)：蓄力特效前移 CAST_OFFSET_X，呈现"聚能→发射"；
+    // 回道等自身/友方增益：centered=true，蓄力居中于释放者，避免释放者位置留空白。
+    const ox = centered ? 0 : CAST_OFFSET_X * Math.sign(dir || 1);
+    BattleFx.play(scene, key, x + ox, y);
   }
 
   /** 落点爆炸。无对应美术时不放特效，但仍回调 onDone，避免后续演出被吞。 */

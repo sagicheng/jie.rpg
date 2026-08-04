@@ -51,6 +51,8 @@ export class PvpBattleScene extends Phaser.Scene {
   /** 攻击特效串行队列：上一条播完再播下一条，避免服务器连发导致演出重叠。 */
   private fxQueue: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }[] = [];
   private fxPlaying = false;
+  /** 待播死亡集合：死亡延后到攻击落点(爆炸)之后播，修正「先死再爆」时序倒挂。 */
+  private deathPending = new Set<string>();
   private playerName = '勇者';
   private myTeam = 'A';
   private mode: '1v1' | '4v4' = '1v1';
@@ -475,7 +477,15 @@ export class PvpBattleScene extends Phaser.Scene {
       }
       card.name.setText(`${c.name}${c.team === this.myTeam ? '（我方）' : ''}${c.alive ? '' : '（倒下）'}`);
       this.drawHpBar(card, c.hp, c.maxHp);
-      if (!c.alive && card.wasAlive !== false) BattleFx.playDie(this, card.root.x, card.root.y);
+      if (!c.alive && card.wasAlive !== false) {
+        // 死亡延后到攻击落点(爆炸)之后播，避免「先死再爆」；无攻击在跑时立即播。
+        if (this.fxPlaying || this.fxQueue.length > 0) {
+          this.deathPending.add(id);
+          this.time.delayedCall(2000, () => this.flushDeath(id)); // 兜底，防卡死
+        } else {
+          BattleFx.playDie(this, card.root.x, card.root.y);
+        }
+      }
       card.wasAlive = c.alive;
       card.root.setAlpha(c.alive ? 1 : 0.4);
       // 伤害 / 治疗飘字：检测 HP 变化（首帧 lastHp=-1 跳过）
@@ -513,21 +523,24 @@ export class PvpBattleScene extends Phaser.Scene {
       ? (this.enemyCards.get(targetId) ?? this.allyCards.get(targetId))
       : undefined;
     const target = targetCard?.root;
-    const group = 'hado'; // PvP 服务端不下发元素，统一破道默认色
+    const group: string = 'hado'; // PvP 服务端不下发元素，统一破道默认色
+    const centered = group === 'kaido'; // 回道居中（PvP 当前恒 hado，预留）
     const finish = (ms: number) => this.time.delayedCall(Math.round(ms), () => onDone?.());
 
     if (kind === 'melee' && target) {
       BattleFx.playMeleeHit(this, group, target.x, target.y);
+      this.time.delayedCall(Math.round(BattleFx.lungeHitAt + 150), () => this.flushDeaths());
       finish(820); // 命中爆炸(550+尾220)≈770，留余量
     } else if (kind === 'cast' && target) {
       const dir = Math.sign(target.x - actor.x) || 1;
-      BattleFx.playCast(this, group, actor.x, actor.y, dir);
+      BattleFx.playCast(this, group, actor.x, actor.y, dir, centered);
       BattleFx.playSkillHit(this, group, actor.x, actor.y, target.x, target.y, { delay: BattleFx.castLead });
-      const total = BattleFx.castLead + BattleFx.flightTime(actor.x, actor.y, target.x, target.y)
-        + BattleFx.impactDuration + 260;
+      const flight = BattleFx.flightTime(actor.x, actor.y, target.x, target.y);
+      this.time.delayedCall(Math.round(BattleFx.castLead + flight + 200), () => this.flushDeaths());
+      const total = BattleFx.castLead + flight + BattleFx.impactDuration + 260;
       finish(total);
     } else if (kind === 'cast') {
-      BattleFx.playCast(this, group, actor.x, actor.y, 1);
+      BattleFx.playCast(this, group, actor.x, actor.y, 1, centered);
       finish(900);
     } else {
       finish(120);
@@ -546,8 +559,23 @@ export class PvpBattleScene extends Phaser.Scene {
     if (!d) { this.fxPlaying = false; return; }
     this.fxPlaying = true;
     this.playAttackFx(d.actorSid, d.targetId, d.kind, () => {
+      this.flushDeaths();
       this.time.delayedCall(90, () => this.pumpFx());
     });
+  }
+
+  /** 播放并清空所有待播死亡（攻击落点/收尾时调用）。 */
+  private flushDeaths(): void {
+    if (this.deathPending.size === 0) return;
+    for (const cid of [...this.deathPending]) this.flushDeath(cid);
+  }
+
+  /** 播放单张待播死亡（若存在且该卡仍在场）。 */
+  private flushDeath(id: string): void {
+    if (!this.deathPending.has(id)) return;
+    this.deathPending.delete(id);
+    const card = this.enemyCards.get(id) ?? this.allyCards.get(id);
+    if (card && card.root.active) BattleFx.playDie(this, card.root.x, card.root.y);
   }
 
   private makeCard(x: number, y: number, isAlly: boolean): Card {
