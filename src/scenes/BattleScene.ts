@@ -17,6 +17,8 @@ import { BattleFx } from '../managers/BattleFx';
 import { tickKidoStatus as _tickKidoStatus, tickEnemyStatusDuration as _tickEnemyStatusDuration } from './systems/BattleScene.status';
 import { activateBankai as _activateBankai, activateHollow as _activateHollow, activateHell as _activateHell, showFormPortrait as _showFormPortrait, refreshPlayerFormSprite as _refreshPlayerFormSprite } from './systems/BattleScene.transforms';
 import { victory as _victory, defeat as _defeat } from './systems/BattleScene.ui';
+import { lungeAt as _lungeAt, getBuffMods as _getBuffMods, getCritBonus as _getCritBonus, getEffectivePlayerDef as _getEffectivePlayerDef, getEffectivePlayerMdef as _getEffectivePlayerMdef } from './systems/BattleScene.combat';
+import { victory as _victory, defeat as _defeat } from './systems/BattleScene.ui';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -893,10 +895,7 @@ export class BattleScene extends Phaser.Scene {
   // ════════════════════ 玩家行动 ════════════════════
 
   /** 物理演出：玩家从固定站位冲向目标，冲到位时回调，随后自动归位。 */
-  private lungeAt(tx: number, ty: number, onHit: () => void): void {
-    if (!this.playerSprite) { onHit(); return; }
-    BattleFx.lunge(this, this.playerSprite, PLAYER_X, PLAYER_Y, tx, ty, onHit);
-  }
+  private lungeAt(tx: number, ty: number, onHit: () => void): void { _lungeAt(this, tx, ty, onHit); }
 
   private playerAttack(): void {
     this.clearTurnTimer();
@@ -936,36 +935,16 @@ export class BattleScene extends Phaser.Scene {
   }
   /** 获取临时buff对属性的修正倍率（含防御/魔防/暴击） */
 
-  private getBuffMods(): { atk: number; def: number; matk: number; mdef: number; spd: number } {
-    let atk = 1, def = 1, matk = 1, mdef = 1, spd = 1;
-    for (const b of this.tempBuffs) {
-      switch (b.stat) {
-        case 'atk':  atk += b.value; break;
-        case 'def':   def += b.value; break;
-        case 'matk': matk += b.value; break;
-        case 'mdef': mdef += b.value; break;
-        case 'spd':  spd += b.value; break;
-      }
-    }
-    return { atk, def, matk, mdef, spd };
-  }
+  private getBuffMods(): { atk: number; def: number; matk: number; mdef: number; spd: number } { return _getBuffMods(this); }
   /** 临时buff累加的暴击率加成 */
 
-  private getCritBonus(): number {
-    let c = 0;
-    for (const b of this.tempBuffs) if (b.stat === 'crit') c += b.value;
-    return c;
-  }
+  private getCritBonus(): number { return _getCritBonus(this); }
   /** 玩家有效防御（含buff，敌人打玩家时用） */
 
-  private getEffectivePlayerDef(): number {
-    return Math.round(this.playerDef * this.getBuffMods().def);
-  }
+  private getEffectivePlayerDef(): number { return _getEffectivePlayerDef(this); }
   /** 玩家有效魔防（含buff） */
 
-  private getEffectivePlayerMdef(): number {
-    return Math.round(this.playerMdef * this.getBuffMods().mdef);
-  }
+  private getEffectivePlayerMdef(): number { return _getEffectivePlayerMdef(this); }
   /** 技能菜单点击入口：按目标类型分流（参考《飘流幻境》四向模型） */
 
   private castPlayerSkill(sk: SkillData): void {
