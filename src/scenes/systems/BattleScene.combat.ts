@@ -54,9 +54,9 @@ export function getEffectivePlayerMdef(scene: any): number {
     const avgEnemySpd = alive.length
       ? alive.reduce((s, i) => s + scene.enemies[i].spd, 0) / alive.length
       : 0;
-    let scene.escapeRate = 0.5 + (scene.playerSpd - avgEnemySpd) * 0.03;
-    scene.escapeRate = Math.max(0.1, Math.min(0.95, scene.escapeRate));
-    if (Math.random() < scene.escapeRate) {
+    let escapeRate = 0.5 + (scene.playerSpd - avgEnemySpd) * 0.03;
+    escapeRate = Math.max(0.1, Math.min(0.95, escapeRate));
+    if (Math.random() < escapeRate) {
       scene.logText.setText('成功逃脱！');
       scene.time.delayedCall(900, () => {
         GameState.hp = scene.playerHp;
