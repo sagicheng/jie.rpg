@@ -15,7 +15,7 @@
  */
 import { ZONE_CONFIGS } from '../../src/config/zones';
 import { NODE_TO_MATERIAL, matId } from '../../src/config/materials';
-import { MAIN_QUESTS, SIDE_QUESTS, DAILY_QUESTS, WEEKLY_QUESTS, DAILY_CAP, WEEKLY_CAP, todayStr, weekStr } from '../../src/managers/QuestData';
+import { weekStr } from '../../src/managers/QuestData';
 import { expForLevel } from '../../src/managers/BattleData';
 import { makeSetId } from '../../src/managers/SetSystem';
 import { POINTS_PER_LEVEL } from '../../src/config/config';
@@ -24,12 +24,11 @@ import { KIDO_NODES, TIER_LOCK, ALL_KIDO_NODES } from '../../src/managers/Kido';
 import { getBestiaryTierReached, BESTIARY_TIERS, BESTIARY_TITLES, NAMED_ENEMIES } from '../../src/managers/BestiaryData';
 import { saveCharacterWorld } from './db';
 import { newArenaState, ensureArena as arenaEnsure, applyResult as arenaApply, tierName, isArenaOpen, ARENA_WEEKLY_CAP, seasonRewardFor, type ArenaState, type ArenaResult } from '../modules/feature/arena';
+import { updateQuest as _updateQuest, claimQuest as _claimQuest, enterDungeon as _enterDungeon, completeDungeon as _completeDungeon } from './systems/world.quest';
 
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1080;
 const GATHER_RESPAWN_MS = 30000;
-/** 副本每周可参加次数（全部副本共享）。 */
-const DUNGEON_WEEKLY_CAP = 3;
 
 // ——— 强化 / 精炼 / 分解 纯逻辑（镜像自 src/systems/EnhanceSystem，去全局耦合）———
 const ENHANCE_RATES: number[] = [1, 1, 1, 1, 1, 0.85, 0.70, 0.55, 0.42, 0.30];
@@ -247,8 +246,6 @@ function genPetId(): string {
 }
 
 export interface OpResult { ok: boolean; msg: string; data?: any; type?: string; }
-
-const ALL_QUESTS = { ...MAIN_QUESTS, ...SIDE_QUESTS, ...DAILY_QUESTS, ...WEEKLY_QUESTS };
 
 function seedWorld(): PlayerWorld {
   return {
@@ -584,79 +581,12 @@ export class WorldService {
   }
 
   // ───────────────── 任务 ─────────────────
-  updateQuest(pw: PlayerWorld, type: string, target: string, amount: number): void {
-    const key = `${type}:${target}`;
-    pw.quests[key] = (pw.quests[key] || 0) + amount;
-  }
-  claimQuest(pw: PlayerWorld, questId: string): OpResult {
-    const q = ALL_QUESTS[questId];
-    if (!q) return { ok: false, msg: '未知任务' };
-    // 日常：按日期字符串判定（非 completedQuests，因可重复）
-    if (q.type === 'daily') {
-      const t = todayStr();
-      if (pw.dailyClaimed.date !== t) pw.dailyClaimed = { date: t, ids: [] };
-      if (pw.dailyClaimed.ids.includes(questId)) return { ok: false, msg: '今日已完成' };
-      if (pw.dailyClaimed.ids.length >= DAILY_CAP) return { ok: false, msg: '今日完成上限' };
-      const r = q.rewards || {};
-      if (r.gold) this.addGold(pw, r.gold);
-      if (r.exp) this.gainExp(pw, r.exp);
-      if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
-      if (r.unlock) this.addUnlock(pw, r.unlock);
-      pw.dailyClaimed.ids.push(questId);
-      return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, type: q.type, data: r };
-    }
-    // 周常：按本周字符串判定
-    if (q.type === 'weekly') {
-      const w = weekStr();
-      if (pw.weeklyClaimed.week !== w) pw.weeklyClaimed = { week: w, ids: [] };
-      if (pw.weeklyClaimed.ids.includes(questId)) return { ok: false, msg: '本周已完成' };
-      if (pw.weeklyClaimed.ids.length >= WEEKLY_CAP) return { ok: false, msg: '本周完成上限' };
-      const r = q.rewards || {};
-      if (r.gold) this.addGold(pw, r.gold);
-      if (r.exp) this.gainExp(pw, r.exp);
-      if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
-      if (r.unlock) this.addUnlock(pw, r.unlock);
-      pw.weeklyClaimed.ids.push(questId);
-      return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, type: q.type, data: r };
-    }
-    // 主线 / 支线
-    if (pw.completedQuests.includes(questId)) return { ok: false, msg: '已完成' };
-    const r = q.rewards || {};
-    if (r.gold) this.addGold(pw, r.gold);
-    if (r.exp) this.gainExp(pw, r.exp);
-    if (r.items) for (const it of r.items) this.grantItem(pw, { id: it.id, name: it.name, type: 'consumable', desc: '', quantity: it.count });
-    if (r.unlock) this.addUnlock(pw, r.unlock);
-    pw.completedQuests.push(questId);
-    return { ok: true, msg: `领取奖励：${r.gold ? '金币+' + r.gold + ' ' : ''}${r.exp ? '经验+' + r.exp : ''}`, type: q.type, data: r };
-  }
+  updateQuest(pw: PlayerWorld, type: string, target: string, amount: number): void { _updateQuest(this, pw, type, target, amount); }
+  claimQuest(pw: PlayerWorld, questId: string): OpResult { return _claimQuest(this, pw, questId); }
 
   // ───────────────── 副本（独立实例·周共享3次） ─────────────────
-  /**
-   * 进入副本：按日历周 + 上限判定（全部副本共享 3 次/周，按"进入"计次）。
-   * - 若已有同副本活动进度 → 视为续打，免费（不计次）。
-   * - 否则若本周次数已用完 → 拒绝。
-   * - 否则计 1 次并设为活动副本。
-   * 例：进2次副本1 + 1次副本2 = 3 次（满）。
-   */
-  enterDungeon(pw: PlayerWorld, dungeonId: number): OpResult {
-    this.refreshDungeonWeekly(pw);
-    // 续打同副本：免费
-    if (pw.dungeon && pw.dungeon.dungeonId === dungeonId) {
-      return { ok: true, msg: '继续副本', data: { resumed: true, remaining: DUNGEON_WEEKLY_CAP - pw.dungeonWeekly.count } };
-    }
-    // 新进入：计次
-    if (pw.dungeonWeekly.count >= DUNGEON_WEEKLY_CAP) {
-      return { ok: false, msg: '本周副本次数已用完（共享3次）' };
-    }
-    pw.dungeonWeekly.count += 1;
-    pw.dungeon = { dungeonId, stage: 1 };
-    return { ok: true, msg: '进入副本', data: { resumed: false, remaining: DUNGEON_WEEKLY_CAP - pw.dungeonWeekly.count } };
-  }
-
-  /** 副本全部 3 阶通关：清除活动副本（下次进入重新计次）。 */
-  completeDungeon(pw: PlayerWorld, dungeonId: number): void {
-    if (pw.dungeon && pw.dungeon.dungeonId === dungeonId) pw.dungeon = null;
-  }
+  enterDungeon(pw: PlayerWorld, dungeonId: number): OpResult { return _enterDungeon(this, pw, dungeonId); }
+  completeDungeon(pw: PlayerWorld, dungeonId: number): void { _completeDungeon(this, pw, dungeonId); }
 
   // ───────────────── 装备 / 卸下 ─────────────────
   equip(pw: PlayerWorld, itemId: string): OpResult {
