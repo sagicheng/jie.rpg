@@ -1,174 +1,174 @@
 {
   "frames": {
-    "0": {
+    "001.png": {
       "frame": {
         "x": 0,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "sourceSize": {
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       }
     },
-    "1": {
+    "002.png": {
       "frame": {
-        "x": 96,
+        "x": 64,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "sourceSize": {
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       }
     },
-    "2": {
+    "003.png": {
+      "frame": {
+        "x": 128,
+        "y": 0,
+        "w": 64,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 64,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 64,
+        "h": 64
+      }
+    },
+    "004.png": {
       "frame": {
         "x": 192,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "sourceSize": {
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       }
     },
-    "3": {
+    "005.png": {
       "frame": {
-        "x": 288,
+        "x": 256,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "sourceSize": {
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       }
     },
-    "4": {
+    "006.png": {
+      "frame": {
+        "x": 320,
+        "y": 0,
+        "w": 64,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 64,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 64,
+        "h": 64
+      }
+    },
+    "007.png": {
       "frame": {
         "x": 384,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "sourceSize": {
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       }
     },
-    "5": {
+    "008.png": {
       "frame": {
-        "x": 480,
+        "x": 448,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       },
       "sourceSize": {
-        "w": 96,
-        "h": 96
-      }
-    },
-    "6": {
-      "frame": {
-        "x": 576,
-        "y": 0,
-        "w": 96,
-        "h": 96
-      },
-      "rotated": false,
-      "trimmed": false,
-      "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 96,
-        "h": 96
-      },
-      "sourceSize": {
-        "w": 96,
-        "h": 96
-      }
-    },
-    "7": {
-      "frame": {
-        "x": 672,
-        "y": 0,
-        "w": 96,
-        "h": 96
-      },
-      "rotated": false,
-      "trimmed": false,
-      "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 96,
-        "h": 96
-      },
-      "sourceSize": {
-        "w": 96,
-        "h": 96
+        "w": 64,
+        "h": 64
       }
     }
   },
   "meta": {
-    "app": "pack_atlas.py",
+    "app": "FramePacker",
     "version": "1.0",
-    "image": "风系弹道.png",
+    "image": "fx_bakudo_projectile.png",
     "format": "RGBA8888",
     "size": {
-      "w": 768,
-      "h": 96
+      "w": 512,
+      "h": 64
     },
     "scale": "1"
   }

@@ -1,10 +1,10 @@
 {
   "frames": {
-    "41005_instant kill_0": {
+    "001.png": {
       "frame": {
         "x": 0,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "rotated": false,
@@ -12,19 +12,19 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "sourceSize": {
-        "w": 128,
+        "w": 120,
         "h": 160
       }
     },
-    "41005_instant kill_1": {
+    "002.png": {
       "frame": {
-        "x": 128,
+        "x": 120,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "rotated": false,
@@ -32,19 +32,19 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "sourceSize": {
-        "w": 128,
+        "w": 120,
         "h": 160
       }
     },
-    "41005_instant kill_2": {
+    "003.png": {
       "frame": {
-        "x": 256,
+        "x": 240,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "rotated": false,
@@ -52,19 +52,19 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "sourceSize": {
-        "w": 128,
+        "w": 120,
         "h": 160
       }
     },
-    "41005_instant kill_3": {
+    "004.png": {
       "frame": {
-        "x": 384,
+        "x": 360,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "rotated": false,
@@ -72,19 +72,19 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "sourceSize": {
-        "w": 128,
+        "w": 120,
         "h": 160
       }
     },
-    "41005_instant kill_4": {
+    "005.png": {
       "frame": {
-        "x": 512,
+        "x": 480,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "rotated": false,
@@ -92,19 +92,19 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "sourceSize": {
-        "w": 128,
+        "w": 120,
         "h": 160
       }
     },
-    "41005_instant kill_5": {
+    "006.png": {
       "frame": {
-        "x": 640,
+        "x": 600,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "rotated": false,
@@ -112,19 +112,19 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "sourceSize": {
-        "w": 128,
+        "w": 120,
         "h": 160
       }
     },
-    "41005_instant kill_6": {
+    "007.png": {
       "frame": {
-        "x": 768,
+        "x": 720,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "rotated": false,
@@ -132,19 +132,19 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "sourceSize": {
-        "w": 128,
+        "w": 120,
         "h": 160
       }
     },
-    "41005_instant kill_7": {
+    "008.png": {
       "frame": {
-        "x": 896,
+        "x": 840,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "rotated": false,
@@ -152,22 +152,102 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
+        "w": 120,
         "h": 160
       },
       "sourceSize": {
-        "w": 128,
+        "w": 120,
+        "h": 160
+      }
+    },
+    "009.png": {
+      "frame": {
+        "x": 960,
+        "y": 0,
+        "w": 120,
+        "h": 160
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 160
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 160
+      }
+    },
+    "010.png": {
+      "frame": {
+        "x": 1080,
+        "y": 0,
+        "w": 120,
+        "h": 160
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 160
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 160
+      }
+    },
+    "011.png": {
+      "frame": {
+        "x": 1200,
+        "y": 0,
+        "w": 120,
+        "h": 160
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 160
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 160
+      }
+    },
+    "012.png": {
+      "frame": {
+        "x": 1320,
+        "y": 0,
+        "w": 120,
+        "h": 160
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 160
+      },
+      "sourceSize": {
+        "w": 120,
         "h": 160
       }
     }
   },
   "meta": {
-    "app": "pack_atlas.py",
+    "app": "FramePacker",
     "version": "1.0",
-    "image": "41005_instant kill.png",
+    "image": "fx_bakudo_impact.png",
     "format": "RGBA8888",
     "size": {
-      "w": 1024,
+      "w": 1440,
       "h": 160
     },
     "scale": "1"

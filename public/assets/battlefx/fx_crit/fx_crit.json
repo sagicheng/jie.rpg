@@ -164,7 +164,7 @@
   "meta": {
     "app": "pack_atlas.py",
     "version": "1.0",
-    "image": "attack_15001.png",
+    "image": "fx_crit.png",
     "format": "RGBA8888",
     "size": {
       "w": 512,

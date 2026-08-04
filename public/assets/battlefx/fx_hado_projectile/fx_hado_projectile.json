@@ -164,7 +164,7 @@
   "meta": {
     "app": "FramePacker",
     "version": "1.0",
-    "image": "hero_walk_male1.png",
+    "image": "fx_hado_projectile.png",
     "format": "RGBA8888",
     "size": {
       "w": 512,

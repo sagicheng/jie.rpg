@@ -62,18 +62,27 @@ export class BattleFx {
     return (el && ELEMENT_TO_GROUP[el]) || 'neutral';
   }
 
-  /** 一次性提示疑似占位资源，便于美术替换（不影响运行）。 */
+  /**
+   * 一次性提示尚未替换真实美术的 clip（按子目录名登记）。
+   * 文件已统一命名为「文件夹名.png」，故占位检测改以 key 列表为准：
+   * 美术把真实特效放进对应子目录后，从此列表移除该 key 即可关闭提示。
+   */
   private static warned = false;
+  private static readonly PLACEHOLDER_KEYS = new Set<string>([
+    'fx_bakudo_cast', 'fx_bakudo_impact', 'fx_bakudo_projectile',
+    'fx_earth_cast', 'fx_fire_cast',
+    'fx_hado_cast', 'fx_hado_impact', 'fx_hado_projectile',
+    'fx_water_cast', 'fx_wind_cast',
+    'fx_kaido_buff',
+  ]);
   private static warnPlaceholder(): void {
     if (BattleFx.warned) return;
     BattleFx.warned = true;
-    const bad = BATTLE_FX_MANIFEST.filter(
-      (e) => e.pngFile.includes('hero_walk_male1') || e.pngFile.includes('church_heal'),
-    );
+    const bad = BATTLE_FX_MANIFEST.filter((e) => BattleFx.PLACEHOLDER_KEYS.has(e.key));
     if (bad.length === 0) return;
     console.warn(
-      '[BattleFx] 以下 clip 使用的 PNG 疑似占位/错放资源，演出会异常，请替换为真实特效（保留子目录名即可）：\n' +
-      bad.map((e) => `  ${e.key} -> ${e.pngFile}`).join('\n'),
+      '[BattleFx] 以下 clip 仍使用占位/错放美术，演出可能异常，请替换为真实特效（保留子目录名，文件按 fx_<key>.png 命名）：\n' +
+      bad.map((e) => `  ${e.key}`).join('\n'),
     );
   }
 

@@ -164,7 +164,7 @@
   "meta": {
     "app": "pack_atlas.py",
     "version": "1.0",
-    "image": "水系弹道.png",
+    "image": "fx_fire_projectile.png",
     "format": "RGBA8888",
     "size": {
       "w": 768,

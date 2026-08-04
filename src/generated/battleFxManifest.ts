@@ -20,51 +20,51 @@ export interface BattleFxEntry {
 export const BATTLE_FX_MANIFEST: BattleFxEntry[] = [
   {
     "key": "fx_bakudo_cast",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_bakudo_cast.png",
     "frameWidth": 160,
     "frameHeight": 200,
     "frameCount": 12,
-    "url": "assets/battlefx/fx_bakudo_cast/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_bakudo_cast/fx_bakudo_cast.png"
   },
   {
     "key": "fx_bakudo_impact",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_bakudo_impact.png",
     "frameWidth": 120,
     "frameHeight": 160,
     "frameCount": 12,
-    "url": "assets/battlefx/fx_bakudo_impact/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_bakudo_impact/fx_bakudo_impact.png"
   },
   {
     "key": "fx_bakudo_projectile",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_bakudo_projectile.png",
     "frameWidth": 64,
     "frameHeight": 64,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_bakudo_projectile/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_bakudo_projectile/fx_bakudo_projectile.png"
   },
   {
     "key": "fx_crit",
-    "pngFile": "attack_15001.png",
+    "pngFile": "fx_crit.png",
     "frameWidth": 64,
     "frameHeight": 64,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_crit/attack_15001.png"
+    "url": "assets/battlefx/fx_crit/fx_crit.png"
   },
   {
     "key": "fx_die",
-    "pngFile": "41005_instant kill.png",
+    "pngFile": "fx_die.png",
     "frameWidth": 128,
     "frameHeight": 160,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_die/41005_instant kill.png"
+    "url": "assets/battlefx/fx_die/fx_die.png"
   },
   {
     "key": "fx_earth_cast",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_earth_cast.png",
     "frameWidth": 120,
     "frameHeight": 200,
     "frameCount": 12,
-    "url": "assets/battlefx/fx_earth_cast/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_earth_cast/fx_earth_cast.png"
   },
   {
     "key": "fx_earth_impact",
@@ -76,19 +76,19 @@ export const BATTLE_FX_MANIFEST: BattleFxEntry[] = [
   },
   {
     "key": "fx_earth_projectile",
-    "pngFile": "土系弹道.png",
+    "pngFile": "fx_earth_projectile.png",
     "frameWidth": 96,
     "frameHeight": 96,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_earth_projectile/土系弹道.png"
+    "url": "assets/battlefx/fx_earth_projectile/fx_earth_projectile.png"
   },
   {
     "key": "fx_fire_cast",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_fire_cast.png",
     "frameWidth": 120,
     "frameHeight": 200,
     "frameCount": 12,
-    "url": "assets/battlefx/fx_fire_cast/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_fire_cast/fx_fire_cast.png"
   },
   {
     "key": "fx_fire_impact",
@@ -100,59 +100,59 @@ export const BATTLE_FX_MANIFEST: BattleFxEntry[] = [
   },
   {
     "key": "fx_fire_projectile",
-    "pngFile": "火焰弹道.png",
+    "pngFile": "fx_fire_projectile.png",
     "frameWidth": 96,
     "frameHeight": 96,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_fire_projectile/火焰弹道.png"
+    "url": "assets/battlefx/fx_fire_projectile/fx_fire_projectile.png"
   },
   {
     "key": "fx_hado_cast",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_hado_cast.png",
     "frameWidth": 120,
     "frameHeight": 200,
     "frameCount": 12,
-    "url": "assets/battlefx/fx_hado_cast/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_hado_cast/fx_hado_cast.png"
   },
   {
     "key": "fx_hado_impact",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_hado_impact.png",
     "frameWidth": 160,
     "frameHeight": 160,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_hado_impact/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_hado_impact/fx_hado_impact.png"
   },
   {
     "key": "fx_hado_projectile",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_hado_projectile.png",
     "frameWidth": 64,
     "frameHeight": 64,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_hado_projectile/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_hado_projectile/fx_hado_projectile.png"
   },
   {
     "key": "fx_kaido_buff",
-    "pngFile": "church_heal_001.png",
+    "pngFile": "fx_kaido_buff.png",
     "frameWidth": 128,
     "frameHeight": 160,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_kaido_buff/church_heal_001.png"
+    "url": "assets/battlefx/fx_kaido_buff/fx_kaido_buff.png"
   },
   {
     "key": "fx_kaido_cast",
-    "pngFile": "41001_active_cast.png",
+    "pngFile": "fx_kaido_cast.png",
     "frameWidth": 160,
     "frameHeight": 200,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_kaido_cast/41001_active_cast.png"
+    "url": "assets/battlefx/fx_kaido_cast/fx_kaido_cast.png"
   },
   {
     "key": "fx_water_cast",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_water_cast.png",
     "frameWidth": 120,
     "frameHeight": 200,
     "frameCount": 12,
-    "url": "assets/battlefx/fx_water_cast/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_water_cast/fx_water_cast.png"
   },
   {
     "key": "fx_water_impact",
@@ -164,19 +164,19 @@ export const BATTLE_FX_MANIFEST: BattleFxEntry[] = [
   },
   {
     "key": "fx_water_projectile",
-    "pngFile": "水系弹道.png",
+    "pngFile": "fx_water_projectile.png",
     "frameWidth": 96,
     "frameHeight": 96,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_water_projectile/水系弹道.png"
+    "url": "assets/battlefx/fx_water_projectile/fx_water_projectile.png"
   },
   {
     "key": "fx_wind_cast",
-    "pngFile": "hero_walk_male1.png",
+    "pngFile": "fx_wind_cast.png",
     "frameWidth": 120,
     "frameHeight": 200,
     "frameCount": 12,
-    "url": "assets/battlefx/fx_wind_cast/hero_walk_male1.png"
+    "url": "assets/battlefx/fx_wind_cast/fx_wind_cast.png"
   },
   {
     "key": "fx_wind_impact",
@@ -188,10 +188,10 @@ export const BATTLE_FX_MANIFEST: BattleFxEntry[] = [
   },
   {
     "key": "fx_wind_projectile",
-    "pngFile": "风系弹道.png",
+    "pngFile": "fx_wind_projectile.png",
     "frameWidth": 96,
     "frameHeight": 96,
     "frameCount": 8,
-    "url": "assets/battlefx/fx_wind_projectile/风系弹道.png"
+    "url": "assets/battlefx/fx_wind_projectile/fx_wind_projectile.png"
   }
 ];
