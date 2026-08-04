@@ -17,7 +17,7 @@ import { BattleFx } from '../managers/BattleFx';
 import { tickKidoStatus as _tickKidoStatus, tickEnemyStatusDuration as _tickEnemyStatusDuration } from './systems/BattleScene.status';
 import { activateBankai as _activateBankai, activateHollow as _activateHollow, activateHell as _activateHell, showFormPortrait as _showFormPortrait, refreshPlayerFormSprite as _refreshPlayerFormSprite } from './systems/BattleScene.transforms';
 import { victory as _victory, defeat as _defeat } from './systems/BattleScene.ui';
-import { lungeAt as _lungeAt, getBuffMods as _getBuffMods, getCritBonus as _getCritBonus, getEffectivePlayerDef as _getEffectivePlayerDef, getEffectivePlayerMdef as _getEffectivePlayerMdef } from './systems/BattleScene.combat';
+import { lungeAt as _lungeAt, getBuffMods as _getBuffMods, getCritBonus as _getCritBonus, getEffectivePlayerDef as _getEffectivePlayerDef, getEffectivePlayerMdef as _getEffectivePlayerMdef, playerDefend as _playerDefend, escapeBattle as _escapeBattle } from './systems/BattleScene.combat';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -1254,40 +1254,9 @@ export class BattleScene extends Phaser.Scene {
     this.subMenuContainer!.add(backText);
   }
 
-  private playerDefend(): void {
-    this.clearTurnTimer();
-    this.phase = 'executing';
-    this.clearCommands();
-    this.isDefending = true;
-    this.logText.setText('防御！受到的伤害减少80%。');
-    this.time.delayedCall(1000, () => this.startEnemyPhase());
-  }
-  /** 逃跑：按速度差计算成功率（《飘流幻境》式），成功返回据点，失败进入敌人回合 */
+  private playerDefend(): void { _playerDefend(this); }
 
-  private escapeBattle(): void {
-    this.clearTurnTimer();
-    this.phase = 'executing';
-    this.clearCommands(); this.clearSubMenu();
-    const alive = this.getAliveEnemyIndices();
-    const avgEnemySpd = alive.length
-      ? alive.reduce((s, i) => s + this.enemies[i].spd, 0) / alive.length
-      : 0;
-    let escapeRate = 0.5 + (this.playerSpd - avgEnemySpd) * 0.03;
-    escapeRate = Math.max(0.1, Math.min(0.95, escapeRate));
-    if (Math.random() < escapeRate) {
-      this.logText.setText('成功逃脱！');
-      this.time.delayedCall(900, () => {
-        GameState.hp = this.playerHp;
-        GameState.mp = this.playerMp;
-        this.notifyGameScene('escape', 0);
-        this.scene.stop(); this.scene.resume('GameScene');
-        this.scene.get('UIScene').events.emit('updateStats');
-      });
-    } else {
-      this.logText.setText('逃跑失败！敌人包围了上来！');
-      this.time.delayedCall(1000, () => this.startEnemyPhase());
-    }
-  }
+  private escapeBattle(): void { _escapeBattle(this); }
   // ═══ 变身系统 — 委托到 BattleScene.transforms.ts ═══
   private activateBankai(): void { _activateBankai(this); }
   private activateHollow(): void { _activateHollow(this); }

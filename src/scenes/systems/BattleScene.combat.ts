@@ -36,3 +36,37 @@ export function getEffectivePlayerDef(scene: any): number {
 export function getEffectivePlayerMdef(scene: any): number {
   return Math.round(scene.playerMdef * getBuffMods(scene).mdef);
 }
+  export function playerDefend(scene: any): void {
+    scene.clearTurnTimer();
+    scene.phase = 'executing';
+    scene.clearCommands();
+    scene.isDefending = true;
+    scene.logText.setText('防御！受到的伤害减少80%。');
+    scene.time.delayedCall(1000, () => scene.startEnemyPhase());
+  }
+  /** 逃跑：按速度差计算成功率（《飘流幻境》式），成功返回据点，失败进入敌人回合 */
+
+  export function escapeBattle(scene: any): void {
+    scene.clearTurnTimer();
+    scene.phase = 'executing';
+    scene.clearCommands(); scene.clearSubMenu();
+    const alive = scene.getAliveEnemyIndices();
+    const avgEnemySpd = alive.length
+      ? alive.reduce((s, i) => s + scene.enemies[i].spd, 0) / alive.length
+      : 0;
+    let scene.escapeRate = 0.5 + (scene.playerSpd - avgEnemySpd) * 0.03;
+    scene.escapeRate = Math.max(0.1, Math.min(0.95, scene.escapeRate));
+    if (Math.random() < scene.escapeRate) {
+      scene.logText.setText('成功逃脱！');
+      scene.time.delayedCall(900, () => {
+        GameState.hp = scene.playerHp;
+        GameState.mp = scene.playerMp;
+        scene.notifyGameScene('escape', 0);
+        scene.scene.stop(); scene.scene.resume('GameScene');
+        scene.scene.get('UIScene').events.emit('updateStats');
+      });
+    } else {
+      scene.logText.setText('逃跑失败！敌人包围了上来！');
+      scene.time.delayedCall(1000, () => scene.startEnemyPhase());
+    }
+  }
