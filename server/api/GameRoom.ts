@@ -4,6 +4,7 @@
  * Stage D：Token 验证 + DB 持久化。
  * Stage D+：多人组队——邀请/接受/踢人/解散 + 全队共享战斗 + 同进副本。
  */
+import { getMonster as _getMonster, lockMonster as _lockMonster, killMonster as _killMonster, unlockMonster as _unlockMonster, tickRespawn as _tickRespawn } from "./systems/GameRoom.monsters";
 
 import { Room, Client } from '@colyseus/core';
 import { GameRoomState, GamePlayer, MonsterState } from '../core/schema';
@@ -704,70 +705,12 @@ export class GameRoom extends Room<GameRoomState> {
 
   // ─── 怪物状态机 ───
 
-  private getMonster(id: string): MonsterState {
-    let m = this.state.monsters.get(id);
-    if (!m) { m = new MonsterState(); m.id = id; m.state = 'available'; this.state.monsters.set(id, m); }
-    return m;
-  }
-
-  /** 锁定怪物——组队时广播全队进入战斗。 */
-  private lockMonster(client: Client, data: { id?: string }): void {
-    if (!data || typeof data.id !== 'string') return;
-    const id = data.id.slice(0, 64);
-    if (!id) return;
-    const m = this.getMonster(id);
-    if (m.state !== 'available') return;
-
-    m.state = 'busy'; m.owner = client.sessionId; m.respawnAt = 0;
-
-    // 组队：通知其他队员进入同一场战斗（不发给触发者，他自己已走正常流程进战）
-    const teamId = playerTeam.get(client.sessionId);
-    if (teamId) {
-      const team = teams.get(teamId);
-      if (team) {
-        team.members.forEach((_, sid) => {
-          if (sid === client.sessionId) return; // 跳过触发者
-          const c = this.clients.find((x: Client) => x.sessionId === sid);
-          if (c) c.send('enterTeamBattle', { monsterId: id });
-        });
-      }
-    }
-  }
-
-  private killMonster(client: Client, data: { id?: string; respawnMs?: number }): void {
-    if (!data || typeof data.id !== 'string') return;
-    const id = data.id.slice(0, 64);
-    if (!id) return;
-    const m = this.getMonster(id);
-    if (m.state === 'busy' && m.owner !== client.sessionId) return;
-    m.state = 'dead'; m.owner = '';
-    m.respawnAt = Date.now() + (Number(data.respawnMs) || 30000);
-  }
-
-  private unlockMonster(client: Client, data: { id?: string }): void {
-    if (!data || typeof data.id !== 'string') return;
-    const id = data.id.slice(0, 64);
-    if (!id) return;
-    const m = this.state.monsters.get(id);
-    if (m && m.state === 'busy' && m.owner === client.sessionId) {
-      m.state = 'available'; m.owner = ''; m.respawnAt = 0;
-    }
-  }
-
-  private tickRespawn(): void {
-    const now = Date.now();
-    this.state.monsters.forEach((m) => {
-      if (m.state === 'dead' && m.respawnAt > 0 && now >= m.respawnAt) {
-        m.state = 'available'; m.respawnAt = 0;
-      }
-    });
-  }
-
-  // ─── 进房 / 离房 ───
-
-  onJoin(client: Client, options: { token?: string; characterId?: number; title?: string }) {
-    const token = options?.token;
-    const charId = options?.characterId;
+  // ═══ 怪物状态机 — 委托到 GameRoom.monsters.ts ═══
+  private getMonster(id: string): any { return _getMonster(this, id); }
+  private lockMonster(client: any, data: any): void { _lockMonster(this, client, data); }
+  private killMonster(client: any, data: any): void { _killMonster(this, client, data); }
+  private unlockMonster(client: any, data: any): void { _unlockMonster(this, client, data); }
+  private tickRespawn(): void { _tickRespawn(this); }
     if (!token || !charId) {
       client.send('authError', '缺少 token 或角色ID');
       setTimeout(() => client.leave(), 100);
