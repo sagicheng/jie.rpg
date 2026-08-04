@@ -1,0 +1,255 @@
+{
+  "frames": {
+    "001.png": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "002.png": {
+      "frame": {
+        "x": 120,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "003.png": {
+      "frame": {
+        "x": 240,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "004.png": {
+      "frame": {
+        "x": 360,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "005.png": {
+      "frame": {
+        "x": 480,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "006.png": {
+      "frame": {
+        "x": 600,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "007.png": {
+      "frame": {
+        "x": 720,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "008.png": {
+      "frame": {
+        "x": 840,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "009.png": {
+      "frame": {
+        "x": 960,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "010.png": {
+      "frame": {
+        "x": 1080,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "011.png": {
+      "frame": {
+        "x": 1200,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    },
+    "012.png": {
+      "frame": {
+        "x": 1320,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 200
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 200
+      }
+    }
+  },
+  "meta": {
+    "app": "FramePacker",
+    "version": "1.0",
+    "image": "hero_walk_male1.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1440,
+      "h": 200
+    },
+    "scale": "1"
+  }
+}

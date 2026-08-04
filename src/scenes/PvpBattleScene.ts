@@ -14,6 +14,7 @@ import { Kido, KidoNode } from '../managers/Kido';
 import { Inventory } from '../managers/Inventory';
 import type { Item } from '../managers/Inventory';
 import { SkinBar, SkinButton, cardFrame, panel, cardHl, menuRow, menuBack, floatDamage, hpColor, SKIN } from '../ui/BattleSkin';
+import { BattleFx } from '../managers/BattleFx';
 
 interface Card {
   root: Phaser.GameObjects.Container;
@@ -23,6 +24,7 @@ interface Card {
   hpText: Phaser.GameObjects.Text;
   hl: Phaser.GameObjects.Image;        // 待选目标高亮辉光框（切图皮肤）
   lastHp: number;                       // 上一帧 HP，用于检测伤害飘字
+  wasAlive?: boolean;                   // 上一帧存活状态，用于死亡特效只播一次
 }
 
 interface Button {
@@ -95,7 +97,13 @@ export class PvpBattleScene extends Phaser.Scene {
     this.intentionalLeave = false;
   }
 
+  /** 预载全部战斗序列帧特效（纹理已存在则跳过）。 */
+  preload(): void {
+    BattleFx.preload(this);
+  }
+
   create(): void {
+    BattleFx.createAnims(this);
     const w = this.scale.width;
     const h = this.scale.height;
 
@@ -460,6 +468,8 @@ export class PvpBattleScene extends Phaser.Scene {
       }
       card.name.setText(`${c.name}${c.team === this.myTeam ? '（我方）' : ''}${c.alive ? '' : '（倒下）'}`);
       this.drawHpBar(card, c.hp, c.maxHp);
+      if (!c.alive && card.wasAlive !== false) BattleFx.playDie(this, card.root.x, card.root.y);
+      card.wasAlive = c.alive;
       card.root.setAlpha(c.alive ? 1 : 0.4);
       // 伤害 / 治疗飘字：检测 HP 变化（首帧 lastHp=-1 跳过）
       if (card.lastHp >= 0 && c.hp !== card.lastHp) {

@@ -3,7 +3,6 @@
  * Phaser 场景：渲染战斗界面、回合流程、技能 / 鬼道 / 异常状态结算，
  * 调用 BattleData / Skills / StatusSystem / BossMechanics 等。
  */
-
 import Phaser from 'phaser';
 import { QUALITY_COLOR, QUALITY_CN } from '../core/constants';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
@@ -14,6 +13,7 @@ import { EnemyData, calcDamage, calcMagicDamage, generateLoot } from '../manager
 import { Inventory } from '../managers/Inventory';
 import { getAvailableSkills, getSkillTargetType, SkillData } from '../managers/Skills';
 import { Kido, KidoNode } from '../managers/Kido';
+import { BattleFx } from '../managers/BattleFx';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -39,15 +39,12 @@ import {
   getAbsorbMagicTurns,
   SkillMechanic, MarkState,
 } from '../managers/SkillMechanics';
-
 type BattlePhase = 'intro' | 'playerTurn' | 'targetSelect' | 'enemyTurn' | 'executing' | 'victory' | 'defeat';
-
 /** 单个状态图标槽：PNG 图标 + 右下角剩余回合数文本 */
 interface StatusSlot {
   img: Phaser.GameObjects.Image;
   txt: Phaser.GameObjects.Text;
 }
-
 /** 鬼道subtype → 图鉴抗性表key (中文状态名) */
 const SUBTYPE_TO_STATUS_NAME: Record<string, string> = {
   seal: '禁锢', slow: '减速', bind: '禁锢', freeze: '冻结',
@@ -55,7 +52,6 @@ const SUBTYPE_TO_STATUS_NAME: Record<string, string> = {
   fear: '恐惧', atkDown: '攻降', defDown: '防降', matkDown: '降灵压',
   taunt: '嘲讽',
 };
-
 /**
  * 计算状态命中率 (0~1)
  * 优先查具名敌人的per-status抗性，无则fallback到enemy.statusRes
@@ -74,7 +70,6 @@ function calcStatusHitRate(baseRate: number, subtype: string, enemyName: string,
   }
   return Math.min(0.95, Math.max(0.05, baseRate + GameState.statusAcc - resist));
 }
-
 export class BattleScene extends Phaser.Scene {
   // 多敌人数据
   private enemies: EnemyData[] = [];
@@ -88,9 +83,10 @@ export class BattleScene extends Phaser.Scene {
   private enemyActQueue: number[] = [];   // 本轮待行动敌人队列
   private enemyPhaseActive = false;        // 防重入守卫
   private templateEnemy!: EnemyData;
-  private shortcutKeys: Phaser.Input.Keyboard.Key[] = []; // 键盘快捷键引用(清理用)
-  private battleZone = 1;  // 当前战斗所在区域(调试用)
 
+  private shortcutKeys: Phaser.Input.Keyboard.Key[] = []; // 键盘快捷键引用(清理用)
+
+  private battleZone = 1;  // 当前战斗所在区域(调试用)
   private phase: BattlePhase = 'intro';
   // ——— 回合决策超时（防恶意卡刷新时间）———
   private turnTimer?: Phaser.Time.TimerEvent;
@@ -110,14 +106,12 @@ export class BattleScene extends Phaser.Scene {
   private enemyRefs: any[] = [];
   private playerStatus!: PlayerStatus;
   private isDefending = false;
-
   // 技能特殊机制状态
   private tempBuffs: TempBuff[] = [];     // 消耗品临时buff
   private marks: MarkState[] = [];         // 每个敌人的标记状态
   private reflectPct = 0;                  // 当前反伤比例
   private reflectTurns = 0;                 // 反伤持续回合
   private absorbMagicTurns = 0;             // 双鱼理·吸收：吸收下次魔法伤害的剩余回合
-
   // 变身状态
   private bankaiActive = false;
   private bankaiTurnsLeft = 0;
@@ -129,7 +123,6 @@ export class BattleScene extends Phaser.Scene {
     private hellTurnsLeft = 0;
     private hellUsed = false;
     private playerSprite?: Phaser.GameObjects.Sprite;   // 我方站立立绘（按形态切换纹理）
-
   private playerHp: number;
   private playerMaxHp: number;
   private playerMp: number;
@@ -139,7 +132,6 @@ export class BattleScene extends Phaser.Scene {
   private playerMatk: number;
   private playerMdef: number;
   private playerSpd: number;
-
   constructor() {
     super({ key: 'BattleScene' });
     const gs = GameState;
@@ -153,7 +145,6 @@ export class BattleScene extends Phaser.Scene {
     this.playerMdef = gs.mdef;
     this.playerSpd = gs.spd;
   }
-
   init(data: { template: EnemyData; enemyRef?: any; zone?: number }): void {
     this.phase = 'intro';
     this.selectedEnemyIndex = 0;
@@ -176,7 +167,6 @@ export class BattleScene extends Phaser.Scene {
     this.enemyNameTexts = [];
     this.enemyTypeTexts = [];
     this.enemyInfoTexts = [];
-
     // 根据区域难度随机生成1-8只敌人
     const zone = typeof data.zone === 'number' ? data.zone : (GameState.zone || 1);
     this.battleZone = zone;
@@ -184,7 +174,6 @@ export class BattleScene extends Phaser.Scene {
     // Boss战强制1只，普通战随机1-8只
     const isBossBattle = data.template.type === '妖将' || data.template.type === '妖王';
     const count = isBossBattle ? 1 : this.randomEnemyCount(zone);
-
     // 复制模板生成多只敌人（每只独立血量）
     this.enemies = [];
     this.enemyRefs = data.enemyRef ? [data.enemyRef] : [];
@@ -194,13 +183,10 @@ export class BattleScene extends Phaser.Scene {
       clone.maxHp = data.template.maxHp;
       this.enemies.push(clone);
     }
-
     // Boss机制状态重置
     (this as any)._bossRt = undefined;
-
     // 记录图鉴遭遇
     this.enemies.forEach(e => GameState.recordEncounter(e.name));
-
     this.enemyStatuses = this.enemies.map(() => createEnemyStatus());
     this.playerStatus = createPlayerStatus();
     this.marks = this.enemies.map(() => ({ active: false, turns: 0, detonateMult: 0 }));
@@ -226,15 +212,18 @@ export class BattleScene extends Phaser.Scene {
     else                { min = 6; max = 8; }
     return min + Math.floor(Math.random() * (max - min + 1));
   }
-
+  /** 预载全部战斗序列帧特效（纹理已存在则跳过，支持 repeat 进战斗）。 */
+  preload(): void {
+    BattleFx.preload(this);
+  }
   create(): void {
     // 战斗背景（真实美术）
     this.add.image(0, 0, 'bg_battle').setOrigin(0, 0).setDepth(-100).setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-
+    // 注册全部 battlefx 动画（cast/projectile/impact/buff/crit/die）
+    BattleFx.createAnims(this);
     // 根据敌人数量计算位置
     const count = this.enemies.length;
     const positions = this.getEnemyPositions(count);
-
     this.enemies.forEach((enemy, i) => {
       const pos = positions[i];
       const tex = enemy.type === '妖将' || enemy.type === '妖王' ? 'enemy_boss' : 'enemy_elite';
@@ -242,7 +231,6 @@ export class BattleScene extends Phaser.Scene {
       // 立绘在右
       const sprite = this.add.sprite(pos.x, pos.y, tex).setScale(scale).setDepth(10);
       this.enemySprites.push(sprite);
-
       // 名字 + 类型（立绘上方）
       const nameText = this.add.text(pos.x, pos.y - 70, enemyDisplayName(enemy.name), {
         fontSize: '13px', color: '#ff6666', fontFamily: 'serif', fontStyle: 'bold', padding: { y: 2 },
@@ -252,7 +240,6 @@ export class BattleScene extends Phaser.Scene {
         fontSize: '8px', color: '#994444', padding: { y: 1 },
       }).setOrigin(0.5);
       this.enemyTypeTexts.push(typeText);
-
       // 血条 + HP数值 在立绘**左侧**（并排，留出 20px 间距避免遮挡）
       const bw = 100, bh = 7;
       const hpBar = new SkinBar(this, { x: pos.x - 150, y: pos.y - 10, w: bw, h: bh, depth: 30, pad: 1 });
@@ -262,11 +249,9 @@ export class BattleScene extends Phaser.Scene {
       }).setOrigin(0.5, 0).setVisible(false);
       this.enemyInfoTexts.push(info);
     });
-
     // 初始化状态图标槽池（每怪一排 + 玩家一排）
     this.enemyStatusSlots = this.enemies.map(() => this.makeStatusSlotRow());
     this.playerStatusSlots = this.makeStatusSlotRow();
-
     // ══ 我方站位（左半区）══
     // 布局：[玩家HP/MP条] [玩家立绘] [宠物立绘(预留)] [宠物HP/MP条(预留)]
     const PX = 350, PY = 280;
@@ -277,30 +262,25 @@ export class BattleScene extends Phaser.Scene {
     this.add.text(PX, PY + 100, bt ? `${GameState.playerName} · ${bt}` : GameState.playerName, {
       fontSize: '14px', color: '#88aacc', padding: { y: 2 },
     }).setOrigin(0.5);
-
     // 玩家 HP/MP 血条 + 数值（立绘左侧）
     this.playerHpBar = new SkinBar(this, { x: 30, y: PY - 20, w: 200, h: 12, depth: 30, pad: 2 });
     this.playerMpBar = new SkinBar(this, { x: 30, y: PY - 2, w: 200, h: 8, depth: 30, pad: 1 });
     this.playerInfoText = this.add.text(130, PY - 50, '', {
       fontSize: '13px', color: '#aaccff', fontFamily: 'monospace', align: 'center',
     }).setOrigin(0.5);
-
     // 宠物站位预留（立绘在玩家右侧，血条再右）
     // TODO: 宠物系统接入后，在此创建宠物 sprite + petHpBar/petMpBar
     // const petX = PX + 280;
     // this.add.sprite(petX, PY, 'pet_xxx').setDisplaySize(100, 150);
     // this.petHpBar = new SkinBar(this, { x: petX + 120, y: PY - 20, w: 160, h: 12, depth: 30, pad: 2 });
-
     // 战斗日志
     this.logText = this.add.text(GAME_WIDTH / 2, 360, '', {
       fontSize: '14px', color: '#ccaa88',
       wordWrap: { width: 600 }, align: 'center', padding: { y: 2 },
     }).setOrigin(0.5);
-
     // Boss机制初始化（缩放难度/护盾/随从）—— 必须在 logText 创建之后调用，否则 log() 会打到 undefined
     const initBoss = this.enemies.find(e => e.type === '妖将' || e.type === '妖王');
     if (initBoss) setupBoss(this, initBoss);
-
     // 开场动画
     this.spritesFadeIn(() => {
       const names = this.enemies.map(e => enemyDisplayName(e.name)).join('、');
@@ -341,8 +321,8 @@ export class BattleScene extends Phaser.Scene {
       }
     });
   }
-
   /** 梦幻/飘流式站位：怪物 2 列 × 4 行（最多 8 只），居于画面右侧；左侧留 4 行供我方（人+宠）使用。 */
+
   private getEnemyPositions(count: number): { x: number; y: number }[] {
     // 敌方区域：右半区 (x: 1100~1900)，每怪 = 血条(左) + 立绘(右) 并排
     const perRow = count <= 4 ? count : 4;
@@ -358,8 +338,8 @@ export class BattleScene extends Phaser.Scene {
     }
     return positions;
   }
-
   /** 敌人精灵淡入 */
+
   private spritesFadeIn(onDone: () => void): void {
     const scale = this.enemies.length <= 4 ? 2.2 : 1.6;
     this.enemySprites.forEach(s => s.setScale(0.1).setAlpha(0));
@@ -373,7 +353,6 @@ export class BattleScene extends Phaser.Scene {
       });
     });
   }
-
   // ════════════════════ 回合控制 ════════════════════
 
   private startTurn(): void {
@@ -389,8 +368,8 @@ export class BattleScene extends Phaser.Scene {
       this.startEnemyPhase();
     }
   }
-
   /** 玩家行动完毕，进入敌人阶段 */
+
   private startEnemyPhase(): void {
     // ★ 防重入守卫：如果敌人阶段正在进行，直接返回
     if (this.enemyPhaseActive) return;
@@ -402,14 +381,13 @@ export class BattleScene extends Phaser.Scene {
     this.enemyActQueue = this.getAliveEnemyIndices();
     this.processEnemyQueue();
   }
-
   /** 从队列中取出下一个敌人行动 */
+
   private processEnemyQueue(): void {
     // 跳过已死亡敌人
     while (this.enemyActQueue.length > 0 && this.enemies[this.enemyActQueue[0]].hp <= 0) {
       this.enemyActQueue.shift();
     }
-
     if (this.enemyActQueue.length === 0) {
       // 全部敌人行动完毕 → 进入玩家回合前，递减敌人状态时长
       this.enemyPhaseActive = false;
@@ -419,7 +397,6 @@ export class BattleScene extends Phaser.Scene {
       this.time.delayedCall(300, () => this.safeShowCommands());
       return;
     }
-
     const idx = this.enemyActQueue.shift()!;
     this.time.delayedCall(300, () => {
       if (this.playerHp <= 0) { this.enemyPhaseActive = false; this.defeat(); return; }
@@ -444,7 +421,6 @@ export class BattleScene extends Phaser.Scene {
     if (enemy.hp <= 0) return;
     const ks = this.enemyStatuses[index];
     const sprite = this.enemySprites[index];
-
     // 状态检定：冻结/束缚/封印/眩晕 → 无法行动
     if (isEnemyBlocked(ks)) {
       this.logText.setText(`${enemyDisplayName(enemy.name)} 被控制，无法行动！${getEnemyStatusIcons(ks)}`);
@@ -455,27 +431,22 @@ export class BattleScene extends Phaser.Scene {
       this.logText.setText(`${enemyDisplayName(enemy.name)} 陷入恐惧，不敢行动！`);
       return;
     }
-
     // Boss机制（数据驱动，见 BossMechanics.ts）
     if (this.isBossName(enemy.name)) {
       const consumed = runBossMechanics(this, enemy, index);
       if (consumed) return; // 该机制已占用本回合（动画/延时后继续队列）
     }
-
     const canUseSkill = enemy.skills.length > 0 && ks.sealed <= 0 && Math.random() < 0.4;
     const skill = canUseSkill ? enemy.skills[Math.floor(Math.random() * enemy.skills.length)] : enemy.skills[0];
     let power = skill.power * getEnemyAtkMod(ks); // 攻降/减速影响伤害
-
     const isPhysical = skill.damageType !== 'magical';
     const defVal = hasIgnoreDef([]) ? 0 : (isPhysical ? this.getEffectivePlayerDef() : this.getEffectivePlayerMdef()); // 实装防御/魔防buff
     const { damage, crit } = isPhysical
       ? calcDamage(enemy.atk, defVal, power)
       : calcMagicDamage(enemy.matk * getEnemyMatkMod(ks), this.playerMdef, power);
     let actualDamage = damage;
-
     // 防御减伤
     if (this.isDefending) actualDamage = Math.round(actualDamage * 0.2);
-
     // 护盾抵消
     if (this.playerStatus.playerShield > 0) {
       if (this.playerStatus.playerShield >= actualDamage) {
@@ -484,7 +455,6 @@ export class BattleScene extends Phaser.Scene {
         actualDamage -= this.playerStatus.playerShield; this.playerStatus.playerShield = 0;
       }
     }
-
     // 魔法吸收（双鱼理·吸收）：将受到的魔法伤害转为HP，触发即消耗
     let absorbMsg = '';
     if (this.absorbMagicTurns > 0 && !isPhysical && actualDamage > 0) {
@@ -494,10 +464,8 @@ export class BattleScene extends Phaser.Scene {
       actualDamage = 0;
       this.absorbMagicTurns = 0;
     }
-
     this.playerHp -= actualDamage;
     if (this.playerHp < 0) this.playerHp = 0;
-
     // 反伤
     let reflectMsg = '';
     if (actualDamage > 0 && this.reflectPct > 0 && this.reflectTurns > 0) {
@@ -506,7 +474,6 @@ export class BattleScene extends Phaser.Scene {
       reflectMsg = ` [反伤${reflectDmg}]`;
       this.flashEnemySprite(sprite);
     }
-
     // 敌人技能附带异常状态 (坑①：玩家会被上异常；坑④：玩家statusRes抵抗)
     let statusMsg = '';
     if (skill.statusEffect && this.playerHp > 0) {
@@ -521,10 +488,9 @@ export class BattleScene extends Phaser.Scene {
     }
     this.logText.setText(`${enemyDisplayName(enemy.name)} 使用 ${skill.name}！${crit ? '暴击！' : ''}造成 ${actualDamage} 伤害！${reflectMsg}${absorbMsg}${statusMsg}`);
     this.flashPlayer();
+    if (this.playerSprite) BattleFx.onHit(this, 'neutral', this.playerSprite.x, this.playerSprite.y, crit);
     if (sprite) this.tweens.add({ targets: sprite, tint: 0xffffff, duration: 150, yoyo: true });
   }
-
-
   // ════════════════════ 目标选择 ════════════════════
 
   private startTargetSelect(action: string, extra?: any): void {
@@ -534,18 +500,15 @@ export class BattleScene extends Phaser.Scene {
       this.executeAction(action, extra);
       return;
     }
-
     this.phase = 'targetSelect';
     this.clearCommands();
     this.logText.setText('点击敌人选择目标  |  ESC返回');
-
     // 高亮可选敌人
     this.enemySprites.forEach((sprite, i) => {
       if (this.enemies[i].hp <= 0) return;
       sprite.setInteractive({ useHandCursor: true });
       sprite.setTint(0xcccccc);
     });
-
     this.escKeyRef = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     const escKey = this.escKeyRef;
     const cancel = () => {
@@ -555,7 +518,6 @@ export class BattleScene extends Phaser.Scene {
       this.showPlayerCommands();
     };
     escKey.on('down', cancel);
-
     // 点击敌人确认目标
     this.enemySprites.forEach((sprite, i) => {
       if (this.enemies[i].hp <= 0) return;
@@ -581,8 +543,8 @@ export class BattleScene extends Phaser.Scene {
   private getFirstAliveEnemyIndex(): number {
     return this.enemies.findIndex(e => e.hp > 0);
   }
-
   /** 敌人死亡时消失 */
+
   private removeDeadEnemy(index: number): void {
     const sprite = this.enemySprites[index];
     const name = this.enemyNameTexts[index];
@@ -599,44 +561,39 @@ export class BattleScene extends Phaser.Scene {
     }
     if (bar) bar.setVisible(false);
   }
-
   // ── Boss 战辅助（逻辑见 systems/BossMechanics.ts） ──
-
   /** 战斗日志（供 BossMechanics 调用） */
   log(msg: string): void { if (this.logText) this.logText.setText(msg); }
-
   /** 是否为当前 Boss 战的主怪 */
+
   private isBossName(name: string): boolean {
     const rt = (this as any)._bossRt;
     return !!(rt && rt.config.name === name);
   }
-
   /** Boss 是否处于异常免疫 */
+
   private bossImmuneTo(index: number): boolean {
     const rt = (this as any)._bossRt;
     const enemy = this.enemies[index];
     return !!(rt && enemy && rt.config.name === enemy.name && rt.immune);
   }
-
   /** 取当前存活的 Boss 主怪 */
   getBossEnemy(): EnemyData | null {
     const rt = (this as any)._bossRt;
     if (!rt) return null;
     return this.enemies.find(e => e.name === rt.config.name && e.hp > 0) || null;
   }
-
   /** 敌人闪光（供 BossMechanics 调用） */
   flashEnemy(index: number): void {
     const s = this.enemySprites[index];
     if (s) this.flashEnemySprite(s);
   }
-
   /** 给玩家施加异常（供 BossMechanics 调用） */
   applyPlayerStatus(subtype: string, rate: number, turns: number): void {
     if (Math.random() < (rate || 0.5)) applyStatusToPlayer(this.playerStatus, subtype, turns);
   }
-
   /** 重新排布所有敌人精灵位置（增援导致数量变化时调用） */
+
   private repositionEnemies(): void {
     const positions = this.getEnemyPositions(this.enemies.length);
     const big = this.enemies.length <= 4;
@@ -649,7 +606,6 @@ export class BattleScene extends Phaser.Scene {
       const t = this.enemyTypeTexts[i]; if (t) t.setPosition(pos.x, pos.y - 54);
     });
   }
-
   /** 动态加入一只敌人（Boss 随从/增援），与 this.enemies 索引对齐 */
   spawnAdd(data: EnemyData): void {
     const enemy = { ...data };
@@ -673,19 +629,21 @@ export class BattleScene extends Phaser.Scene {
     this.enemyStatusSlots.push(this.makeStatusSlotRow());
     this.tweens.add({ targets: sprite, alpha: 1, duration: 400 });
   }
-
   /** 敌人死亡结算（含 Boss 增援触发） */
+
   private checkEnemyDeath(index: number): void {
     const enemy = this.enemies[index];
     if (!enemy || enemy.hp > 0) return;
     enemy.hp = 0;
+    const dSp = this.enemySprites[index];
+    if (dSp) BattleFx.playDie(this, dSp.x, dSp.y);
     const rt = (this as any)._bossRt;
     const isBoss = !!(rt && rt.config.name === enemy.name);
     this.removeDeadEnemy(index);
     if (!isBoss && rt && rt.config.name) onBossAddDeath(this);
   }
-
   /** 对敌人造成伤害（含 Boss 护盾/易伤），并结算死亡 */
+
   private hurtEnemy(index: number, dmg: number): void {
     const enemy = this.enemies[index];
     if (!enemy || enemy.hp <= 0) return;
@@ -707,10 +665,9 @@ export class BattleScene extends Phaser.Scene {
   private allEnemiesDead(): boolean {
     return this.enemies.every(e => e.hp <= 0);
   }
-
   /** 获取当前选择的敌人 */
-  private get enemy(): EnemyData { return this.enemies[this.selectedEnemyIndex]; }
 
+  private get enemy(): EnemyData { return this.enemies[this.selectedEnemyIndex]; }
   // ════════════════════ 技能菜单 ════════════════════
 
   private showSkillMenu(): void {
@@ -763,7 +720,6 @@ export class BattleScene extends Phaser.Scene {
     backText.on('pointerdown', () => { this.clearSubMenu(); this.showPlayerCommands(); });
     this.subMenuContainer!.add(backText);
   }
-
   // ════════════════════ 鬼道菜单 ════════════════════
 
   private showKidoMenu(): void {
@@ -814,7 +770,6 @@ export class BattleScene extends Phaser.Scene {
     backText.on('pointerdown', () => { this.clearSubMenu(); this.showPlayerCommands(); });
     this.subMenuContainer!.add(backText);
   }
-
   // ════════════════════ 鬼道执行 ════════════════════
 
   private executeKido(skill: KidoNode): void {
@@ -823,7 +778,12 @@ export class BattleScene extends Phaser.Scene {
     const mp = Kido.getNodeMp(skill.id);
     this.playerMp -= mp;
     this.showChantEffect(skill);
-
+    const kfx = this.playerSprite ? { x: this.playerSprite.x, y: this.playerSprite.y } : { x: 350, y: 280 };
+    if (skill.effect.type === 'heal' || skill.effect.type === 'shield' || skill.effect.type === 'revive') {
+      BattleFx.playBuff(this, kfx.x, kfx.y);
+    } else {
+      BattleFx.playCast(this, skill.school, kfx.x, kfx.y);
+    }
     const execDelay = 600;
     const execute = () => {
       let msg = '';
@@ -831,7 +791,6 @@ export class BattleScene extends Phaser.Scene {
       const scalePerPoint = (skill.effect as any).scalePerPoint || 0.20;
       const enemy = this.enemies[this.selectedEnemyIndex];
       const ks = this.enemyStatuses[this.selectedEnemyIndex];
-
       switch (skill.effect.type) {
         case 'damage': {
           const power = Kido.getNodePower(skill.id);
@@ -839,6 +798,8 @@ export class BattleScene extends Phaser.Scene {
           const titleMult = GameState.getTitleDamageMult(enemy.type);
           const dmg = (this.hellActive ? damage * 2 : damage) * titleMult;
           this.hurtEnemy(this.selectedEnemyIndex, dmg);
+          const esp = this.enemySprites[this.selectedEnemyIndex];
+          if (esp) BattleFx.playSkillHit(this, skill.school, kfx.x, kfx.y, esp.x, esp.y, { crit });
           msg = `${skill.name}！${crit ? '暴击！' : ''}造成 ${dmg} 伤害！`;
           if (this.hellActive) msg += ' (狱解×2)';
           this.flashEnemySprite(this.enemySprites[this.selectedEnemyIndex]);
@@ -896,7 +857,6 @@ export class BattleScene extends Phaser.Scene {
         }
         default: msg = `${skill.name}！`;
       }
-
       this.logText.setText(msg);
       if (this.allEnemiesDead()) { this.time.delayedCall(800, () => this.victory()); }
       else { this.time.delayedCall(1200, () => this.startEnemyPhase()); }
@@ -925,7 +885,6 @@ export class BattleScene extends Phaser.Scene {
     const flashColor = skill.school === 'hado' ? 0xff3333 : skill.school === 'bakudo' ? 0x6666ff : 0x33cc33;
     this.cameras.main.flash(400, (flashColor >> 16) & 0xff, (flashColor >> 8) & 0xff, flashColor & 0xff);
   }
-
   // ════════════════════ 玩家行动 ════════════════════
 
   private playerAttack(): void {
@@ -950,11 +909,13 @@ export class BattleScene extends Phaser.Scene {
     this.logText.setText(logMsg);
     this.flashEnemySprite(this.enemySprites[this.selectedEnemyIndex]);
     this.hurtEnemy(this.selectedEnemyIndex, dmg);
+    const eSp = this.enemySprites[this.selectedEnemyIndex];
+    if (eSp) BattleFx.onHit(this, 'neutral', eSp.x, eSp.y, crit);
     if (this.allEnemiesDead()) { this.time.delayedCall(800, () => this.victory()); }
     else { this.time.delayedCall(1000, () => this.startEnemyPhase()); }
   }
-
   /** 获取临时buff对属性的修正倍率（含防御/魔防/暴击） */
+
   private getBuffMods(): { atk: number; def: number; matk: number; mdef: number; spd: number } {
     let atk = 1, def = 1, matk = 1, mdef = 1, spd = 1;
     for (const b of this.tempBuffs) {
@@ -968,24 +929,25 @@ export class BattleScene extends Phaser.Scene {
     }
     return { atk, def, matk, mdef, spd };
   }
-
   /** 临时buff累加的暴击率加成 */
+
   private getCritBonus(): number {
     let c = 0;
     for (const b of this.tempBuffs) if (b.stat === 'crit') c += b.value;
     return c;
   }
-
   /** 玩家有效防御（含buff，敌人打玩家时用） */
+
   private getEffectivePlayerDef(): number {
     return Math.round(this.playerDef * this.getBuffMods().def);
   }
   /** 玩家有效魔防（含buff） */
+
   private getEffectivePlayerMdef(): number {
     return Math.round(this.playerMdef * this.getBuffMods().mdef);
   }
-
   /** 技能菜单点击入口：按目标类型分流（参考《飘流幻境》四向模型） */
+
   private castPlayerSkill(sk: SkillData): void {
     const tt = getSkillTargetType(sk);
     if (tt === 'enemy') {
@@ -1001,16 +963,16 @@ export class BattleScene extends Phaser.Scene {
     this.clearTurnTimer();
     this.phase = 'executing';
     this.playerMp -= sk.mp;
-
+    const fxGroup = BattleFx.groupFromElement(GameState.element) || 'neutral';
+    const fxFrom = this.playerSprite ? { x: this.playerSprite.x, y: this.playerSprite.y } : { x: 350, y: 280 };
+    if (this.playerSprite) BattleFx.playCast(this, fxGroup, fxFrom.x, fxFrom.y);
     const tt = getSkillTargetType(sk);
     const mechanics = getSkillMechanics(sk.name);
-
     // HP消耗 (如斩月·黑牙)
     const hpCost = getHpCost(mechanics, this.playerHp);
     if (hpCost) {
       this.playerHp = Math.max(1, this.playerHp - hpCost.cost);
     }
-
     // ── 治疗 / 净化（作用玩家；solo 下友方=自身）──
     if (sk.skillType === 'heal') {
       const aoeHeal = getAoEHealAmount(mechanics, this.playerMatk);
@@ -1025,7 +987,6 @@ export class BattleScene extends Phaser.Scene {
       this.time.delayedCall(1000, () => this.startEnemyPhase());
       return;
     }
-
     // ── 自身 / 全队 buff / 护盾 / 反伤（先应用，作用于玩家）──
     const buffs = getBuffsFromMechanics(mechanics);
     for (const b of buffs) {
@@ -1046,7 +1007,6 @@ export class BattleScene extends Phaser.Scene {
     if (absorbTurns > 0) {
       this.absorbMagicTurns = absorbTurns;
     }
-
     // ── 控制技能 ──
     if (sk.skillType === 'control' && sk.statusEffect) {
       if (tt === 'enemy-all') {
@@ -1058,20 +1018,17 @@ export class BattleScene extends Phaser.Scene {
       this.time.delayedCall(1000, () => this.startEnemyPhase());
       return;
     }
-
     // ── 伤害技能：单体 / 群体 ──
     const targetIndices = tt === 'enemy-all' ? this.getAliveEnemyIndices() : [this.selectedEnemyIndex];
     const hitCount = getMultiHitCount(mechanics);
     const hpCostMult = hpCost ? hpCost.dmgMult : 1.0;
     const buffMods = this.getBuffMods();
     const critBonus = this.getCritBonus();
-
     let totalDamage = 0;
     let anyCrit = false;
     let lifeHp = 0, lifeMp = 0;
     const debuffAgg: string[] = [];
     let markMsg = '';
-
     for (const idx of targetIndices) {
       if (this.enemies[idx].hp <= 0) continue;
       const r = this.skillHitEnemy(sk, mechanics, idx, hitCount, hpCostMult, buffMods, critBonus);
@@ -1080,12 +1037,12 @@ export class BattleScene extends Phaser.Scene {
       lifeHp += r.life; lifeMp += r.mp;
       if (r.debuffs.length) debuffAgg.push(...r.debuffs);
       if (r.mark) markMsg = r.mark;
+      const sp = this.enemySprites[idx];
+      if (sp && sp.visible) BattleFx.playSkillHit(this, fxGroup, fxFrom.x, fxFrom.y, sp.x, sp.y, { crit: r.crit });
     }
-
     if (this.hellActive) totalDamage = Math.round(totalDamage * 2);
     if (lifeHp > 0) this.playerHp = Math.min(this.playerHp + lifeHp, this.playerMaxHp);
     if (lifeMp > 0) this.playerMp = Math.min(this.playerMp + lifeMp, this.playerMaxMp);
-
     let msg = `${sk.name}！${hitCount > 1 ? `${hitCount}连击！` : ''}${anyCrit ? '暴击！' : ''}造成 ${totalDamage} 伤害！`;
     if (hpCost) msg += ` [消耗HP${hpCost.cost}]`;
     if (this.hellActive) msg += ' (狱解×2)';
@@ -1095,13 +1052,11 @@ export class BattleScene extends Phaser.Scene {
     if (uniqDebuff.length) msg += ` [${uniqDebuff.join('·')}]`;
     msg += markMsg;
     this.logText.setText(msg);
-
     const flashIdx = targetIndices.find(i => this.enemies[i] && this.enemies[i].hp >= 0) ?? this.selectedEnemyIndex;
     if (this.enemySprites[flashIdx]) this.flashEnemySprite(this.enemySprites[flashIdx]);
     if (this.allEnemiesDead()) { this.time.delayedCall(800, () => this.victory()); }
     else { this.time.delayedCall(1000, () => this.startEnemyPhase()); }
   }
-
   /** 对单个敌人结算技能的一次完整命中（伤害/debuff/异常/标记/吸血/吸灵） */
   private skillHitEnemy(
     sk: SkillData, mechanics: SkillMechanic[], idx: number,
@@ -1112,17 +1067,14 @@ export class BattleScene extends Phaser.Scene {
     const enemy = this.enemies[idx];
     const ks = this.enemyStatuses[idx];
     const isPhysical = sk.damageType === 'physical';
-
     const condMult = applyConditionalDamage(mechanics, ks);
     const spdMult = getSpeedScaling(mechanics, enemy.spd, this.playerSpd);
     const detonateMult = this.marks[idx]?.active ? this.marks[idx].detonateMult : 0;
     const ignoreDef = hasIgnoreDef(mechanics);
-
     const atkVal = isPhysical
       ? Math.round(this.playerAtk * buffMods.atk)
       : Math.round(this.playerMatk * buffMods.matk);
     const defMod = ignoreDef ? 0.0 : 0.4;
-
     let total = 0, crit = false;
     for (let h = 0; h < hitCount; h++) {
       let hitDmg = isPhysical
@@ -1141,26 +1093,21 @@ export class BattleScene extends Phaser.Scene {
       hitDmg *= 0.9 + Math.random() * 0.2;
       total += Math.round(hitDmg);
     }
-
         this.hurtEnemy(idx, total);
-
     // 吸血
     let life = 0;
     const lifestealPct = getLifestealPct(mechanics);
     if (lifestealPct > 0 && total > 0) life = Math.round(total * lifestealPct);
-
     // MP吸取
     let mp = 0;
     const mpStealPct = getMpStealPct(mechanics);
     if (mpStealPct > 0) mp = Math.round(enemy.maxHp * mpStealPct * 0.1);
-
     // debuff（来自机制）
     const debuffs: string[] = [];
     if (enemy.hp > 0) {
       const d = this.bossImmuneTo(this.selectedEnemyIndex) ? [] : applyDebuffFromMechanics(mechanics, ks, enemy.statusRes);
       if (d.length) debuffs.push(...d);
     }
-
     // 原始 statusEffect（来自 SkillData，如冰牢/缚之歌）
     if (enemy.hp > 0 && sk.statusEffect) {
       const finalRate = calcStatusHitRate(sk.statusEffect.rate, sk.statusEffect.subtype, enemy.name, enemy.statusRes);
@@ -1173,7 +1120,6 @@ export class BattleScene extends Phaser.Scene {
         debuffs.push(effectNames[sk.statusEffect.subtype] || sk.statusEffect.subtype);
       }
     }
-
     // 标记
     let mark = '';
     const markInfo = getMarkInfo(mechanics);
@@ -1186,11 +1132,10 @@ export class BattleScene extends Phaser.Scene {
       this.marks[idx] = { active: true, turns: markInfo.turns, detonateMult: markInfo.detonateMult };
       mark = ` [标记${markInfo.turns}T]`;
     }
-
     return { dmg: total, crit, life, mp, debuffs, mark };
   }
-
   /** 对单个敌人施加控制状态（含命中检定+日志，不调度回合） */
+
   private applyControlToEnemy(idx: number, se: { subtype: string; turns: number; rate: number }): void {
     const enemy = this.enemies[idx];
     if (enemy.hp <= 0) return;
@@ -1229,7 +1174,6 @@ export class BattleScene extends Phaser.Scene {
       const effect = getConsumableEffect(item.id, item.name);
       const def = item.id ? CONSUMABLES[item.id] : null;
       const descText = def ? def.desc : (effect?.type === 'heal_hp' ? `回复${effect.hpAmount}HP` : (item.desc || '消耗品'));
-
       const bg = menuRow(this, GAME_WIDTH / 2, y + btnH / 2, btnW, btnH, false);
       this.subMenuContainer!.add(bg);
       this.subMenuContainer!.add(this.add.text(GAME_WIDTH / 2, y + 12,
@@ -1243,7 +1187,6 @@ export class BattleScene extends Phaser.Scene {
         this.clearSubMenu();
         this.clearTurnTimer();
         this.phase = 'executing';
-
         // 应用消耗品效果（非消耗品 effect 为 null，不可作为道具使用，直接退回）
         if (!effect) {
           this.logText.setText(`${item.name} 不是可用道具`);
@@ -1261,16 +1204,13 @@ export class BattleScene extends Phaser.Scene {
         });
         this.playerHp = result.hp;
         this.playerMp = result.mp;
-
         // 临时buff
         if (result.buff) {
           this.tempBuffs.push({ ...result.buff });
         }
-
         // 消耗
         item.quantity--;
         if (item.quantity <= 0) Inventory.items = Inventory.items.filter(it => it !== item);
-
         this.logText.setText(`使用 ${item.name}！${result.message}`);
         this.time.delayedCall(1000, () => this.startEnemyPhase());
       });
@@ -1292,8 +1232,8 @@ export class BattleScene extends Phaser.Scene {
     this.logText.setText('防御！受到的伤害减少80%。');
     this.time.delayedCall(1000, () => this.startEnemyPhase());
   }
-
   /** 逃跑：按速度差计算成功率（《飘流幻境》式），成功返回据点，失败进入敌人回合 */
+
   private escapeBattle(): void {
     this.clearTurnTimer();
     this.phase = 'executing';
@@ -1318,7 +1258,6 @@ export class BattleScene extends Phaser.Scene {
       this.time.delayedCall(1000, () => this.startEnemyPhase());
     }
   }
-
   // ════════════════════ 变身系统 ════════════════════
 
   private activateBankai(): void {
@@ -1369,11 +1308,11 @@ export class BattleScene extends Phaser.Scene {
     this.cameras.main.shake(400, 0.015);
     this.time.delayedCall(1500, () => this.startEnemyPhase());
   }
-
   /**
    * 释放力量瞬间居中弹出立绘（虚化/狱解），按当前性别自动选男/女那张。
    * 缩放+淡入（~350ms）后悬停，于 1500ms 敌方回合前淡出；外圈暗红/狱炎光环烘托觉醒感。
    */
+
   private showFormPortrait(which: 'hollow' | 'hell' | 'bankai'): void {
     ensureFormPortrait(this, which, (key) => {
       if (!this.scene.isActive()) return;
@@ -1381,22 +1320,18 @@ export class BattleScene extends Phaser.Scene {
       const haloColor = which === 'hollow' ? 0xff3355
         : which === 'hell'   ? 0xff2200
         :                      0x66ccff;   // bankai 青白光环
-
       const halo = this.add.graphics().setScrollFactor(0).setDepth(199).setAlpha(0);
       halo.fillStyle(haloColor, 0.18);
       halo.fillCircle(cx, cy, 380);
       halo.fillStyle(haloColor, 0.12);
       halo.fillCircle(cx, cy, 270);
-
       const img = this.add.image(cx, cy, key)
         .setScrollFactor(0).setDepth(200).setOrigin(0.5).setAlpha(0);
       // 适配显示高度 ~900 逻辑像素，按比例缩放（不裁切、不变形）
       const finalScale = 900 / img.height;
       img.setScale(finalScale * 0.85);
-
       this.tweens.add({ targets: img, alpha: 1, scaleX: finalScale, scaleY: finalScale, duration: 350, ease: 'Back.Out' });
       this.tweens.add({ targets: halo, alpha: 1, duration: 350 });
-
       // 在 1500ms 敌方回合前淡出，衔接战斗流程
       this.time.delayedCall(1150, () => {
         this.tweens.add({
@@ -1406,11 +1341,9 @@ export class BattleScene extends Phaser.Scene {
       });
     });
   }
-
-
-
   // ——— 回合决策超时 ———
   /** 按当前激活形态切换我方站立立绘：hell > hollow > bankai > 基础；形态立绘懒加载中用基础兜底。 */
+
   private refreshPlayerFormSprite(): void {
     if (!this.playerSprite || !this.scene.isActive()) return;
     const g = GameState.gender as 'male' | 'female';
@@ -1458,11 +1391,11 @@ export class BattleScene extends Phaser.Scene {
     if (this.turnCountdownEvent) { this.turnCountdownEvent.remove(false); this.turnCountdownEvent = undefined; }
     if (this.turnCountdownText) this.turnCountdownText.setVisible(false);
   }
-
   /**
    * 安全执行玩家指令：任意行动步骤抛异常时捕获、向控制台暴露真实错误，
    * 并自动推进到敌人阶段，避免单步失败导致整场战斗卡死（无选项/无计时）。
    */
+
   private runPlayerCmd(cmd: { label: string; action: () => void }): void {
     try { cmd.action(); }
     catch (err) {
@@ -1473,10 +1406,10 @@ export class BattleScene extends Phaser.Scene {
       this.time.delayedCall(700, () => this.startEnemyPhase());
     }
   }
-
   /**
    * 安全进入玩家指令界面：异常时记录并最多重试一次，避免指令界面崩溃导致永久无选项。
    */
+
   private safeShowCommands(): void {
     try { this.showPlayerCommands(); }
     catch (err) {
@@ -1517,7 +1450,6 @@ export class BattleScene extends Phaser.Scene {
     this.selectedEnemyIndex = this.getFirstAliveEnemyIndex();
     // ★ 不在此处 tickKidoStatus —— 只在敌人阶段开始时tick一次
     if (this.allEnemiesDead()) { this.victory(); return; }
-
     // 玩家被控制/恐惧跳过行动 (坑①：异常状态对玩家生效)
     const ps = this.playerStatus;
     if (isPlayerBlocked(ps)) {
@@ -1532,7 +1464,6 @@ export class BattleScene extends Phaser.Scene {
       this.time.delayedCall(1200, () => this.startEnemyPhase());
       return;
     }
-
     this.commandContainer = this.add.container(0, 0).setDepth(50);
     const hasBankaiUnlocked = GameState.hasBankai;
     const hasHollowUnlocked = GameState.hasUnlock('hollow');
@@ -1547,7 +1478,6 @@ export class BattleScene extends Phaser.Scene {
     const canBankai = hasBankaiUnlocked && !this.bankaiUsed && !this.bankaiActive;
     const canHollow = hasHollowUnlocked && !this.hollowUsed && !this.hollowActive;
     const canHell = hasHellUnlocked && !this.hellUsed && !this.hellActive;
-
     const cmds: { label: string; action: () => void; disabled?: boolean }[] = [
       { label: '攻击', action: () => this.startTargetSelect('attack') },
       { label: '技能', action: () => this.showSkillMenu() },
@@ -1559,7 +1489,6 @@ export class BattleScene extends Phaser.Scene {
     if (hasBankaiUnlocked) cmds.push({ label: this.bankaiActive ? '卍解(' + this.bankaiTurnsLeft + ')' : (this.bankaiUsed ? '卍解-' : '卍解'), action: () => this.activateBankai(), disabled: !canBankai });
     if (hasHollowUnlocked) cmds.push({ label: this.hollowActive ? '虚化(' + this.hollowTurnsLeft + ')' : (this.hollowUsed ? '虚化-' : '虚化'), action: () => this.activateHollow(), disabled: !canHollow });
     if (hasHellUnlocked) cmds.push({ label: this.hellActive ? '狱解(' + this.hellTurnsLeft + ')' : (this.hellUsed ? '狱解-' : '狱解'), action: () => this.activateHell(), disabled: !canHell });
-
     const shortcuts = [Phaser.Input.Keyboard.KeyCodes.ONE, Phaser.Input.Keyboard.KeyCodes.TWO,
       Phaser.Input.Keyboard.KeyCodes.THREE, Phaser.Input.Keyboard.KeyCodes.FOUR,
       Phaser.Input.Keyboard.KeyCodes.FIVE, Phaser.Input.Keyboard.KeyCodes.SIX];
@@ -1568,7 +1497,6 @@ export class BattleScene extends Phaser.Scene {
       key.once('down', () => { if (this.phase !== 'playerTurn') return; const cmd = cmds[i]; if (cmd && !cmd.disabled) { this.runPlayerCmd(cmd); } });
       this.shortcutKeys.push(key);
     });
-
     cmds.forEach((cmd, i) => {
       const bx = startX + i * (btnW + gap);
       const cx = bx + btnW / 2, cy = btnY + btnH / 2;
@@ -1582,7 +1510,6 @@ export class BattleScene extends Phaser.Scene {
 
   private tickKidoStatus(): void {
     const ps = this.playerStatus;
-
     // ── 玩家状态tick ──
     if (ps.playerShieldTurns > 0) {
       ps.playerShieldTurns--;
@@ -1626,20 +1553,16 @@ export class BattleScene extends Phaser.Scene {
     if (ps.fear > 0) ps.fear--;
     if (ps.atkDown > 0) ps.atkDown--;
     if (ps.defDown > 0) ps.defDown--;
-
     // ── 临时buff tick ──
     this.tempBuffs.forEach(b => b.turns--);
     this.tempBuffs = this.tempBuffs.filter(b => b.turns > 0);
-
     // ── 反伤 tick ──
     if (this.reflectTurns > 0) {
       this.reflectTurns--;
       if (this.reflectTurns <= 0) this.reflectPct = 0;
     }
-
     // ── 魔法吸收 tick（未被触发则到期）──
     if (this.absorbMagicTurns > 0) this.absorbMagicTurns--;
-
     // ── 标记 tick ──
     this.marks.forEach(m => {
       if (m.active) {
@@ -1647,7 +1570,6 @@ export class BattleScene extends Phaser.Scene {
         if (m.turns <= 0) { m.active = false; m.detonateMult = 0; }
       }
     });
-
     // ── 敌人持续伤害（DoT）：在敌人阶段开始时结算 ──
     // 注意：状态时长递减不在此处，改在敌人全部行动结束后（tickEnemyStatusDuration），
     // 否则当回合施加的控制/异常会被提前递减，导致1回合控制失效、多回合少算一回合。
@@ -1659,7 +1581,6 @@ export class BattleScene extends Phaser.Scene {
       if (ks.parasite > 0) enemy.hp -= Math.round(enemy.maxHp * 0.05);
       this.checkEnemyDeath(i);
     });
-
     // ── 变身tick (原有逻辑) ──
     if (this.bankaiActive && this.bankaiTurnsLeft > 0) {
       this.bankaiTurnsLeft--;
@@ -1702,8 +1623,8 @@ export class BattleScene extends Phaser.Scene {
     }
     this.refreshPlayerFormSprite();   // 任一形态到期 → 立绘回退基础 female/male
   }
-
   /** 敌人状态时长递减：在本轮敌人全部行动结束后结算，确保当回合施加的控制/异常仍能生效 */
+
   private tickEnemyStatusDuration(): void {
     this.enemies.forEach((_enemy, i) => {
       const ks = this.enemyStatuses[i];
@@ -1728,7 +1649,6 @@ export class BattleScene extends Phaser.Scene {
     this.phase = 'victory';
     this.clearCommands();
     this.clearSubMenu();
-
     // 汇总所有敌人的奖励
     let totalExp = 0, totalGold = 0;
     const allLoot: any[] = [];
@@ -1751,7 +1671,6 @@ export class BattleScene extends Phaser.Scene {
     const levelUp = GameState.gainExp(totalExp);
     this.playerHp = GameState.hp;
     this.playerMp = GameState.mp;
-
     allLoot.forEach(item => {
       Inventory.addItem({
         id: item.id, name: item.name, type: item.type,
@@ -1760,7 +1679,6 @@ export class BattleScene extends Phaser.Scene {
         set: item.set,
       });
     });
-
     const panelH = 280 + allLoot.length * 30 + (newTitles.length ? 28 + newTitles.length * 22 : 0);
     const container = this.add.container(0, 0).setDepth(100);
     const pnl = panel(this, GAME_WIDTH / 2 - 180, 220, 360, panelH, 100);
@@ -1821,6 +1739,7 @@ export class BattleScene extends Phaser.Scene {
     this.phase = 'defeat';
     this.clearCommands();
     this.logText.setText('战斗不能...');
+    if (this.playerSprite) BattleFx.playDie(this, this.playerSprite.x, this.playerSprite.y);
     const container = this.add.container(0, 0).setDepth(100);
     const pnl = panel(this, GAME_WIDTH / 2 - 140, 300, 280, 180, 100);
     container.add(pnl);
@@ -1848,7 +1767,6 @@ export class BattleScene extends Phaser.Scene {
     container.setAlpha(0);
     this.tweens.add({ targets: container, alpha: 1, duration: 400 });
   }
-
   // ════════════════════ 辅助 ════════════════════
 
   private flashEnemySprite(sprite: Phaser.GameObjects.Sprite): void {
@@ -1876,16 +1794,15 @@ export class BattleScene extends Phaser.Scene {
   private clearSubMenu(): void {
     if (this.subMenuContainer) { this.subMenuContainer.destroy(); this.subMenuContainer = null; }
   }
-
   update(): void {
     this.drawAllEnemyHp();
     this.drawPlayerBars();
     this.tickFloat();
   }
-
   /** HP 差值检测 → 统一触发伤害/治疗飘字（覆盖攻击/鬼道/状态tick/道具等所有变动） */
   private _prevPlayerHp?: number;
   private _prevEnemyHp: number[] = [];
+
   private tickFloat(): void {
     if (this._prevPlayerHp === undefined) this._prevPlayerHp = this.playerHp;
     const pd = this.playerHp - this._prevPlayerHp;
@@ -1909,8 +1826,8 @@ export class BattleScene extends Phaser.Scene {
       }
     });
   }
-
   /** 创建一个状态图标槽（PNG 图标 + 右下角回合数） */
+
   private makeStatusSlot(): StatusSlot {
     return {
       img: this.add.image(0, 0, 'icon_burn').setVisible(false).setDepth(300),
@@ -1920,16 +1837,16 @@ export class BattleScene extends Phaser.Scene {
       }).setOrigin(1, 1).setVisible(false).setDepth(301),
     };
   }
-
   /** 创建一排状态图标槽（容量 = 同时可能出现的最大状态数） */
+
   private makeStatusSlotRow(): StatusSlot[] {
     return Array.from({ length: 13 }, () => this.makeStatusSlot());
   }
-
   /**
    * 将激活状态列表布局为一行居中图标，超出部分自动隐藏。
    * 图标尺寸 slot，间距 2px；右下角显示剩余回合数。
    */
+
   private layoutStatusIcons(slots: StatusSlot[], active: ActiveStatusEntry[], centerX: number, centerY: number, slot: number): void {
     const gap = 2;
     const n = active.length;
@@ -1990,12 +1907,10 @@ export class BattleScene extends Phaser.Scene {
     this.playerHpBar.setRatio(hpRatio, hpColor(hpRatio));
     const mpRatio = this.playerMp / this.playerMaxMp;
     this.playerMpBar.setRatio(mpRatio, 0x4444cc);
-
     const active = getActiveStatusList(this.playerStatus);
     this.playerInfoText.setText(
       `HP ${Math.ceil(this.playerHp)}/${this.playerMaxHp}   MP ${Math.ceil(this.playerMp)}/${this.playerMaxMp}`
     );
     this.layoutStatusIcons(this.playerStatusSlots, active, GAME_WIDTH * 0.24, by + 56, 22);
   }
-
 }

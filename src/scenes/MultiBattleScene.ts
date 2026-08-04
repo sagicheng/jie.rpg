@@ -26,6 +26,7 @@ import type { EnemyData } from '../managers/BattleData';
 import { PET_SKILLS_CLIENT } from '../managers/PetSystem';
 import { SkinBar, SkinButton, cardFrame, tagBg, panel, cardHl, menuRow, menuBack, floatDamage, hpColor, SKIN } from '../ui/BattleSkin';
 import { enemyDisplayName } from '../config/entityNames';
+import { BattleFx } from '../managers/BattleFx';
 
 interface Card {
   root: Phaser.GameObjects.Container;
@@ -37,6 +38,7 @@ interface Card {
   lastHp: number;
   statusIcons: Phaser.GameObjects.GameObject[];
   locked?: boolean;                   // 滑移动画期间锁定位，避免 syncCards 把卡牌拽回原位
+  wasAlive?: boolean;                 // 上一帧存活状态，用于死亡特效只播一次
 }
 
 interface Button {
@@ -169,7 +171,13 @@ export class MultiBattleScene extends Phaser.Scene {
     this.lastReward = null;
   }
 
+  /** 预载全部战斗序列帧特效（纹理已存在则跳过）。 */
+  preload(): void {
+    BattleFx.preload(this);
+  }
+
   create(): void {
+    BattleFx.createAnims(this);
     const w = this.scale.width;
     const h = this.scale.height;
 
@@ -772,6 +780,7 @@ export class MultiBattleScene extends Phaser.Scene {
         onComplete: () => {
           this.shakeCard(target!);
           this.spawnSpeedLines(target!, dx, dy);
+          BattleFx.onHit(this, 'neutral', target!.x, target!.y);
           this.tweens.add({
             targets: actor, x: homeX, y: homeY, duration: 210, ease: 'Quad.InOut', delay: 90,
             onComplete: () => { actorCard.locked = false; },
@@ -785,7 +794,7 @@ export class MultiBattleScene extends Phaser.Scene {
       this.tweens.add({
         targets: actor, x: homeX + dir * 20, duration: 130, yoyo: true, ease: 'Sine.InOut',
         onYoyo: () => {
-          if (target) { this.shakeCard(target); this.spawnSpeedLines(target, target.x - homeX, target.y - homeY); }
+          if (target) { this.shakeCard(target); this.spawnSpeedLines(target, target.x - homeX, target.y - homeY); BattleFx.onHit(this, 'neutral', target.x, target.y); }
         },
         onComplete: () => { actorCard.locked = false; },
       });
@@ -1088,6 +1097,8 @@ export class MultiBattleScene extends Phaser.Scene {
       }
       this.drawHpBar(card, c.hp, c.maxHp);
       this.drawStatusIcons(card, c);
+      if (!c.alive && card.wasAlive !== false) BattleFx.playDie(this, card.root.x, card.root.y);
+      card.wasAlive = c.alive;
       card.root.setAlpha(c.alive ? 1 : 0.4);
       // 伤害 / 治疗飘字：检测 HP 变化（首帧 lastHp=-1 跳过，避免进战斗瞬间误报）
       if (card.lastHp >= 0 && c.hp !== card.lastHp) {
