@@ -17,7 +17,7 @@ import { BattleFx } from '../managers/BattleFx';
 import { tickKidoStatus as _tickKidoStatus, tickEnemyStatusDuration as _tickEnemyStatusDuration } from './systems/BattleScene.status';
 import { activateBankai as _activateBankai, activateHollow as _activateHollow, activateHell as _activateHell, showFormPortrait as _showFormPortrait, refreshPlayerFormSprite as _refreshPlayerFormSprite } from './systems/BattleScene.transforms';
 import { victory as _victory, defeat as _defeat } from './systems/BattleScene.ui';
-import { lungeAt as _lungeAt, getBuffMods as _getBuffMods, getCritBonus as _getCritBonus, getEffectivePlayerDef as _getEffectivePlayerDef, getEffectivePlayerMdef as _getEffectivePlayerMdef, playerDefend as _playerDefend, escapeBattle as _escapeBattle } from './systems/BattleScene.combat';
+import { lungeAt as _lungeAt, getBuffMods as _getBuffMods, getCritBonus as _getCritBonus, getEffectivePlayerDef as _getEffectivePlayerDef, getEffectivePlayerMdef as _getEffectivePlayerMdef, playerDefend as _playerDefend, escapeBattle as _escapeBattle, applyControlToEnemy as _applyControlToEnemy, applySkillStatus as _applySkillStatus } from './systems/BattleScene.combat';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -1166,26 +1166,9 @@ export class BattleScene extends Phaser.Scene {
   }
   /** 对单个敌人施加控制状态（含命中检定+日志，不调度回合） */
 
-  private applyControlToEnemy(idx: number, se: { subtype: string; turns: number; rate: number }): void {
-    const enemy = this.enemies[idx];
-    if (enemy.hp <= 0) return;
-    const finalRate = calcStatusHitRate(se.rate, se.subtype, enemy.name, enemy.statusRes);
-    if (Math.random() < finalRate) {
-      this.applySkillStatus(se.subtype, se.turns, idx);
-      const effectNames: Record<string, string> = {
-        seal: '封印', slow: '减速', bind: '禁锢', freeze: '冻结', stun: '眩晕', poison: '中毒',
-        burn: '灼烧', parasite: '寄生', taunt: '嘲讽', fear: '恐惧', atkDown: '攻降', defDown: '防降', matkDown: '降灵压',
-      };
-      this.logText.setText(`${enemyDisplayName(enemy.name)} ${effectNames[se.subtype] || se.subtype} ${se.turns} 回合！`);
-    } else {
-      this.logText.setText(`${enemyDisplayName(enemy.name)} 抵抗了控制...`);
-    }
-  }
+  private applyControlToEnemy(idx: number, se: { subtype: string; turns: number; rate: number }): void { _applyControlToEnemy(this, idx, se); }
 
-  private applySkillStatus(subtype: string, turns: number, idx: number = this.selectedEnemyIndex): void {
-    const ks = this.enemyStatuses[idx];
-    if (!this.bossImmuneTo(idx)) applyStatusToEnemy(ks, subtype, turns, this.enemies[idx].maxHp);
-  }
+  private applySkillStatus(subtype: string, turns: number, idx: number = this.selectedEnemyIndex): void { _applySkillStatus(this, subtype, turns, idx); }
 
   private useItem(): void {
     const consumables = Inventory.items.filter(i => i.type === 'consumable');

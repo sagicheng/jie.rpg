@@ -34,8 +34,35 @@ export function getEffectivePlayerDef(scene: any): number {
   return Math.round(scene.playerDef * getBuffMods(scene).def);
 }
 
+import { applyStatusToEnemy } from '../../managers/StatusSystem';
+import { enemyDisplayName } from '../../config/entityNames';
+
+// ── globals used in this file ──
+declare function calcStatusHitRate(rate: number, subtype: string, name: string, res: number): number;
+
 export function getEffectivePlayerMdef(scene: any): number {
   return Math.round(scene.playerMdef * getBuffMods(scene).mdef);
+}
+
+export function applyControlToEnemy(scene: any, idx: number, se: { subtype: string; turns: number; rate: number }): void {
+  const enemy = scene.enemies[idx];
+  if (enemy.hp <= 0) return;
+  const finalRate = calcStatusHitRate(se.rate, se.subtype, enemy.name, enemy.statusRes);
+  if (Math.random() < finalRate) {
+    applySkillStatus(scene, se.subtype, se.turns, idx);
+    const effectNames: Record<string, string> = {
+      seal: '\u5c01\u5370', slow: '\u51cf\u901f', bind: '\u7981\u9522', freeze: '\u51bb\u7ed3', stun: '\u7729\u6655', poison: '\u4e2d\u6bd2',
+      burn: '\u707c\u70e7', parasite: '\u5bc4\u751f', taunt: '\u5632\u8bbd', fear: '\u6050\u60e7', atkDown: '\u653b\u964d', defDown: '\u9632\u964d', matkDown: '\u964d\u7075\u538b',
+    };
+    scene.logText.setText(`${enemyDisplayName(enemy.name)} ${effectNames[se.subtype] || se.subtype} ${se.turns} \u56de\u5408\uff01`);
+  } else {
+    scene.logText.setText(`${enemyDisplayName(enemy.name)} \u62b5\u6297\u4e86\u63a7\u5236...`);
+  }
+}
+
+export function applySkillStatus(scene: any, subtype: string, turns: number, idx: number = scene.selectedEnemyIndex): void {
+  const ks = scene.enemyStatuses[idx];
+  if (!scene.bossImmuneTo(idx)) applyStatusToEnemy(ks, subtype, turns, scene.enemies[idx].maxHp);
 }
   export function playerDefend(scene: any): void {
     scene.clearTurnTimer();
