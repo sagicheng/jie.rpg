@@ -15,6 +15,7 @@ import { getAvailableSkills, getSkillTargetType, SkillData } from '../managers/S
 import { Kido, KidoNode } from '../managers/Kido';
 import { BattleFx } from '../managers/BattleFx';
 import { tickKidoStatus as _tickKidoStatus, tickEnemyStatusDuration as _tickEnemyStatusDuration } from './systems/BattleScene.status';
+import { activateBankai as _activateBankai, activateHollow as _activateHollow, activateHell as _activateHell, showFormPortrait as _showFormPortrait, refreshPlayerFormSprite as _refreshPlayerFormSprite } from './systems/BattleScene.transforms';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -1308,111 +1309,12 @@ export class BattleScene extends Phaser.Scene {
       this.time.delayedCall(1000, () => this.startEnemyPhase());
     }
   }
-  // ════════════════════ 变身系统 ════════════════════
-
-  private activateBankai(): void {
-    if (this.bankaiUsed || this.bankaiActive) return;
-    this.clearTurnTimer();
-    this.phase = 'executing';
-    this.clearCommands(); this.clearSubMenu();
-    this.bankaiActive = true; this.bankaiTurnsLeft = 5; this.bankaiUsed = true;
-    this.playerAtk = Math.round(this.playerAtk * 1.3);
-    this.playerDef = Math.round(this.playerDef * 1.3);
-    this.playerMatk = Math.round(this.playerMatk * 1.3);
-    this.playerMdef = Math.round(this.playerMdef * 1.3);
-    this.playerSpd = Math.round(this.playerSpd * 1.3);
-    this.logText.setText('卍 解！全属性大幅提升（5回合）！');
-    this.showFormPortrait('bankai');                 // 卍解立绘演出（参照虚化，复用主角色静态图）
-    this.refreshPlayerFormSprite();
-    this.cameras.main.flash(600, 0, 100, 200);
-    this.cameras.main.shake(300, 0.01);
-    this.time.delayedCall(1500, () => this.startEnemyPhase());
-  }
-
-  private activateHollow(): void {
-    if (this.hollowUsed || this.hollowActive) return;
-    this.clearTurnTimer();
-    this.phase = 'executing';
-    this.clearCommands(); this.clearSubMenu();
-    this.hollowActive = true; this.hollowTurnsLeft = 4; this.hollowUsed = true;
-    GameState.statusRes += 0.30;  // 坑④：statusRes=玩家异常抗性buff(非可加点属性；抵抗敌人异常攻击，虚化结束后还原)
-    this.playerMaxMp = Math.round(this.playerMaxMp * 1.5);
-    this.playerMp = this.playerMaxMp;
-    this.logText.setText('虚 化！异常抗性+30% · MP上限激增！');
-    this.showFormPortrait('hollow');
-    this.refreshPlayerFormSprite();
-    this.cameras.main.flash(400, 200, 50, 50);
-    this.time.delayedCall(1500, () => this.startEnemyPhase());
-  }
-
-  private activateHell(): void {
-    if (this.hellUsed || this.hellActive) return;
-    this.clearTurnTimer();
-    this.phase = 'executing';
-    this.clearCommands(); this.clearSubMenu();
-    this.hellActive = true; this.hellTurnsLeft = 3; this.hellUsed = true;
-    this.logText.setText('狱 解！业火焚身——伤害倍增！');
-    this.showFormPortrait('hell');
-    this.refreshPlayerFormSprite();
-    this.cameras.main.flash(500, 180, 0, 0);
-    this.cameras.main.shake(400, 0.015);
-    this.time.delayedCall(1500, () => this.startEnemyPhase());
-  }
-  /**
-   * 释放力量瞬间居中弹出立绘（虚化/狱解），按当前性别自动选男/女那张。
-   * 缩放+淡入（~350ms）后悬停，于 1500ms 敌方回合前淡出；外圈暗红/狱炎光环烘托觉醒感。
-   */
-
-  private showFormPortrait(which: 'hollow' | 'hell' | 'bankai'): void {
-    ensureFormPortrait(this, which, (key) => {
-      if (!this.scene.isActive()) return;
-      const cx = GAME_WIDTH / 2, cy = GAME_HEIGHT / 2;
-      const haloColor = which === 'hollow' ? 0xff3355
-        : which === 'hell'   ? 0xff2200
-        :                      0x66ccff;   // bankai 青白光环
-      const halo = this.add.graphics().setScrollFactor(0).setDepth(199).setAlpha(0);
-      halo.fillStyle(haloColor, 0.18);
-      halo.fillCircle(cx, cy, 380);
-      halo.fillStyle(haloColor, 0.12);
-      halo.fillCircle(cx, cy, 270);
-      const img = this.add.image(cx, cy, key)
-        .setScrollFactor(0).setDepth(200).setOrigin(0.5).setAlpha(0);
-      // 适配显示高度 ~900 逻辑像素，按比例缩放（不裁切、不变形）
-      const finalScale = 900 / img.height;
-      img.setScale(finalScale * 0.85);
-      this.tweens.add({ targets: img, alpha: 1, scaleX: finalScale, scaleY: finalScale, duration: 350, ease: 'Back.Out' });
-      this.tweens.add({ targets: halo, alpha: 1, duration: 350 });
-      // 在 1500ms 敌方回合前淡出，衔接战斗流程
-      this.time.delayedCall(1150, () => {
-        this.tweens.add({
-          targets: [img, halo], alpha: 0, duration: 300,
-          onComplete: () => { img.destroy(); halo.destroy(); },
-        });
-      });
-    });
-  }
-  // ——— 回合决策超时 ———
-  /** 按当前激活形态切换我方站立立绘：hell > hollow > bankai > 基础；形态立绘懒加载中用基础兜底。 */
-
-  private refreshPlayerFormSprite(): void {
-    if (!this.playerSprite || !this.scene.isActive()) return;
-    const g = GameState.gender as 'male' | 'female';
-    const form: BattleForm =
-      this.hellActive ? 'hell' : this.hollowActive ? 'hollow' : this.bankaiActive ? 'bankai' : 'base';
-    const key = battlePortraitKey(g, form);
-    const apply = (k: string) => { if (this.playerSprite) { this.playerSprite.setTexture(k); fitPortrait(this.playerSprite, 120, 180); } };
-    if (this.textures.exists(key)) {
-      apply(key);
-    } else {
-      apply(g);                                    // 形态立绘懒加载中：先用基础立绘兜底
-      ensureBattlePortrait(this, key, () => {
-        if (!this.playerSprite || !this.scene.isActive()) return;
-        const cur: BattleForm =
-          this.hellActive ? 'hell' : this.hollowActive ? 'hollow' : this.bankaiActive ? 'bankai' : 'base';
-        if (cur === form) apply(key);              // 加载完且形态仍匹配才切，避免覆盖失效回退
-      });
-    }
-  }
+  // ═══ 变身系统 — 委托到 BattleScene.transforms.ts ═══
+  private activateBankai(): void { _activateBankai(this); }
+  private activateHollow(): void { _activateHollow(this); }
+  private activateHell(): void { _activateHell(this); }
+  private showFormPortrait(which: 'hollow' | 'hell' | 'bankai'): void { _showFormPortrait(this, which); }
+  private refreshPlayerFormSprite(): void { _refreshPlayerFormSprite(this); }
 
   private startTurnTimer(): void {
     this.clearTurnTimer();
