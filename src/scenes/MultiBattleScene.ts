@@ -874,11 +874,8 @@ export class MultiBattleScene extends Phaser.Scene {
 
   /** 卡牌受击抖动（仅作用于 root，敌人位置稳定不会与 syncCards 冲突）。 */
   private shakeCard(root: Phaser.GameObjects.Container): void { _shakeCard(this, root); }
-    });
-  }
 
   /** 命中速度线粒子：以冲击方向为中心扇形向外飞散并淡出。 */
-  private spawnSpeedLines(target: Phaser.GameObjects.Container, dx: number, dy: number): void {
   private spawnSpeedLines(target: Phaser.GameObjects.Container, dx: number, dy: number): void { _spawnSpeedLines(this, target, dx, dy); }
 
   /** 指令阶段倒计时：服务端 roundExpiresAt 驱动，超时自动开战。 */
