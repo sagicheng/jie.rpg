@@ -27,7 +27,7 @@ import { PET_SKILLS_CLIENT } from '../managers/PetSystem';
 import { SkinBar, SkinButton, cardFrame, tagBg, panel, cardHl, menuRow, menuBack, floatDamage, hpColor, SKIN } from '../ui/BattleSkin';
 import { enemyDisplayName } from '../config/entityNames';
 import { BattleFx } from '../managers/BattleFx';
-import { Card, Button, makeCard as _makeCard, drawHpBar as _drawHpBar, drawStatusIcons as _drawStatusIcons, makeButton as _makeButton, showResult as _showResult } from './systems/MultiBattleScene.ui';
+import { Card, Button, makeCard as _makeCard, drawHpBar as _drawHpBar, drawStatusIcons as _drawStatusIcons, makeButton as _makeButton, showResult as _showResult, spawnAfterimage as _spawnAfterimage, shakeCard as _shakeCard, spawnSpeedLines as _spawnSpeedLines } from './systems/MultiBattleScene.ui';
 
 export interface ClientLoadout {
   skills: string[];
@@ -870,45 +870,16 @@ export class MultiBattleScene extends Phaser.Scene {
   }
 
   /** 滑移起点克隆一张半透明残影，随演出淡出销毁。 */
-  private spawnAfterimage(card: Card, x: number, y: number): void {
-    const key = card.portrait.texture.key;
-    if (!key || !this.textures.exists(key)) return;
-    const ghost = this.add.image(x, y, key)
-      .setDisplaySize(120, 180).setAlpha(0.32).setDepth(16).setTint(0x9fd8ff);
-    this.tweens.add({
-      targets: ghost, alpha: 0, scaleX: ghost.scaleX * 1.12, scaleY: ghost.scaleY * 1.12,
-      duration: 260, ease: 'Quad.Out', onComplete: () => ghost.destroy(),
-    });
-  }
+  private spawnAfterimage(card: Card, x: number, y: number): void { _spawnAfterimage(this, card, x, y); }
 
   /** 卡牌受击抖动（仅作用于 root，敌人位置稳定不会与 syncCards 冲突）。 */
-  private shakeCard(root: Phaser.GameObjects.Container): void {
-    const ox = root.x;
-    this.tweens.add({
-      targets: root, x: ox + 9, duration: 38, yoyo: true, repeat: 3, ease: 'Sine.InOut',
-      onComplete: () => { root.x = ox; },
+  private shakeCard(root: Phaser.GameObjects.Container): void { _shakeCard(this, root); }
     });
   }
 
   /** 命中速度线粒子：以冲击方向为中心扇形向外飞散并淡出。 */
   private spawnSpeedLines(target: Phaser.GameObjects.Container, dx: number, dy: number): void {
-    const cx = target.x, cy = target.y;
-    const ang = Math.atan2(dy, dx);
-    const n = 6;
-    for (let i = 0; i < n; i++) {
-      const a = ang + (i - (n - 1) / 2) * 0.18;
-      const len = Phaser.Math.Between(34, 54);
-      const line = this.add.rectangle(cx, cy, len, 3, 0xffffff, 0.9)
-        .setRotation(a).setOrigin(0, 0.5).setDepth(17);   // 自中心向外延伸
-      this.tweens.add({
-        targets: line,
-        x: cx + Math.cos(a) * (len + 26),
-        y: cy + Math.sin(a) * (len + 26),
-        alpha: 0, duration: 220, ease: 'Quad.Out',
-        onComplete: () => line.destroy(),
-      });
-    }
-  }
+  private spawnSpeedLines(target: Phaser.GameObjects.Container, dx: number, dy: number): void { _spawnSpeedLines(this, target, dx, dy); }
 
   /** 指令阶段倒计时：服务端 roundExpiresAt 驱动，超时自动开战。 */
   private updateCountdown(): void {

@@ -134,3 +134,27 @@ export function showResult(scene: any, title: string): void {
   c.add([bg, panelBg, t, btn]);
   scene.resultPanel = c;
 }
+
+export function spawnAfterimage(scene: any, card: Card, x: number, y: number): void {
+  const key = card.portrait.texture.key;
+  if (!key || !scene.textures.exists(key)) return;
+  const ghost = scene.add.image(x, y, key).setDisplaySize(120, 180).setAlpha(0.32).setDepth(16).setTint(0x9fd8ff);
+  scene.tweens.add({ targets: ghost, alpha: 0, scaleX: ghost.scaleX * 1.12, scaleY: ghost.scaleY * 1.12, duration: 260, ease: 'Quad.Out', onComplete: () => ghost.destroy() });
+}
+
+export function shakeCard(scene: any, root: Phaser.GameObjects.Container): void {
+  const ox = root.x;
+  scene.tweens.add({ targets: root, x: ox + 9, duration: 38, yoyo: true, repeat: 3, ease: 'Sine.InOut', onComplete: () => { root.x = ox; } });
+}
+
+export function spawnSpeedLines(scene: any, target: Phaser.GameObjects.Container, dx: number, dy: number): void {
+  const cx = target.x, cy = target.y;
+  const ang = Math.atan2(dy, dx);
+  const n = 6;
+  for (let i = 0; i < n; i++) {
+    const a = ang + (i - (n - 1) / 2) * 0.18;
+    const len = Phaser.Math.Between(34, 54);
+    const line = scene.add.rectangle(cx, cy, len, 3, 0xffffff, 0.9).setRotation(a).setOrigin(0, 0.5).setDepth(17);
+    scene.tweens.add({ targets: line, x: cx + Math.cos(a) * (len + 26), y: cy + Math.sin(a) * (len + 26), alpha: 0, duration: 220, ease: 'Quad.Out', onComplete: () => line.destroy() });
+  }
+}
