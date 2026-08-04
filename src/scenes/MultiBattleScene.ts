@@ -27,25 +27,7 @@ import { PET_SKILLS_CLIENT } from '../managers/PetSystem';
 import { SkinBar, SkinButton, cardFrame, tagBg, panel, cardHl, menuRow, menuBack, floatDamage, hpColor, SKIN } from '../ui/BattleSkin';
 import { enemyDisplayName } from '../config/entityNames';
 import { BattleFx } from '../managers/BattleFx';
-
-interface Card {
-  root: Phaser.GameObjects.Container;
-  name: Phaser.GameObjects.Text;
-  hpBar: SkinBar;                     // 长条血条（立绘头顶）
-  hpText: Phaser.GameObjects.Text;    // HP 数值
-  portrait: Phaser.GameObjects.Image; // 角色立绘
-  hl: Phaser.GameObjects.Image;      // 待选目标高亮辉光框
-  lastHp: number;
-  statusIcons: Phaser.GameObjects.GameObject[];
-  locked?: boolean;                   // 滑移动画期间锁定位，避免 syncCards 把卡牌拽回原位
-  wasAlive?: boolean;                 // 上一帧存活状态，用于死亡特效只播一次
-}
-
-interface Button {
-  container: Phaser.GameObjects.Container;
-  setEnable: (b: boolean) => void;
-  setVisible: (b: boolean) => void;
-}
+import { Card, Button, makeCard as _makeCard, drawHpBar as _drawHpBar, drawStatusIcons as _drawStatusIcons, makeButton as _makeButton, showResult as _showResult } from './systems/MultiBattleScene.ui';
 
 export interface ClientLoadout {
   skills: string[];
@@ -1211,142 +1193,16 @@ export class MultiBattleScene extends Phaser.Scene {
     }
   }
 
-  private makeCard(x: number, y: number, isPlayer: boolean): Card {
-    // 经典回合��布局：长条血条(头顶) → 名字 → 立绘(居中)
-    const root = this.add.container(x, y).setDepth(10);
-    const barW = 160, barH = 8;
-    const hpBar = new SkinBar(this, { x: -barW / 2, y: -112, w: barW, h: barH, depth: 12, pad: 1 });
-    const hpText = this.add.text(0, -98, '', { fontSize: '12px', color: '#ffffff' }).setOrigin(0.5);
-    const name = this.add.text(0, -80, '', { fontSize: '13px', color: isPlayer ? '#aaffaa' : '#ffaaaa', fontStyle: 'bold' }).setOrigin(0.5);
-    const portrait = this.add.image(0, 0, GameState.gender).setDisplaySize(120, 180).setDepth(15).setVisible(false);
-    const hl = cardHl(this).setDisplaySize(190, 290); // 高亮框包住立绘+血条
-    root.add([hpBar.frame, hpBar.fill, hpText, name, portrait, hl]);
-    // 待机呼吸：所有卡牌（人物/宠物/敌人）共享同一呼吸脉动，营造生命感。
-    // 只缩放 root 的 scaleY —— root 的 position/alpha 由 syncCards 每帧管理，互不冲突；
-    // scale 独立于 x/y，也不会与 shakeCard(改x)/playAttackFx(改x,y) 抢属性。
-    this.tweens.add({
-      targets: root,
-      scaleY: 1.035,
-      duration: 1100,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-    return { root, name, hpBar, hpText, portrait, hl, lastHp: -1, statusIcons: [] };
-  }
+  private makeCard(x: number, y: number, isPlayer: boolean): Card { return _makeCard(this, x, y, isPlayer); }
 
-  private drawHpBar(card: Card, hp: number, maxHp: number): void {
-    const ratio = maxHp > 0 ? Phaser.Math.Clamp(hp / maxHp, 0, 1) : 0;
-    card.hpBar.setRatio(ratio, hpColor(ratio));
-    card.hpText.setText(`HP ${Math.max(0, Math.round(hp))} / ${Math.round(maxHp)}`);
-  }
+  private drawHpBar(card: Card, hp: number, maxHp: number): void { _drawHpBar(card, hp, maxHp); }
 
   /** 渲染异常状态 PNG 图标（依据服务端 schema.status 字段），含剩余回合数 + 背板 + 文字兜底 */
-  private drawStatusIcons(card: Card, c: any): void {
-    for (const obj of card.statusIcons) obj.destroy();
-    card.statusIcons = [];
-    const st = c.status;
-    if (!st) return;
-    const list: { key: string; name: string; turns: number }[] = [
-      { key: 'icon_burn', name: '灼烧', turns: st.burn },
-      { key: 'icon_freeze', name: '冻结', turns: st.freeze },
-      { key: 'icon_poison', name: '中毒', turns: st.poison },
-      { key: 'icon_parasite', name: '寄生', turns: st.parasite },
-      { key: 'icon_slow', name: '减速', turns: st.slow },
-      { key: 'icon_stun', name: '眩晕', turns: st.stun },
-      { key: 'icon_bind', name: '禁锢', turns: st.bind },
-      { key: 'icon_taunt', name: '嘲讽', turns: st.taunt },
-      { key: 'icon_fear', name: '恐惧', turns: st.fear },
-      { key: 'icon_atkDown', name: '攻降', turns: st.atkDown },
-      { key: 'icon_defDown', name: '防降', turns: st.defDown },
-      { key: 'icon_matkDown', name: '降灵压', turns: st.matkDown },
-      { key: 'icon_seal', name: '封印', turns: st.sealed },
-    ];
-    const active = list.filter((k) => k.turns > 0);
-    if (active.length === 0) return;
+  private drawStatusIcons(card: Card, c: any): void { _drawStatusIcons(this, card, c); }
 
-    // 诊断：状态到达客户端时打印一次（去重防刷屏），用于确认服务端状态同步是否生效。
-    {
-      const sig = `${c.name || '敌方'}:${active.map(k => `${k.name}×${k.turns}`).join(',')}`;
-      if ((this as any)._lastStatusSig !== sig) {
-        (this as any)._lastStatusSig = sig;
-        console.log(`[Status.render] ${sig}`);
-      }
-    }
+  private makeButton(x: number, y: number, label: string, _color: number, cb: () => void, w = 200, h = 56): Button { return _makeButton(this, x, y, label, _color, cb, w, h); }
 
-    // 图标排在怪物名字右侧（多个依次往后），与名字垂直居中
-    const ICON = 22, GAP = 3, PAD = 6;
-    const totalW = active.length * (ICON + GAP) - GAP + PAD * 2;
-    const nameRight = card.name.x + (card.name.width || 0);
-    const iconY = card.name.y + (card.name.height || 16) / 2;   // 与名字垂直居中
-    let contentStartX = nameRight + 8;                            // 名字后留 8px 间隙
-    // 防溢出：若超出卡片右边界(380/2-6=184)，整体左移到不溢出（但不与名字重叠）
-    const maxRight = 184;
-    if (contentStartX + totalW > maxRight) contentStartX = Math.max(nameRight + 4, maxRight - totalW);
-    const plateX = contentStartX, plateY = iconY - (ICON + 8) / 2;
-    const plateW = totalW, plateH = ICON + 8;
-    const plate = tagBg(this, plateX + plateW / 2, plateY + plateH / 2).setDisplaySize(plateW, plateH).setDepth(11);
-    card.root.add(plate);
-    card.statusIcons.push(plate);
-
-    const startX = contentStartX + PAD + ICON / 2;
-    const y = iconY;
-    active.forEach((k, i) => {
-      const x = startX + i * (ICON + GAP);
-      if (this.textures.exists(k.key)) {
-        const img = this.add.image(x, y, k.key).setDisplaySize(ICON, ICON).setDepth(12);
-        card.root.add(img);
-        card.statusIcons.push(img);
-      } else {
-        // 纹理缺失兜底：中文名（深色底+亮色字）
-        const t = this.add.text(x, y, k.name, { fontSize: '10px', color: '#ffcc66', backgroundColor: '#00000088', padding: { x: 2, y: 1 } }).setOrigin(0.5).setDepth(12);
-        card.root.add(t);
-        card.statusIcons.push(t);
-      }
-      const tn = this.add.text(x, y + ICON / 2 - 1, String(k.turns), {
-        fontSize: '10px', color: '#ffffff', backgroundColor: '#000000aa', padding: { x: 1, y: 0 },
-      }).setOrigin(0.5).setDepth(13);
-      card.root.add(tn);
-      card.statusIcons.push(tn);
-    });
-  }
-
-  private makeButton(x: number, y: number, label: string, _color: number, cb: () => void, w = 200, h = 56): Button {
-    const sb = new SkinButton(this, { x, y, label, w, h, depth: 20, onClick: cb });
-    return {
-      container: sb.root,
-      setEnable: (b: boolean) => sb.setEnabled(b),
-      setVisible: (b: boolean) => sb.setVisible(b),
-    };
-  }
-
-  private showResult(title: string): void {
-    if (this.resultPanel) return;
-    const w = this.scale.width, h = this.scale.height;
-    const c = this.add.container(w / 2, h / 2).setDepth(50);
-    const bg = this.add.rectangle(-w / 2, -h / 2, w, h, 0x000000, 0.7).setOrigin(0, 0);
-    const panelBg = panel(this, -260, -170, 520, 340, 50);
-    const t = this.add.text(0, -90, title, {
-      fontSize: '40px', color: title.includes('胜利') ? '#88ff88' : title.includes('脱') ? '#ffdd66' : '#ff8866', fontStyle: 'bold',
-    }).setOrigin(0.5);
-    const btn = this.add.text(0, 80, this.returnScene === 'GameScene' ? '返回地图' : '返回副本', {
-      fontSize: '22px', color: '#d4c5a0', padding: { x: 24, y: 10 }, backgroundColor: '#2a2a3e',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    btn.on('pointerover', () => btn.setColor('#ffe8b0'));
-    btn.on('pointerout', () => btn.setColor('#d4c5a0'));
-    btn.on('pointerdown', () => {
-      c.destroy(true);
-      this.resultPanel = null;
-      this.intentionalLeave = true; // 主动离开，onLeave 不应再弹「连接断开」
-      this.broadcastTeamExit();      // 队长返回 → 广播全队一起退出战斗
-      this.scene.stop();
-    });
-    c.add([bg, panelBg, t, btn]);
-    this.resultPanel = c;
-  }
-
-  /** 队长（非被拉入）主动返回时，广播给全队一起退出战斗场景。
-   *  队员侧收到 teamExitBattleEnd 后 stop 自身 MultiBattleScene 并 resume 对应场景（副本/地图）。 */
+  private showResult(title: string): void { _showResult(this, title); }
   private broadcastTeamExit(): void {
     if (this.isTeamPull) return;
     const gs = this.scene.get('GameScene') as any;
