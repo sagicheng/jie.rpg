@@ -242,7 +242,7 @@ export function rollPetQuality(zone = 1): PetQuality {
   return 'normal';
 }
 
-function genPetId(): string {
+export function genPetId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 

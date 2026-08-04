@@ -1,4 +1,3 @@
-import { executeEnemyAction as _executeEnemyAction, checkVictory as _checkVictory, checkDefeat as _checkDefeat, isAlive as _isAlive, spdOf as _spdOf, spdCmp as _spdCmp, rebuildTurnOrder as _rebuildTurnOrder, firstAliveEnemy as _firstAliveEnemy, resolveTarget as _resolveTarget, lowestHpAlly as _lowestHpAlly, broadcastFx as _broadcastFx, logMsg as _logMsg } from "./systems/BattleRoom.utils";
 /**
  * 权威战斗房间：组队打怪（梦幻西游/飘流幻境式回合制）。
  *
@@ -834,17 +833,148 @@ export class BattleRoom extends Room<BattleRoomState> {
   //  敌人 AI
   // ══════════════════════════════════════════════════
 
-  // ═══ AI/判定/工具 — 委托到 BattleRoom.utils.ts ═══
-  private executeEnemyAction(eid: string): void { _executeEnemyAction(this, eid); }
-  private checkVictory(): boolean { return _checkVictory(this); }
-  private checkDefeat(): boolean { return _checkDefeat(this); }
-  private isAlive(id: string): boolean { return _isAlive(this, id); }
-  private spdOf(id: string): number { return _spdOf(this, id); }
-  private spdCmp(a: string, b: string): number { return _spdCmp(this, a, b); }
-  private rebuildTurnOrder(who: string): void { _rebuildTurnOrder(this, who); }
-  private firstAliveEnemy(): string | undefined { return _firstAliveEnemy(this); }
-  private resolveTarget(targetId?: string): string | undefined { return _resolveTarget(this, targetId); }
-  private lowestHpAlly(selfId: string): CombatPlayer { return _lowestHpAlly(this, selfId); }
-  private broadcastFx(actorSid: string, targetId?: string, kind: any = 'cast'): void { _broadcastFx(this, actorSid, targetId, kind); }
-  private logMsg(who: string, text: string): void { _logMsg(this, who, text); }
+  private executeEnemyAction(eid: string): void {
+    const e = this.state.enemies.get(eid);
+    if (!e || !e.alive) { this.scheduleExecuteNext(); return; }
+
+    // 控制状态：被冻结/眩晕/禁锢/封印 → 跳过行动
+    if (this.isBlocked(e)) {
+      this.logMsg(e.name, `${e.name} 被控制，无法行动`);
+      this.scheduleExecuteNext();
+      return;
+    }
+    // 恐惧：30% 概率错失行动
+    if (e.status.fear > 0 && Math.random() < 0.30) {
+      this.logMsg(e.name, `${e.name} 陷入恐惧，错失行动`);
+      this.scheduleExecuteNext();
+      return;
+    }
+
+    const alivePlayers = [...this.state.players.values()].filter((p) => p.alive);
+    if (alivePlayers.length === 0) { this.checkDefeat(); return; }
+    const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+
+    const skills = this.enemySkills.get(eid) || [];
+    const sk = skills.length ? (Math.random() < 0.4 ? skills[Math.floor(Math.random() * skills.length)] : skills[0]) : null;
+    const power = sk?.power ?? 1.0;
+    const magical = sk?.damageType === 'magical';
+    const r = magical ? calcMagicDamage(this.effMatk(e), this.effMdef(target), power) : calcDamage(this.effAtk(e), this.effDef(target), power);
+    let dmg = r.damage;
+    const isDefending = this.defending.has(target.sessionId);
+    if (isDefending) dmg = Math.round(dmg * 0.2);
+    target.hp = Math.max(0, target.hp - dmg);
+    const skName = sk?.name ? `【${sk.name}】` : '';
+    this.logMsg(e.name, `${e.name}${skName} → ${target.name} -${dmg}${r.crit ? '（暴击！）' : ''}${isDefending ? '（防御）' : ''}`);
+
+    if (target.hp <= 0) { target.alive = false; this.logMsg('system', `${target.name} 倒下了！`); }
+    // 敌人攻击附带异常状态（按 rate 概率）
+    if (sk?.statusEffect && target.hp > 0) this.rollApplyStatusToPlayer(target, sk.statusEffect);
+    // 驱动客户端攻击演出：怪物冲砍滑移 + 目标（玩家）受击后仰。
+    // 此前漏掉此广播，导致怪物攻击无任何演出（客户端 playAttackFx 收不到事件）。
+    this.broadcastFx(eid, target.sessionId, magical ? 'cast' : 'melee');
+    this.scheduleExecuteNext();
+  }
+
+  // ══════════════════════════════════════════════════
+  //  胜负判定
+  // ══════════════════════════════════════════════════
+
+  private checkVictory(): boolean {
+    if ([...this.state.enemies.values()].some((e) => e.alive)) return false;
+    this.state.phase = 'victory'; this.state.winner = 'players';
+    this.clearCommandTimer(); this.clearExecTimer();
+
+    if (this.dungeonStage > 0) {
+      const baseExp = Math.round((this.enemyDef.expReward || 10) * 0.5);
+      const baseGold = Math.round((this.enemyDef.goldReward || 5) * 0.5);
+      this.clients.forEach((c: Client) => {
+        const pw = world.get(this.ownerSids.get(c.sessionId) || c.sessionId);
+        const lvBefore = pw.level;
+        world.gainExp(pw, baseExp);
+        const leveled = pw.level > lvBefore;
+        world.addGold(pw, baseGold);
+        c.send('battleReward', { exp: baseExp, gold: baseGold, loot: [], leveled });
+      });
+      return true;
+    }
+
+    const loot = generateLoot(this.enemyDef.type, this.enemyDef.zone);
+    this.logMsg('system', `胜利！战利品：${loot.map((i) => i.name).join('、') || '无'}`);
+    const playerCount = this.clients.length || 1;
+    const exp = Math.max(1, Math.ceil((this.enemyDef.expReward || 0) / playerCount));
+    const gold = Math.max(1, Math.ceil((this.enemyDef.goldReward || 0) / playerCount));
+    // 物品随机分配给一名玩家
+    const luckyIdx = Math.floor(Math.random() * this.clients.length);
+    this.clients.forEach((c: Client, idx: number) => {
+      const pw = world.get(this.ownerSids.get(c.sessionId) || c.sessionId);
+      if (idx === luckyIdx) world.grantLoot(pw, loot);
+      const leveled = world.gainExp(pw, exp) > 0;
+      world.addGold(pw, gold);
+      world.recordKill(pw, this.enemyDef.name);
+      const playerLoot = idx === luckyIdx ? loot.map((i) => i.name) : [];
+      c.send('battleReward', { exp, gold, loot: playerLoot, leveled });
+    });
+    return true;
+  }
+
+  private checkDefeat(): boolean {
+    if ([...this.state.players.values()].some((p) => p.alive)) return false;
+    this.state.phase = 'defeat'; this.state.winner = 'enemy';
+    this.clearCommandTimer(); this.clearExecTimer();
+    this.logMsg('system', '全员阵亡……战斗失败。');
+    return true;
+  }
+
+  // ══════════════════════════════════════════════════
+  //  工具
+  // ══════════════════════════════════════════════════
+
+  private isAlive(id: string): boolean {
+    if (this.state.players.has(id)) return this.state.players.get(id)!.alive;
+    const e = this.state.enemies.get(id);
+    return !!e && e.alive;
+  }
+  private spdOf(id: string): number {
+    if (this.state.players.has(id)) return this.state.players.get(id)!.spd;
+    return this.state.enemies.get(id)?.spd ?? 0;
+  }
+  /** SPD 确定性比较：高速优先，相同时用 ID 字典序做 tie-breaker（梦幻西游式 Internal_ID）。 */
+  private spdCmp(a: string, b: string): number {
+    const diff = this.spdOf(b) - this.spdOf(a);
+    return diff !== 0 ? diff : a.localeCompare(b);
+  }
+  /** 从 state.players + state.enemies 完整重建 turnOrder（SPD 降序）。替代不稳定的 splice 动态插入。 */
+  private rebuildTurnOrder(who: string): void {
+    const order: string[] = [];
+    this.state.players.forEach((pl) => order.push(pl.sessionId));
+    this.state.enemies.forEach((e) => order.push(e.id));
+    order.sort((a, b) => this.spdCmp(a, b));
+    this.state.turnOrder.splice(0, this.state.turnOrder.length, ...order);
+    this.logMsg('system', `${who} 加入，战斗队列已重建（${order.length} 人）`);
+  }
+  private firstAliveEnemy(): string | undefined {
+    for (const e of this.state.enemies.values()) if (e.alive) return e.id;
+    return undefined;
+  }
+  private resolveTarget(targetId?: string): string | undefined {
+    if (targetId && this.state.enemies.has(targetId) && this.state.enemies.get(targetId)!.alive) return targetId;
+    return this.firstAliveEnemy();
+  }
+  private lowestHpAlly(selfId: string): CombatPlayer {
+    let best: CombatPlayer | null = null;
+    for (const pl of this.state.players.values()) {
+      if (!pl.alive) continue;
+      if (!best || pl.hp / pl.maxHp < best.hp / best.maxHp) best = pl;
+    }
+    return best || this.state.players.get(selfId)!;
+  }
+  /** 广播一次攻击演出事件，客户端据此播放纯 tween 滑移（melee=冲上去砍 / cast=原地咏唱）。 */
+  private broadcastFx(actorSid: string, targetId?: string, kind: 'melee' | 'cast' = 'cast'): void {
+    this.broadcast('actionFx', { actorSid, targetId, kind });
+  }
+  private logMsg(who: string, text: string) {
+    const m = new ChatMessage(); m.name = who; m.text = text; m.t = Date.now();
+    this.state.log.push(m);
+    if (this.state.log.length > 100) this.state.log.shift();
+  }
 }
