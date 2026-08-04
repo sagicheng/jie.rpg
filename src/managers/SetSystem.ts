@@ -11,6 +11,7 @@
  * 联机时 set 字段随 WorldItem 序列化同步，服务端为唯一真相源）。
  */
 import type { Equipment, EquipSlot, Item } from './Inventory';
+import { QUALITY_CN } from '../core/constants';
 
 /** 套装加成（百分比小数，0.08 = +8%） */
 export interface SetBonus {
@@ -53,10 +54,6 @@ export const JEWELRY_SET_BONUSES: Record<number, SetBonus> = {
 export function makeSetId(zone: number, quality: string): string {
   return `${zone}_${quality}`;
 }
-
-const QUALITY_CN: Record<string, string> = {
-  white: '白', green: '绿', blue: '蓝', purple: '紫', gold: '金',
-};
 
 /** 套装展示名：第X区·Y套装 */
 export function setName(setId: string): string {

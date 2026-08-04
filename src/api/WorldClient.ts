@@ -133,10 +133,6 @@ export function requestMallBuy(itemId: string): boolean {
 export function requestRespec(): boolean {
   return sendIntent('respec', {});
 }
-/** Dev 作弊键(Ctrl+E)：联机下向服务端申请发放「同区域同品质」测试套装（服务端权威发放并 worldSync 下发）。 */
-export function requestDevGrantSet(zone: number, quality: string): boolean {
-  return sendIntent('devGrantSet', { zone, quality });
-}
 /** 行会商店购买（联机权威）：用个人贡献兑换公会专属物资，服务端扣贡献并发放物品/称号。断连被拒。 */
 export function requestGuildShopBuy(itemId: string): boolean {
   return sendIntent('guildBuy', { itemId });
@@ -154,7 +150,6 @@ export function requestAuctionCancel(auctionId: number): boolean { return sendIn
 // ——— 灵宠系统 ———
 export function requestPetSetActive(petId: string): boolean { return sendIntent('petSetActive', { petId }); }
 export function requestPetRelease(petId: string): boolean { return sendIntent('petRelease', { petId }); }
-export function requestPetGrantDev(speciesId?: string): boolean { return sendIntent('petGrantDev', { speciesId: speciesId || null }); }
 /** 开启灵宠蛋（服务端权威：随机物种 + 按蛋 zone 定品质，消耗一枚蛋）。 */
 export function requestUsePetEgg(itemId: string): boolean { return sendIntent('usePetEgg', { itemId }); }
 export function requestPetRecall(petId: string): boolean { return sendIntent('petRecall', { petId }); }

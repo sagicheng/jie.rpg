@@ -61,11 +61,6 @@ export class UIScene extends Phaser.Scene {
     }).setDepth(102);
     this.questText = questText;
 
-    // L键：由GameScene处理任务面板，UIScene不重复
-    // this.input.keyboard!.addKey('L').on('down', () => {
-    //   if (this.questPanelOpen) { this.closeQuestPanel(); } else { this.openQuestPanel(); }
-    // });
-
     this.events.on('updateStats', () => {
       const trackText = GameState.getQuestTrackText();
       if (trackText) {

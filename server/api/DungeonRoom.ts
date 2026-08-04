@@ -121,8 +121,4 @@ export class DungeonRoom extends Room<DungeonRoomState> {
     // 仅移出在场列表；进度存于 WorldService，断连不丢，可续打。
     this.state.players.delete(client.sessionId);
   }
-
-  onDispose() {
-    // no-op
-  }
 }

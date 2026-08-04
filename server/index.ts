@@ -20,7 +20,6 @@ import { PvpRoom } from './api/PvpRoom';
 import characterRoutes from './modules/feature/character';
 import { startArenaTicker } from './modules/feature/arenaService';
 import authRoutes from './core/auth';
-import { ensureGmAccount } from './core/db';
 import guildRoutes from './modules/feature/guild';
 import friendRoutes from './modules/feature/friends';
 
@@ -50,9 +49,6 @@ gameServer.define('dungeon', DungeonRoom).filterBy(['dungeonId']);
 gameServer.define('pvp', PvpRoom);
 // 启动竞技场匹配撮合（每秒一次；凑不齐 60s 超时取消，绝不 AI 替代）
 startArenaTicker();
-
-// 启动保障：确保 GM 测试账号（用户名/密码均为 gm）存在且 gm=1
-ensureGmAccount();
 
 gameServer.listen(PORT).then(() => {
   console.log(`[联机] Colyseus 权威游戏服已启动：ws://localhost:${PORT}`);

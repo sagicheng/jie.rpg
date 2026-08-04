@@ -28,7 +28,6 @@ db.exec(`
     password_hash TEXT NOT NULL,
     security_hash TEXT NOT NULL,
     token         TEXT,
-    gm            INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -95,7 +94,6 @@ for (const [t, c, d] of [
   ['guilds', 'contribution', 'INTEGER NOT NULL DEFAULT 0'],
   ['guild_members', 'contribution', 'INTEGER NOT NULL DEFAULT 0'],
   ['characters', 'gender', "TEXT NOT NULL DEFAULT 'male'"],
-  ['accounts', 'gm', 'INTEGER NOT NULL DEFAULT 0'],
 ] as const) {
   const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((r: any) => (r as any).name);
   if (!cols.includes(c)) db.prepare(`ALTER TABLE ${t} ADD COLUMN ${c} ${d}`).run();
@@ -108,7 +106,6 @@ export interface AccountRow {
   password_hash: string;
   security_hash: string;
   token: string | null;
-  gm: number;
   created_at: string;
 }
 
@@ -142,19 +139,6 @@ export function clearAccountToken(id: number): void {
 /** 修改密码（需安全密码验证）。 */
 export function changePassword(id: number, newPasswordHash: string): void {
   db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ?').run(newPasswordHash, id);
-}
-
-/** 启动保障：确保存在一个 GM 测试账号（用户名/密码均为 `gm`）。已存在则补置 gm=1。 */
-export function ensureGmAccount(): void {
-  const existing = db.prepare('SELECT id, gm FROM accounts WHERE username = ?').get('gm') as { id: number; gm: number } | undefined;
-  const hash = hashSync('gm', 10);
-  if (existing) {
-    if (!existing.gm) db.prepare('UPDATE accounts SET gm = 1 WHERE id = ?').run(existing.id);
-    return;
-  }
-  db.prepare('INSERT INTO accounts (username, password_hash, security_hash, gm) VALUES (?, ?, ?, 1)')
-    .run('gm', hash, hash);
-  console.log('[db] GM 测试账号已创建：用户名=gm 密码=gm');
 }
 
 // ============= 角色操作 =============

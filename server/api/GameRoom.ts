@@ -246,21 +246,6 @@ export class GameRoom extends Room<GameRoomState> {
       }
     });
 
-    // 测试专用：仅 CHAT_DEV=1 时接受，用于触发服务端专属频道（活动/系统）广播
-    this.onMessage('devChat', (client, data: { channel?: string; text?: string }) => {
-      if (process.env.CHAT_DEV !== '1') return;
-      const channel = data?.channel;
-      if (channel !== 'event' && channel !== 'system') return;
-      const text = String(data?.text ?? '').slice(0, 200);
-      if (!text) return;
-      const payload = { channel, fromName: channel === 'event' ? '活动' : '系统', fromCharId: 0, text, ts: Date.now() };
-      if (channel === 'event') {
-        onlineClients.forEach((rec) => rec.client.send('chat', payload));
-      } else {
-        this.clients.forEach((c) => c.send('chat', payload));
-      }
-    });
-
     this.onMessage('setTitle', (client, data: { title?: string }) => {
       const p = this.state.players.get(client.sessionId);
       if (p) p.title = String(data.title ?? '').slice(0, 16);
@@ -439,11 +424,6 @@ export class GameRoom extends Room<GameRoomState> {
           // （否则客户端中央会反复弹 "ok"，且会触发面板重渲染→再请求→死循环）
           client.send('arenaStatus', world.arenaStatus(pw));
           return;
-        case 'devGrantSet':
-          // Dev 作弊键(Ctrl+E)：发放同区域同品质测试套装（联机权威，落库以免重连丢失）
-          res = world.grantSetTestGear(pw, Number(data.zone) || 1, String(data.quality || 'blue'));
-          if (res.ok) { const cid = sessionCharMap.get(client.sessionId); if (cid !== undefined) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} } }
-          break;
         // ——— 行会商店购买（个人贡献消费闭环） ———
         case 'guildBuy': {
           const cid = sessionCharMap.get(client.sessionId);
@@ -524,13 +504,6 @@ export class GameRoom extends Room<GameRoomState> {
           const cid = sessionCharMap.get(client.sessionId);
           if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
           res = world.releasePet(pw, String(data.petId || ''));
-          if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
-          break;
-        }
-        case 'petGrantDev': {
-          const cid = sessionCharMap.get(client.sessionId);
-          if (cid === undefined) { res = { ok: false, msg: '未登录' }; break; }
-          res = world.grantPetTest(pw, data.speciesId ? String(data.speciesId) : undefined, data.level ? Number(data.level) : undefined);
           if (res.ok) { try { saveCharacterWorld(cid, JSON.stringify(pw)); } catch {} }
           break;
         }
@@ -827,12 +800,6 @@ export class GameRoom extends Room<GameRoomState> {
 
     sessionCharMap.set(client.sessionId, charId);
     world.registerCharId(client.sessionId, charId);
-
-    // GM 账号：进房即注入全解锁（六大力量体系/全任务/满背包/灵宠），幂等，落库免重连叠加
-    if (acc.gm) {
-      world.applyGMGrant(pw);
-      world.persistBySid(client.sessionId);
-    }
 
     registerGuildOnline(client, charId, ch.name);
     registerOnline(client, charId, ch.name, zoneName(pw.zone));

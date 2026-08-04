@@ -6,7 +6,7 @@
 export const enhanceMult = (lv: number): number => 1 + lv * 0.05;
 
 /** 品质倍率（config / BattleData / EnhanceSystem / BattleScene 共用单一来源） */
-export const QUALITY_MULT: Record<string, number> = { white: 1.0, green: 1.3, blue: 1.6, purple: 2.0, gold: 2.5 };
+export const QUALITY_MULT: Record<string, number> = { white: 1.0, green: 1.15, blue: 1.35, purple: 1.6, gold: 2.0 };
 /** 品质中文名 */
 export const QUALITY_CN: Record<string, string> = { white: '白', green: '绿', blue: '蓝', purple: '紫', gold: '金' };
 /** 品质颜色 */

@@ -271,11 +271,6 @@ export class BattleScene extends Phaser.Scene {
     this.playerInfoText = this.add.text(130, PY - 50, '', {
       fontSize: '13px', color: '#aaccff', fontFamily: 'monospace', align: 'center',
     }).setOrigin(0.5);
-    // 宠物站位预留（立绘在玩家右侧，血条再右）
-    // TODO: 宠物系统接入后，在此创建宠物 sprite + petHpBar/petMpBar
-    // const petX = PX + 280;
-    // this.add.sprite(petX, PY, 'pet_xxx').setDisplaySize(100, 150);
-    // this.petHpBar = new SkinBar(this, { x: petX + 120, y: PY - 20, w: 160, h: 12, depth: 30, pad: 2 });
     // 战斗日志
     this.logText = this.add.text(GAME_WIDTH / 2, 360, '', {
       fontSize: '14px', color: '#ccaa88',
