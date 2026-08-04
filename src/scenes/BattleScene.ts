@@ -488,7 +488,7 @@ export class BattleScene extends Phaser.Scene {
     }
     this.logText.setText(`${enemyDisplayName(enemy.name)} 使用 ${skill.name}！${crit ? '暴击！' : ''}造成 ${actualDamage} 伤害！${reflectMsg}${absorbMsg}${statusMsg}`);
     this.flashPlayer();
-    if (this.playerSprite) BattleFx.onHit(this, 'neutral', this.playerSprite.x, this.playerSprite.y, crit);
+    if (crit && this.playerSprite) BattleFx.playCrit(this, this.playerSprite.x, this.playerSprite.y);
     if (sprite) this.tweens.add({ targets: sprite, tint: 0xffffff, duration: 150, yoyo: true });
   }
   // ════════════════════ 目标选择 ════════════════════
@@ -910,7 +910,7 @@ export class BattleScene extends Phaser.Scene {
     this.flashEnemySprite(this.enemySprites[this.selectedEnemyIndex]);
     this.hurtEnemy(this.selectedEnemyIndex, dmg);
     const eSp = this.enemySprites[this.selectedEnemyIndex];
-    if (eSp) BattleFx.onHit(this, 'neutral', eSp.x, eSp.y, crit);
+    if (crit && eSp) BattleFx.playCrit(this, eSp.x, eSp.y);
     if (this.allEnemiesDead()) { this.time.delayedCall(800, () => this.victory()); }
     else { this.time.delayedCall(1000, () => this.startEnemyPhase()); }
   }
@@ -963,7 +963,7 @@ export class BattleScene extends Phaser.Scene {
     this.clearTurnTimer();
     this.phase = 'executing';
     this.playerMp -= sk.mp;
-    const fxGroup = BattleFx.groupFromElement(GameState.element) || 'neutral';
+    const fxGroup = BattleFx.groupFromElement(GameState.element);
     const fxFrom = this.playerSprite ? { x: this.playerSprite.x, y: this.playerSprite.y } : { x: 350, y: 280 };
     if (this.playerSprite) BattleFx.playCast(this, fxGroup, fxFrom.x, fxFrom.y);
     const tt = getSkillTargetType(sk);

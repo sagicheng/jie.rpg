@@ -41,10 +41,19 @@ const LOOP: Record<FxKind, boolean> = {
   cast: false, projectile: true, impact: false, buff: true, crit: false, die: false,
 };
 
-/** 玩家元素（中）→ 美术分组（英）。无元素时回落 neutral（仅有 impact）。 */
+/** 玩家元素（中）→ 美术分组（英）。 */
 const ELEMENT_TO_GROUP: Record<string, string> = {
   '火': 'fire', '风': 'wind', '水': 'water', '土': 'earth',
 };
+
+/** 无元素 / 未知元素时的通用分组（破道 = 通用灵力特效）。 */
+const DEFAULT_GROUP = 'hado';
+
+/**
+ * 分组缺对应美术时的回落分组。
+ * 回道（kaido）只产出了 cast / buff，若有伤害型回道技能则回落破道的爆炸。
+ */
+const GROUP_FALLBACK: Record<string, string> = { kaido: DEFAULT_GROUP };
 
 function kindOf(key: string): FxKind | null {
   if (key === 'fx_crit') return 'crit';
@@ -57,38 +66,31 @@ function kindOf(key: string): FxKind | null {
 }
 
 export class BattleFx {
-  /** 玩家元素 → 美术分组键（fire/wind/water/earth/neutral）。 */
+  /** 玩家元素 → 美术分组键（fire/wind/water/earth）；无元素回落 DEFAULT_GROUP。 */
   static groupFromElement(el?: string | null): string {
-    return (el && ELEMENT_TO_GROUP[el]) || 'neutral';
+    return (el && ELEMENT_TO_GROUP[el]) || DEFAULT_GROUP;
   }
 
   /**
-   * 一次性提示尚未替换真实美术的 clip（按子目录名登记）。
-   * 文件已统一命名为「文件夹名.png」，故占位检测改以 key 列表为准：
-   * 美术把真实特效放进对应子目录后，从此列表移除该 key 即可关闭提示。
+   * 一次性提示清单中无法识别类型的 clip。
+   * 子目录名须以 _cast / _projectile / _impact / _buff 结尾，或为 fx_crit / fx_die，
+   * 否则不会生成动画。美术新增目录命名不规范时可在控制台第一时间发现。
    */
   private static warned = false;
-  private static readonly PLACEHOLDER_KEYS = new Set<string>([
-    'fx_bakudo_cast', 'fx_bakudo_impact', 'fx_bakudo_projectile',
-    'fx_earth_cast', 'fx_fire_cast',
-    'fx_hado_cast', 'fx_hado_impact', 'fx_hado_projectile',
-    'fx_water_cast', 'fx_wind_cast',
-    'fx_kaido_buff',
-  ]);
-  private static warnPlaceholder(): void {
+  private static warnUnknownClips(): void {
     if (BattleFx.warned) return;
     BattleFx.warned = true;
-    const bad = BATTLE_FX_MANIFEST.filter((e) => BattleFx.PLACEHOLDER_KEYS.has(e.key));
-    if (bad.length === 0) return;
+    const unknown = BATTLE_FX_MANIFEST.filter((e) => !kindOf(e.key));
+    if (unknown.length === 0) return;
     console.warn(
-      '[BattleFx] 以下 clip 仍使用占位/错放美术，演出可能异常，请替换为真实特效（保留子目录名，文件按 fx_<key>.png 命名）：\n' +
-      bad.map((e) => `  ${e.key}`).join('\n'),
+      '[BattleFx] 以下 clip 目录名无法识别类型，不会生成动画：\n' +
+      unknown.map((e) => `  ${e.key}`).join('\n'),
     );
   }
 
   /** preload 阶段加载全部 battlefx 精灵表。重复进入战斗时纹理已存在则跳过。 */
   static preload(scene: Phaser.Scene): void {
-    BattleFx.warnPlaceholder();
+    BattleFx.warnUnknownClips();
     for (const e of BATTLE_FX_MANIFEST) {
       if (!scene.textures.exists(e.key)) {
         scene.load.spritesheet(e.key, e.url, {
@@ -119,6 +121,16 @@ export class BattleFx {
     return scene.textures.exists(key) && scene.anims.exists(key);
   }
 
+  /** 取该分组下可用的 clip key；无专属美术时按 GROUP_FALLBACK 回落，仍无则返回 null。 */
+  private static resolveKey(scene: Phaser.Scene, group: string, suffix: string): string | null {
+    for (const g of [group, GROUP_FALLBACK[group]]) {
+      if (!g) continue;
+      const key = `fx_${g}_${suffix}`;
+      if (BattleFx.ready(scene, key)) return key;
+    }
+    return null;
+  }
+
   private static makeSprite(
     scene: Phaser.Scene, key: string, x: number, y: number, kind: FxKind,
   ): Phaser.GameObjects.Sprite {
@@ -147,18 +159,18 @@ export class BattleFx {
   // ── 语义化封装 ──
 
   static playCast(scene: Phaser.Scene, group: string, x: number, y: number): void {
-    BattleFx.play(scene, `fx_${group}_cast`, x, y);
+    const key = BattleFx.resolveKey(scene, group, 'cast');
+    if (key) BattleFx.play(scene, key, x, y);
   }
 
+  /** 落点爆炸。无对应美术时不放特效，但仍回调 onDone，避免后续演出被吞。 */
   static playImpact(scene: Phaser.Scene, group: string, x: number, y: number, onDone?: () => void): void {
-    BattleFx.play(scene, `fx_${group}_impact`, x, y, onDone);
-  }
-
-  /** 命中演出封装：爆炸（+暴击叠 fx_crit）。普通攻击/敌人攻击常用。 */
-  static onHit(scene: Phaser.Scene, group: string, x: number, y: number, crit?: boolean): void {
-    BattleFx.playImpact(scene, group, x, y, () => {
-      if (crit) BattleFx.playCrit(scene, x, y);
-    });
+    const key = BattleFx.resolveKey(scene, group, 'impact');
+    if (!key) {
+      onDone?.();
+      return;
+    }
+    BattleFx.play(scene, key, x, y, onDone);
   }
 
   static playDie(scene: Phaser.Scene, x: number, y: number): void {
@@ -189,8 +201,8 @@ export class BattleFx {
     scene: Phaser.Scene, group: string, fx: number, fy: number, tx: number, ty: number,
     onArrive?: () => void,
   ): void {
-    const pKey = `fx_${group}_projectile`;
-    if (!BattleFx.ready(scene, pKey)) {
+    const pKey = BattleFx.resolveKey(scene, group, 'projectile');
+    if (!pKey) {
       BattleFx.playImpact(scene, group, tx, ty, onArrive);
       return;
     }

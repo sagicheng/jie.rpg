@@ -778,9 +778,9 @@ export class MultiBattleScene extends Phaser.Scene {
       this.tweens.add({
         targets: actor, x: tx, y: ty, duration: 165, ease: 'Quad.Out',
         onComplete: () => {
+          // 物理近战沿用原演出（滑移 + 目标抖动 + 速度线），不叠序列帧特效。
           this.shakeCard(target!);
           this.spawnSpeedLines(target!, dx, dy);
-          BattleFx.onHit(this, 'neutral', target!.x, target!.y);
           this.tweens.add({
             targets: actor, x: homeX, y: homeY, duration: 210, ease: 'Quad.InOut', delay: 90,
             onComplete: () => { actorCard.locked = false; },
@@ -794,7 +794,13 @@ export class MultiBattleScene extends Phaser.Scene {
       this.tweens.add({
         targets: actor, x: homeX + dir * 20, duration: 130, yoyo: true, ease: 'Sine.InOut',
         onYoyo: () => {
-          if (target) { this.shakeCard(target); this.spawnSpeedLines(target, target.x - homeX, target.y - homeY); BattleFx.onHit(this, 'neutral', target.x, target.y); }
+          // 服务端 actionFx 只区分 melee/cast，拿不到元素或流派，
+          // 施法命中统一用破道的通用灵力爆炸。
+          if (target) {
+            this.shakeCard(target);
+            this.spawnSpeedLines(target, target.x - homeX, target.y - homeY);
+            BattleFx.playImpact(this, 'hado', target.x, target.y);
+          }
         },
         onComplete: () => { actorCard.locked = false; },
       });
