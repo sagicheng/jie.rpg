@@ -14,6 +14,7 @@ import { Inventory } from '../managers/Inventory';
 import { getAvailableSkills, getSkillTargetType, SkillData } from '../managers/Skills';
 import { Kido, KidoNode } from '../managers/Kido';
 import { BattleFx } from '../managers/BattleFx';
+import { tickKidoStatus as _tickKidoStatus, tickEnemyStatusDuration as _tickEnemyStatusDuration } from './systems/BattleScene.status';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -1557,141 +1558,9 @@ export class BattleScene extends Phaser.Scene {
     this.startTurnTimer();
   }
 
-  private tickKidoStatus(): void {
-    const ps = this.playerStatus;
-    // ── 玩家状态tick ──
-    if (ps.playerShieldTurns > 0) {
-      ps.playerShieldTurns--;
-      if (ps.playerShieldTurns <= 0) ps.playerShield = 0;
-    }
-    if (ps.regenTurns > 0) {
-      this.playerHp = Math.min(this.playerHp + ps.regenAmount, this.playerMaxHp);
-      ps.regenTurns--;
-      if (ps.regenTurns <= 0) ps.regenAmount = 0;
-    }
-    // 灼烧 (玩家)
-    if (ps.burn > 0) {
-      const dmg = Math.round(this.playerMaxHp * 0.05);
-      this.playerHp = Math.max(0, this.playerHp - dmg);
-      ps.burn--;
-    }
-    // 中毒 (玩家)
-    if (ps.poison > 0) {
-      const dmg = ps.poisonDmg || Math.round(this.playerMaxHp * 0.03);
-      this.playerHp = Math.max(0, this.playerHp - dmg);
-      this.playerMp = Math.max(0, this.playerMp - Math.round(this.playerMaxMp * 0.03));
-      ps.poison--;
-      if (ps.poison <= 0) ps.poisonDmg = 0;
-    }
-    // 寄生 (玩家)
-    if (ps.parasite > 0) {
-      const dmg = Math.round(this.playerMaxHp * 0.05);
-      this.playerHp = Math.max(0, this.playerHp - dmg);
-      ps.parasite--;
-    }
-    // 降灵压 (玩家MATK降低，属性修正由getPlayerMatkMod处理；此处只递减)
-    if (ps.matkDown > 0) {
-      ps.matkDown--;
-    }
-    // 其他玩家状态递减
-    if (ps.freeze > 0) ps.freeze--;
-    if (ps.slow > 0) ps.slow--;
-    if (ps.stun > 0) ps.stun--;
-    if (ps.bind > 0) ps.bind--;
-    if (ps.taunt > 0) { ps.taunt--; if (ps.taunt <= 0) ps.tauntSourceIdx = -1; }
-    if (ps.fear > 0) ps.fear--;
-    if (ps.atkDown > 0) ps.atkDown--;
-    if (ps.defDown > 0) ps.defDown--;
-    // ── 临时buff tick ──
-    this.tempBuffs.forEach(b => b.turns--);
-    this.tempBuffs = this.tempBuffs.filter(b => b.turns > 0);
-    // ── 反伤 tick ──
-    if (this.reflectTurns > 0) {
-      this.reflectTurns--;
-      if (this.reflectTurns <= 0) this.reflectPct = 0;
-    }
-    // ── 魔法吸收 tick（未被触发则到期）──
-    if (this.absorbMagicTurns > 0) this.absorbMagicTurns--;
-    // ── 标记 tick ──
-    this.marks.forEach(m => {
-      if (m.active) {
-        m.turns--;
-        if (m.turns <= 0) { m.active = false; m.detonateMult = 0; }
-      }
-    });
-    // ── 敌人持续伤害（DoT）：在敌人阶段开始时结算 ──
-    // 注意：状态时长递减不在此处，改在敌人全部行动结束后（tickEnemyStatusDuration），
-    // 否则当回合施加的控制/异常会被提前递减，导致1回合控制失效、多回合少算一回合。
-    this.enemies.forEach((enemy, i) => {
-      const ks = this.enemyStatuses[i];
-      if (enemy.hp <= 0) return;
-      if (ks.burn > 0) enemy.hp -= Math.round(enemy.maxHp * 0.05);
-      if (ks.poison > 0) enemy.hp -= ks.poisonDmg;
-      if (ks.parasite > 0) enemy.hp -= Math.round(enemy.maxHp * 0.05);
-      this.checkEnemyDeath(i);
-    });
-    // ── 变身tick (原有逻辑) ──
-    if (this.bankaiActive && this.bankaiTurnsLeft > 0) {
-      this.bankaiTurnsLeft--;
-      if (this.bankaiTurnsLeft <= 0) {
-        this.bankaiActive = false;
-        this.playerAtk = Math.round(GameState.atk * 0.8);
-        this.playerDef = Math.round(GameState.def * 0.8);
-        this.playerMatk = Math.round(GameState.matk * 0.8);
-        this.playerMdef = Math.round(GameState.mdef * 0.8);
-        this.playerSpd = Math.round(GameState.spd * 0.8);
-        this.logText.setText('卍解解除... 属性暂时下降');
-      }
-    } else if (!this.bankaiActive && this.bankaiUsed && this.bankaiTurnsLeft <= 0) {
-      this.playerAtk = GameState.atk;
-      this.playerDef = GameState.def;
-      this.playerMatk = GameState.matk;
-      this.playerMdef = GameState.mdef;
-      this.playerSpd = GameState.spd;
-    }
-    if (this.hollowActive && this.hollowTurnsLeft > 0) {
-      const drain = Math.round(this.playerMaxHp * 0.05);
-      this.playerHp = Math.max(1, this.playerHp - drain);
-      this.hollowTurnsLeft--;
-      if (this.hollowTurnsLeft <= 0) {
-        this.hollowActive = false;
-        GameState.statusRes -= 0.30;
-        this.playerMaxMp = GameState.maxMp;
-        this.playerMp = Math.min(this.playerMp, this.playerMaxMp);
-        this.logText.setText('虚化解除... 状态恢复');
-      }
-    }
-    if (this.hellActive && this.hellTurnsLeft > 0) {
-      const drain = Math.round(this.playerMaxHp * 0.10);
-      this.playerHp = Math.max(1, this.playerHp - drain);
-      this.hellTurnsLeft--;
-      if (this.hellTurnsLeft <= 0) {
-        this.hellActive = false;
-        this.logText.setText('狱解解除... 业火熄灭');
-      }
-    }
-    this.refreshPlayerFormSprite();   // 任一形态到期 → 立绘回退基础 female/male
-  }
-  /** 敌人状态时长递减：在本轮敌人全部行动结束后结算，确保当回合施加的控制/异常仍能生效 */
-
-  private tickEnemyStatusDuration(): void {
-    this.enemies.forEach((_enemy, i) => {
-      const ks = this.enemyStatuses[i];
-      if (ks.burn > 0) ks.burn--;
-      if (ks.poison > 0) { ks.poison--; if (ks.poison <= 0) ks.poisonDmg = 0; }
-      if (ks.parasite > 0) ks.parasite--;
-      if (ks.freeze > 0) { ks.freeze--; ks.frozen = ks.freeze; }
-      if (ks.slow > 0) { ks.slow--; ks.slowed = ks.slow; }
-      if (ks.stun > 0) ks.stun--;
-      if (ks.bind > 0) { ks.bind--; ks.bound = ks.bind; }
-      if (ks.sealed > 0) ks.sealed--;
-      if (ks.taunt > 0) ks.taunt--;
-      if (ks.fear > 0) ks.fear--;
-      if (ks.atkDown > 0) ks.atkDown--;
-      if (ks.defDown > 0) ks.defDown--;
-      if (ks.matkDown > 0) ks.matkDown--;
-    });
-  }
+  private tickKidoStatus(): void { _tickKidoStatus(this); }
+  /** 敌人状态时长递减：在本轮敌人全部行动结束后结算 */
+  private tickEnemyStatusDuration(): void { _tickEnemyStatusDuration(this); }
 
   private victory(): void {
     this.clearTurnTimer();
