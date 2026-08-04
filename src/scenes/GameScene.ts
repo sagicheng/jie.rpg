@@ -32,6 +32,7 @@ import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, re
 import { petElementInfo, petQualityInfo } from '../managers/PetSystem';
 import { addPendingInvite as _addPendingInvite, removePendingInvite as _removePendingInvite, toggleTeamPanel as _toggleTeamPanel, closeTeamPanel as _closeTeamPanel, showInvitePrompt as _showInvitePrompt, showDungeonConfirm as _showDungeonConfirm, closeDungeonConfirm as _closeDungeonConfirm, renderTeamPanel as _renderTeamPanel, hideTeamPanel as _hideTeamPanel, launchTeamBattle as _launchTeamBattle, enterPvpBattle as _enterPvpBattle, routeTeamDungeonBattle as _routeTeamDungeonBattle, routeTeamBattleEnd as _routeTeamBattleEnd, routeTeamDungeonStage as _routeTeamDungeonStage, routeTeamExitDungeon as _routeTeamExitDungeon, stopTeamBattle as _stopTeamBattle, invitePlayer as _invitePlayer, makeRemotePlayersInteractable as _makeRemotePlayersInteractable, openTeamPanel as _openTeamPanel, teamPanelButton as _teamPanelButton } from './systems/GameScene.team';
 import { syncRemotePlayers as _syncRemotePlayers, clearRemotePlayers as _clearRemotePlayers, setBattling as _setBattling, sendMoveThrottled as _sendMoveThrottled } from './systems/GameScene.multiplayer';
+import { onEnemyOverlap as _onEnemyOverlap, checkEnemyCollision as _checkEnemyCollision, enterBattle as _enterBattle, isMonsterAvailable as _isMonsterAvailable, onBattleEnd as _onBattleEnd, onMultiBattleEnd as _onMultiBattleEnd, flushBattleReport as _flushBattleReport, monsterRespawnMs as _monsterRespawnMs, removeMonster as _removeMonster, restoreMonster as _restoreMonster } from './systems/GameScene.battle';
 
 /** Phaser physics.add.overlap 回调参数的联合类型，与 ArcadePhysicsCallback 对齐。
  *  历史上写成 GameObject 会在 strictFunctionTypes 下因逆变不兼容报 TS2345
@@ -715,208 +716,25 @@ export class GameScene extends Phaser.Scene {
 
   // ═══ Enemies ═══
   /** 玩家与怪物物理体重叠时触发战斗（比中心点距离判定更稳，贴合"走上去就打"的直觉）。 */
-  private onEnemyOverlap(_player: ArcadeOverlapTarget, enemySprite: ArcadeOverlapTarget): void {
-    const en = this.enemies.find(e => e.sprite === enemySprite);
-    if (!en || !en.sprite.visible) return; // 看不见的怪（无立绘/未加载）不触发战斗
-    this.enterBattle(en);
-  }
 
-  /** 距离兜底：即使物理重叠漏检，走到怪物身边也会触发。 */
-  private checkEnemyCollision(): void {
-    if (this.battleCooldown > 0 || this.isInDialogue) return;
-    const px = this.player.x, py = this.player.y;
-    const en = this.enemies.find(e => {
-      if (e.dead || e.data.hp <= 0) return false;
-      if (!e.sprite.visible) return false; // 看不见的怪（无立绘/未加载）不计入碰撞
-      if (this.gameRoom && !this.isMonsterAvailable(e.id)) return false;
-      return Phaser.Math.Distance.Between(px, py, e.sprite.x, e.sprite.y) < 42;
-    });
-    if (en) this.enterBattle(en);
-  }
+  // ═══ 战斗方法 — 委托到 GameScene.battle.ts ═══
+  private onEnemyOverlap(_player: ArcadeOverlapTarget, enemySprite: ArcadeOverlapTarget): void { _onEnemyOverlap(this, _player, enemySprite); }
+  private checkEnemyCollision(): void { _checkEnemyCollision(this); }
+  private enterBattle(en?: any): void { _enterBattle(this, en); }
+  private isMonsterAvailable(id: string): boolean { return _isMonsterAvailable(this, id); }
+  onBattleEnd(result: string, er: any): void { _onBattleEnd(this, result, er); }
+  onMultiBattleEnd(result: string, monsterId: string, enemyData: any, reward?: any): void { _onMultiBattleEnd(this, result, monsterId, enemyData, reward); }
+  private flushBattleReport(): void { _flushBattleReport(this); }
+  private monsterRespawnMs(er: { data: EnemyData }): number { return _monsterRespawnMs(this, er); }
+  private removeMonster(en: any): void { _removeMonster(this, en); }
+  private restoreMonster(en: any): void { _restoreMonster(this, en); }
 
-  private enterBattle(en?: { sprite: Phaser.Physics.Arcade.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; id: string; dead?: boolean }): void {
-    if (!en) return;
-    if (!en.sprite.visible) return; // 看不见的怪不进战斗
-    if (this.battleCooldown > 0 || this.isInDialogue) return;
-    if (en.dead || en.data.hp <= 0) return;
-    if (this.gameRoom && !this.isMonsterAvailable(en.id)) return;
-    try {
-      // 联机：进入战斗即锁定该怪，对其余玩家消失（防抢怪/卡刷新时间）
-      if (this.gameRoom) { this.gameRoom.send('enterBattle', { id: en.id }); this.setBattling(true); }
-      this.battleCooldown = 180;
-      this.scene.pause();
-      if (this.gameRoom) {
-        // 联机：进权威战斗房间（单人独占该怪，根除双杀双掉落）；真实怪数据传给服务端结算
-        this.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, enemyParty: this.buildEncounterParty(en.data), monsterId: en.id, playerName: GameState.playerName || '勇者', loadout: this.buildBattleLoadout(), ownerSessionId: this.mySessionId });
-      } else {
-        // 离线兜底：本地战斗
-        this.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
-      }
-    } catch (err) {
-      // 进入战斗抛异常会导致渲染循环中断（表现为"卡死"）。捕获并显式暴露堆栈，便于定位（如 Boss 数据异常）。
-      console.error('[enterBattle] 异常（怪物=' + (en.data?.name ?? '?') + '）：', err);
-      (window as any).__fatal?.('enterBattle 异常（怪物=' + (en.data?.name ?? '?') + '）: ' + (err as any)?.message, (err as any)?.stack);
-      // 回滚暂停/锁定状态，避免场景卡在半残态
-      if (this.scene.isPaused()) this.scene.resume();
-      if (this.gameRoom) this.setBattling(false);
-    }
-  }
-
-  /** 联机：怪物在服务端是否可打（无记录=默认可用）。 */
-  private isMonsterAvailable(id: string): boolean {
-    const m = this.gameRoom?.state?.monsters?.get(id);
-    return !m || m.state === 'available';
-  }
-  onBattleEnd(result: string, er: any): void {
-    this.input.keyboard!.resetKeys(); this.physics.resume(); this.menuPauseDepth = 0; this.setGameUIVisible(true);
-    if (result === 'defeat') {
-      this.player.x = 400; this.player.y = 500;
-      GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
-      // 联机：失败=怪物立即复原（对所有人可见），玩家回城
-      if (this.gameRoom) this.gameRoom.send('unlockMonster', { id: er.id });
-      return;
-    }
-    const a = Phaser.Math.Angle.Between(er.sprite.x, er.sprite.y, this.player.x, this.player.y);
-    this.player.x += Math.cos(a) * 80; this.player.y += Math.sin(a) * 80;
-    if (result === 'victory') {
-      const ib = er.data.type === '妖将' || er.data.type === '妖王';
-      // 战斗奖励
-      const expGain = er.data.expReward || 0;
-      const goldGain = er.data.goldReward || 0;
-      const leveled = GameState.gainExp(expGain);
-      GameState.gold += goldGain;
-      // 图鉴记录
-      GameState.recordKill(er.data.name);
-      // 任务进度
-      GameState.updateQuestProgress('kill', er.data.name);
-      // 掉落
-      const loot = generateLoot(er.data.type, GameState.zone);
-      const lootNames: string[] = [];
-      for (const drop of loot) { Inventory.addItem(drop as any); lootNames.push(drop.name); }
-      // 显示战斗结果通知
-      let msg = `经验+${expGain}  金币+${goldGain}`;
-      if (lootNames.length > 0) msg += `\n掉落: ${lootNames.join(', ')}`;
-      if (leveled) msg += `\n★ 升级！Lv.${GameState.level}`;
-      const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, msg, {
-        fontSize: '16px', color: '#88ff88', fontStyle: 'bold',
-        backgroundColor: '#112211cc', padding: { x: 20, y: 10 },
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
-      this.tweens.add({ targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 120, duration: 2500, onComplete: () => notif.destroy() });
-      this.scene.get('UIScene').events.emit('updateStats');
-
-      // 隐藏怪物（联机/单机通用），复活由服务端(联机)或本地计时(单机)驱动
-      this.removeMonster(er);
-      if (this.gameRoom) {
-        // 联机：通知服务端本怪物被击杀，按刷新时长从战斗结束计时后重新出现（共享怪物·玩家间争夺）
-        this.gameRoom.send('killMonster', { id: er.id, respawnMs: this.monsterRespawnMs(er) });
-      } else {
-        // 单机：本地重生
-        if (er.respawnTimer) er.respawnTimer.destroy();
-        const d = ib ? 7200000 : er.data.type === '恶妖' ? 300000 : 30000;
-        er.respawnTimer = this.time.delayedCall(d, () => this.restoreMonster(er));
-      }
-    }
-  }
-
-  /** 联机权威战斗（地图怪）结束桥接：MultiBattleScene 在 victory/defeat 时调用，复用单机奖励逻辑并回写怪物状态机。 */
-  /**
-   * 联机权威战斗（地图怪）结束桥接：MultiBattleScene 在 victory/defeat 时调用。
-   * 奖励来自服务端权威世界（gold/exp/loot/bestiary 由 BattleRoom 写入，经 worldSync 到账），
-   * reward 仅用于战斗报告显示；本地不再重复发放，杜绝与服务端双写。
-   */
-  onMultiBattleEnd(result: string, monsterId: string, enemyData: any, reward?: { exp: number; gold: number; loot: string[]; leveled: boolean }): void {
-    if (result === 'defeat' || result === 'fled') {
-      // 失败/逃脱：回城 + 怪物立即复原（对所有人可见）
-      this.player.x = 400; this.player.y = 500;
-      GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
-      if (this.gameRoom) this.gameRoom.send('unlockMonster', { id: monsterId });
-      this.pendingBattleReport = { exp: 0, gold: 0, loot: [], leveled: false, defeat: result === 'defeat', fled: result === 'fled' };
-      return;
-    }
-    if (result === 'victory') {
-      const en = this.enemies.find(e => e.id === monsterId);
-      // 队内被拉玩家（enterTeamBattle）不一定有 enemyData，安全回退
-      if (enemyData && enemyData.name) {
-        const ib = enemyData.type === '妖将' || enemyData.type === '妖王';
-        GameState.updateQuestProgress('kill', enemyData.name);
-        if (this.gameRoom) {
-          this.gameRoom.send('killMonster', { id: monsterId, respawnMs: this.monsterRespawnMs({ data: enemyData }) });
-        } else if (en) {
-          if (en.respawnTimer) en.respawnTimer.destroy();
-          const d = ib ? 7200000 : enemyData.type === '恶妖' ? 300000 : 30000;
-          en.respawnTimer = this.time.delayedCall(d, () => this.restoreMonster(en));
-        }
-      }
-      if (en) this.removeMonster(en);
-      // 奖励数据来自服务端下发（gold/exp/loot/bestiary 已由 worldSync 写入 GameState）
-      const expGain = reward?.exp ?? 0;
-      const goldGain = reward?.gold ?? 0;
-      const lootNames = reward?.loot ?? [];
-      const leveled = reward?.leveled ?? false;
-      this.pendingBattleReport = { exp: expGain, gold: goldGain, loot: lootNames, leveled, defeat: false };
-      this.scene.get('UIScene').events.emit('updateStats');
-    }
-  }
-
-  /** 场景 RESUME 时弹出权威战斗奖励报告（此时战斗场景已关闭，通知可见）。 */
-  private flushBattleReport(): void {
-    const r = this.pendingBattleReport;
-    if (!r) return;
-    this.pendingBattleReport = null;
-    if (r.defeat) {
-      const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, '战斗失败，已返回', {
-        fontSize: '16px', color: '#ff8866', fontStyle: 'bold', backgroundColor: '#221111cc', padding: { x: 16, y: 8 },
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
-      this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
-      return;
-    }
-    if (r.fled) {
-      const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, '成功逃脱，已返回', {
-        fontSize: '16px', color: '#ffdd66', fontStyle: 'bold', backgroundColor: '#222211cc', padding: { x: 16, y: 8 },
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
-      this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 90, duration: 2000, onComplete: () => n.destroy() });
-      return;
-    }
-    let msg = `经验+${r.exp}  金币+${r.gold}`;
-    if (r.loot.length > 0) msg += `\n掉落: ${r.loot.join(', ')}`;
-    if (r.leveled) msg += `\n★ 升级！Lv.${GameState.level}`;
-    const n = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, msg, {
-      fontSize: '16px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 20, y: 10 },
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
-    this.tweens.add({ targets: n, alpha: 0, y: GAME_HEIGHT / 2 - 120, duration: 2500, onComplete: () => n.destroy() });
-  }
-
-  /** 怪物刷新时长（ms）：Boss 2h / 恶妖 5min / 其余 30s。 */
-  private monsterRespawnMs(er: { data: EnemyData }): number {
-    const isBoss = er.data.type === '妖将' || er.data.type === '妖王';
-    return isBoss ? 7200000 : er.data.type === '恶妖' ? 300000 : 30000;
-  }
-
-  /** 隐藏一只地图怪物（不再碰撞），幂等。保持原位与 idle 动画，便于刷新时原位恢复。 */
-  private removeMonster(en: { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text; dead?: boolean; respawnTimer?: Phaser.Time.TimerEvent }): void {
-    if (en.dead) return;
-    en.dead = true;
-    en.sprite.setVisible(false);
-    en.label.setVisible(false);
-    if (en.respawnTimer) { en.respawnTimer.destroy(); en.respawnTimer = undefined; }
-  }
-
-  /** 恢复一只被隐藏的地图怪物（刷新/复原），幂等。重置 HP 并重新显示。 */
-  /** 主场景怪物立绘：水平 targetW，垂直按原图比例折算（不拉伸变形）。 */
   private fitMonsterSprite(sprite: Phaser.GameObjects.Sprite, targetW: number): void {
-    const fw = sprite.width, fh = sprite.height;
-    if (!fw || !fh) { sprite.setDisplaySize(targetW, targetW); return; }
-    sprite.setDisplaySize(targetW, fh * (targetW / fw));
+    const h = sprite.height, w = sprite.width;
+    if (!h || !w) return;
+    const scale = targetW / w;
+    sprite.setDisplaySize(targetW, h * scale);
   }
-
-  private restoreMonster(en: { sprite: Phaser.GameObjects.Sprite; data: EnemyData; label: Phaser.GameObjects.Text; dead?: boolean }): void {
-    if (!en.dead) return;
-    en.dead = false;
-    en.data.hp = en.data.maxHp;
-    en.sprite.setVisible(true);
-    en.label.setVisible(true);
-  }
-
   /** 每帧按服务端怪物状态机同步本地显示：busy/dead→隐藏；available 且本地已隐藏→恢复。 */
   private pruneSharedMonsters(): void {
     if (!this.gameRoom) return;

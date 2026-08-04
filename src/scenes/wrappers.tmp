@@ -1,0 +1,12 @@
+
+  // ═══ 战斗方法 — 委托到 GameScene.battle.ts ═══
+  private onEnemyOverlap(_player: ArcadeOverlapTarget, enemySprite: ArcadeOverlapTarget): void { _onEnemyOverlap(this, _player, enemySprite); }
+  private checkEnemyCollision(): void { _checkEnemyCollision(this); }
+  private enterBattle(en?: any): void { _enterBattle(this, en); }
+  private isMonsterAvailable(id: string): boolean { return _isMonsterAvailable(this, id); }
+  onBattleEnd(result: string, er: any): void { _onBattleEnd(this, result, er); }
+  onMultiBattleEnd(result: string, monsterId: string, enemyData: any, reward?: any): void { _onMultiBattleEnd(this, result, monsterId, enemyData, reward); }
+  private flushBattleReport(): void { _flushBattleReport(this); }
+  private monsterRespawnMs(er: { data: EnemyData }): number { return _monsterRespawnMs(this, er); }
+  private removeMonster(en: any): void { _removeMonster(this, en); }
+  private restoreMonster(en: any): void { _restoreMonster(this, en); }
