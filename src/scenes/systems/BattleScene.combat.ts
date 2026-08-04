@@ -2,6 +2,7 @@
  * BattleScene 战斗计算子系统
  */
 import { BattleFx } from '../../managers/BattleFx';
+import { GameState } from '../../managers/GameState';
 import { PLAYER_X, PLAYER_Y } from '../BattleScene';
 
 export function lungeAt(scene: any, tx: number, ty: number, onHit: () => void): void {
@@ -52,7 +53,7 @@ export function getEffectivePlayerMdef(scene: any): number {
     scene.clearCommands(); scene.clearSubMenu();
     const alive = scene.getAliveEnemyIndices();
     const avgEnemySpd = alive.length
-      ? alive.reduce((s, i) => s + scene.enemies[i].spd, 0) / alive.length
+      ? alive.reduce((s: number, i: number) => s + scene.enemies[i].spd, 0) / alive.length
       : 0;
     let escapeRate = 0.5 + (scene.playerSpd - avgEnemySpd) * 0.03;
     escapeRate = Math.max(0.1, Math.min(0.95, escapeRate));
