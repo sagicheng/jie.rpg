@@ -66,6 +66,9 @@ interface MenuEntry {
 export class MultiBattleScene extends Phaser.Scene {
   private room: any = null;
   private mySessionId = '';
+  /** 本地玩家最近一次派发的动作是否为鬼道。服务端 actionFx 不含流派，
+   *  用此标志在回显时为「鬼道」选择破道通用分组，斩魄刀才按角色元素分组。 */
+  private lastLocalCastIsKido = false;
   private playerName = '勇者';
 
   private playerCards: Map<string, Card> = new Map();
@@ -421,6 +424,10 @@ export class MultiBattleScene extends Phaser.Scene {
     if (action.type === 'skill' || action.type === 'kido' || action.type === 'petSkill') {
       console.log(`[Skill.dispatch] type=${action.type} id=${action.id || ''} targetId=${action.targetId || ''}`);
     }
+    // 记下本地玩家(本人)本次动作是否为鬼道：服务端 actionFx 不含流派，
+    // 回显时据此把鬼道导向破道通用灵力特效，斩魄刀才按角色元素。
+    // 仅本人(mySessionId)的动作影响该标志；宠物的派发不覆盖（宠物回显走 hado）。
+    if (aid === this.mySessionId) this.lastLocalCastIsKido = action.type === 'kido';
     this.room.send('action', { ...action, actorSid: aid });
     // 立即刷新 UI：显示"已选择，等待执行…"（Colyseus 消息不触发 onStateChange）
     this.renderState();
@@ -768,10 +775,13 @@ export class MultiBattleScene extends Phaser.Scene {
       : undefined;
     const target = targetCard?.root;
     const homeX = actor.x, homeY = actor.y;
-    // 分组：本地玩家用自身元素色，敌方/他人统一破道默认色（服务端 actionFx 仅区分 melee/cast，不含元素）
+    // 分组：本地玩家按动作流派分流——鬼道（破/缚/回）统一破道通用灵力特效(hado)，
+    // 斩魄刀才按角色元素色；敌方/他人服务端不分元素一律 hado（actionFx 仅区分 melee/cast）。
     const group = actorSid === this.mySessionId
-      ? BattleFx.groupFromElement(GameState.element)
+      ? (this.lastLocalCastIsKido ? 'hado' : BattleFx.groupFromElement(GameState.element))
       : 'hado';
+    // 消费标志，避免下一次本地回显误用
+    if (actorSid === this.mySessionId) this.lastLocalCastIsKido = false;
 
     if (kind === 'melee' && target) {
       const dx = target.x - homeX, dy = target.y - homeY;
