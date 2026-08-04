@@ -25,6 +25,7 @@ import { getBestiaryTierReached, BESTIARY_TIERS, BESTIARY_TITLES, NAMED_ENEMIES 
 import { saveCharacterWorld } from './db';
 import { newArenaState, ensureArena as arenaEnsure, applyResult as arenaApply, tierName, isArenaOpen, ARENA_WEEKLY_CAP, seasonRewardFor, type ArenaState, type ArenaResult } from '../modules/feature/arena';
 import { updateQuest as _updateQuest, claimQuest as _claimQuest, enterDungeon as _enterDungeon, completeDungeon as _completeDungeon } from './systems/world.quest';
+import { createPet as _createPet, setActivePet as _setActivePet, addPetExp as _addPetExp, setPetAttr as _setPetAttr, releasePet as _releasePet, recallPet as _recallPet, openPetEgg as _openPetEgg, grantPetEgg as _grantPetEgg, getActivePet as _getActivePet } from './systems/world.pet';
 
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1080;
@@ -690,130 +691,16 @@ export class WorldService {
 
   // ───────────────── 灵宠系统（服务端权威） ─────────────────
   /** 获得一只灵宠（按物种生成 Lv1 属性快照，随机品质与先天技能）。首只自动出战。 */
-  createPet(pw: PlayerWorld, speciesId: string, name?: string, zoneOverride?: number): OpResult {
-    const sp = PET_SPECIES[speciesId];
-    if (!sp) return { ok: false, msg: '未知灵宠物种' };
-    if (!Array.isArray(pw.pets)) pw.pets = [];
-    if (pw.pets.length >= PET_SLOT_CAP) return { ok: false, msg: `灵宠栏已满（上限 ${PET_SLOT_CAP}）` };
-    const quality = rollPetQuality(zoneOverride ?? sp.obtainZone);
-    const attrs = { str: 0, vit: 0, agi: 0, int: 0 };
-    const stats = computePetStats(sp, 1, quality, attrs);
-    const pet: Pet = {
-      id: genPetId(), speciesId, name: name || sp.name, level: 1, exp: 0,
-      element: sp.element, quality,
-      hp: stats.hp, maxHp: stats.hp, atk: stats.atk, def: stats.def, matk: stats.matk, mdef: stats.mdef, spd: stats.spd,
-      attrStr: 0, attrVit: 0, attrAgi: 0, attrInt: 0, attrPoints: 0,
-      skills: [...sp.skillIds], loyalty: 50, active: pw.pets.length === 0,
-    };
-    pw.pets.push(pet);
-    return { ok: true, msg: `获得灵宠 ${pet.name}`, data: { pet } };
-  }
-
-  /** 设置出战灵宠（同玩家仅一只出战）。 */
-  setActivePet(pw: PlayerWorld, petId: string): OpResult {
-    if (!Array.isArray(pw.pets)) pw.pets = [];
-    const pet = pw.pets.find(p => p.id === petId);
-    if (!pet) return { ok: false, msg: '灵宠不存在' };
-    pw.pets.forEach(p => { p.active = p.id === petId; });
-    return { ok: true, msg: `${pet.name} 已出战` };
-  }
-
-  /** 给灵宠加经验并自动升级（重算属性快照，回满血，按品质发放属性点）。 */
-  addPetExp(pw: PlayerWorld, petId: string, amount: number): OpResult {
-    if (!Array.isArray(pw.pets)) pw.pets = [];
-    const pet = pw.pets.find(p => p.id === petId);
-    if (!pet) return { ok: false, msg: '灵宠不存在' };
-    const sp = PET_SPECIES[pet.speciesId];
-    if (!sp) return { ok: false, msg: '灵宠物种缺失' };
-    pet.exp += Math.max(0, amount);
-    let leveled = false, gainedPoints = 0;
-    while (pet.level < 70 && pet.exp >= petExpForLevel(pet.level)) {
-      pet.exp -= petExpForLevel(pet.level);
-      pet.level++;
-      leveled = true;
-      gainedPoints += (PET_QUALITIES[pet.quality] || PET_QUALITIES.normal).attrPerLevel;
-    }
-    if (leveled) {
-      pet.attrPoints += gainedPoints;
-      const attrs = { str: pet.attrStr, vit: pet.attrVit, agi: pet.attrAgi, int: pet.attrInt };
-      const s = computePetStats(sp, pet.level, pet.quality, attrs);
-      pet.hp = pet.maxHp = s.hp; pet.atk = s.atk; pet.def = s.def; pet.matk = s.matk; pet.mdef = s.mdef; pet.spd = s.spd;
-    }
-    return { ok: true, msg: leveled ? `${pet.name} 升至 Lv${pet.level}` : '经验已增加', data: { leveled, level: pet.level, gainedPoints } };
-  }
-
-  /** 分配灵宠属性点（attr: str/vit/agi/int，delta: +1/-1）。 */
-  setPetAttr(pw: PlayerWorld, petId: string, attr: 'str' | 'vit' | 'agi' | 'int', delta: number): OpResult {
-    if (!Array.isArray(pw.pets)) pw.pets = [];
-    const pet = pw.pets.find(p => p.id === petId);
-    if (!pet) return { ok: false, msg: '灵宠不存在' };
-    const sp = PET_SPECIES[pet.speciesId];
-    if (!sp) return { ok: false, msg: '灵宠物种缺失' };
-    const fields: Record<string, keyof Pet> = { str: 'attrStr', vit: 'attrVit', agi: 'attrAgi', int: 'attrInt' };
-    const field = fields[attr];
-    if (!field) return { ok: false, msg: '未知属性' };
-    const cur = (pet as any)[field] as number;
-    if (delta > 0 && pet.attrPoints <= 0) return { ok: false, msg: '无可用属性点' };
-    if (delta < 0 && cur <= 0) return { ok: false, msg: '该属性点已为 0' };
-    (pet as any)[field] = cur + delta;
-    pet.attrPoints -= delta;
-    const attrs = { str: pet.attrStr, vit: pet.attrVit, agi: pet.attrAgi, int: pet.attrInt };
-    const s = computePetStats(sp, pet.level, pet.quality, attrs);
-    pet.hp = pet.maxHp = s.hp; pet.atk = s.atk; pet.def = s.def; pet.matk = s.matk; pet.mdef = s.mdef; pet.spd = s.spd;
-    return { ok: true, msg: `${pet.name} 属性已更新` };
-  }
-
-  /** 放生灵宠（若出战中则改由首只接替出战）。 */
-  releasePet(pw: PlayerWorld, petId: string): OpResult {
-    if (!Array.isArray(pw.pets)) pw.pets = [];
-    const idx = pw.pets.findIndex(p => p.id === petId);
-    if (idx < 0) return { ok: false, msg: '灵宠不存在' };
-    const wasActive = pw.pets[idx].active;
-    const name = pw.pets[idx].name;
-    pw.pets.splice(idx, 1);
-    if (wasActive && pw.pets.length > 0) pw.pets[0].active = true;
-    return { ok: true, msg: `已放生 ${name}` };
-  }
-
-  /** 收回出战（取消出战，不删除灵宠；同玩家可无出战灵宠）。 */
-  recallPet(pw: PlayerWorld, petId: string): OpResult {
-    if (!Array.isArray(pw.pets)) pw.pets = [];
-    const pet = pw.pets.find(p => p.id === petId);
-    if (!pet) return { ok: false, msg: '灵宠不存在' };
-    pet.active = false;
-    return { ok: true, msg: `${pet.name} 已收回` };
-  }
-
-  /** 开启灵宠蛋：随机物种 + 按蛋携带的 zone 定品质；消耗一枚蛋；灵宠栏满则拒绝。 */
-  openPetEgg(pw: PlayerWorld, itemId: string): OpResult {
-    if (!Array.isArray(pw.pets)) pw.pets = [];
-    const egg = pw.inventory.find(i => i.id === itemId && i.type === 'pet_egg');
-    if (!egg) return { ok: false, msg: '背包里没有这枚灵宠蛋' };
-    if (pw.pets.length >= PET_SLOT_CAP) return { ok: false, msg: `灵宠栏已满（上限 ${PET_SLOT_CAP}），无法开启灵宠蛋` };
-    const keys = Object.keys(PET_SPECIES);
-    const speciesId = keys[Math.floor(Math.random() * keys.length)];
-    const res = this.createPet(pw, speciesId, undefined, egg.zone);
-    if (!res.ok) return res;
-    egg.quantity -= 1;
-    if (egg.quantity <= 0) pw.inventory = pw.inventory.filter(i => i !== egg);
-    const pet = res.data?.pet as Pet;
-    const el = PET_ELEMENTS[pet.element as PetElement]?.label || pet.element;
-    const q = PET_QUALITIES[pet.quality as PetQuality]?.label || pet.quality;
-    return { ok: true, msg: `孵化成功！获得灵宠「${pet.name}」（${el}·${q}）`, data: { pet } };
-  }
-
-  /** Dev：直接发放一枚灵宠蛋到背包（供测试 / 调试；生产经战斗掉落）。 */
-  grantPetEgg(pw: PlayerWorld, zone: number = 1): OpResult {
-    this.grantItem(pw, { id: 'pet_egg', name: '灵宠蛋', type: 'pet_egg', desc: '双击开启，随机孵化一只灵宠', quantity: 1, zone });
-    return { ok: true, msg: '获得灵宠蛋' };
-  }
-
-  /** 取当前出战灵宠（无则 null）。 */
-  getActivePet(pw: PlayerWorld): Pet | null {
-    if (!Array.isArray(pw.pets)) return null;
-    return pw.pets.find(p => p.active) || null;
-  }
-
+  // ═══ 灵宠 — 委托到 world.pet.ts ═══
+  createPet(pw: PlayerWorld, speciesId: string, name?: string, zoneOverride?: number): OpResult { return _createPet(this, pw, speciesId, name, zoneOverride); }
+  setActivePet(pw: PlayerWorld, petId: string): OpResult { return _setActivePet(this, pw, petId); }
+  addPetExp(pw: PlayerWorld, petId: string, amount: number): OpResult { return _addPetExp(this, pw, petId, amount); }
+  setPetAttr(pw: PlayerWorld, petId: string, attr: any, delta: number): OpResult { return _setPetAttr(this, pw, petId, attr, delta); }
+  releasePet(pw: PlayerWorld, petId: string): OpResult { return _releasePet(this, pw, petId); }
+  recallPet(pw: PlayerWorld, petId: string): OpResult { return _recallPet(this, pw, petId); }
+  openPetEgg(pw: PlayerWorld, itemId: string): OpResult { return _openPetEgg(this, pw, itemId); }
+  grantPetEgg(pw: PlayerWorld, zone?: number): OpResult { return _grantPetEgg(this, pw, zone); }
+  getActivePet(pw: PlayerWorld): Pet | null { return _getActivePet(this, pw); }
   // ───────────────── 强化 / 精炼 / 分解 / 重铸 ─────────────────
   /** 按 id 在装备栏或背包中查找装备（返回所在槽位，背包内则为 item.slot）。 */
   private findItemById(pw: PlayerWorld, itemId: string): { item: WorldItem; slot: EquipSlot | null } | null {
