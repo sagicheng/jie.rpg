@@ -9,7 +9,6 @@ import type { DialogueLine } from '../../ui/DialogueBox';
 import { MAIN_QUEST_ORDER, MAIN_QUESTS, SIDE_QUESTS } from '../../managers/QuestData';
 import { renderQuestBoardPanel, toggleEnhancePanel } from '../../ui/panels';
 import { monsterPortraitKey, ensureMonsterPortrait, bossPortraitKey, ensureBossPortrait } from '../../core/portraitLoader';
-import { NAMED_ENEMIES } from '../../managers/BestiaryData';
 import { getEnemyData } from '../../managers/BestiaryData';
 
 export function fitBody(scene: any, sprite: any, wFrac: number, hFrac: number, offXFrac = (1 - wFrac) / 2, offYFrac = (1 - hFrac) / 2): void {
@@ -25,9 +24,9 @@ export function createEnemies(scene: any): void {
   const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
   const pool = (cfg as any).enemyPool || cfg.enemies || [];
   for (const e of pool) {
-    const ed: any = (getEnemyData as any)(e.name) || { name: e.name, type: '\u6742\u5996', element: '\u65e0', zone: GameState.zone, level: 1, hp: 50, atk: 10, def: 5, matk: 5, mdef: 5, spd: 10, expReward: 10, goldReward: 5 };
+    const ed = getEnemyData(e.name, e.type, e.element, GameState.zone);
     const ex = e.x * GAME_WIDTH * 3, ey = e.y * GAME_HEIGHT * 2;
-    const isBoss = (NAMED_ENEMIES[e.name] as any)?.isBoss || e.name.includes('\u5927\u865a') || e.name.includes('\u4e9a\u4e18\u5361\u65af');
+    const isBoss = e.isBoss === true || e.type === '妖将' || e.type === '妖王';
     const pkey = isBoss ? bossPortraitKey(e.name) : monsterPortraitKey(e.name);
     const applyPortrait = () => {
       if (!scene.textures.exists(pkey)) return;
