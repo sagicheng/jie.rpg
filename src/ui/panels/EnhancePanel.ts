@@ -86,7 +86,7 @@ export function toggleEnhancePanel(scene: GameScene): void {
   const scrollAreaH = oh - (listY - oy) - FOOTER_H;
   const scrollW = ow - 30;
 
-  // Scroll container — content beyond visible area hidden naturally by panel bg + footer
+  // Scroll container
   const scrollCont = scene.add.container(ox + 15, listY);
   p.add(scrollCont);
 
@@ -96,7 +96,8 @@ export function toggleEnhancePanel(scene: GameScene): void {
   const qc: Record<string, string> = { white: '#aaaaaa', green: '#44cc44', blue: '#4488ff', purple: '#cc44cc', gold: '#ffaa00' };
   const ROW_H = 72, BAG_ROW_H = 68;
   let curY = 0;
-  let scrollOffset = 0;
+  // Persist scroll position across tab switches / actions
+  if ((scene as any).enhanceScrollOffset == null) (scene as any).enhanceScrollOffset = 0;
 
   // --- Equipped slots ---
   eqSlots.forEach((s, i) => {
@@ -249,6 +250,9 @@ export function toggleEnhancePanel(scene: GameScene): void {
   p.add(clipBg);
 
   const maxScroll = Math.max(0, curY - scrollAreaH);
+  // Clamp persisted scroll offset after content height is known
+  (scene as any).enhanceScrollOffset = Math.min((scene as any).enhanceScrollOffset, maxScroll);
+  scrollCont.y = listY - (scene as any).enhanceScrollOffset;
   if (maxScroll > 0) {
     // Scrollbar track
     const trackX = ox + ow - 14;
@@ -258,7 +262,7 @@ export function toggleEnhancePanel(scene: GameScene): void {
       bar.clear();
       const ratio = scrollAreaH / curY;
       const barH = Math.max(20, trackH * ratio);
-      const barY = listY + 2 + (trackH - barH) * (scrollOffset / maxScroll);
+      const barY = listY + 2 + (trackH - barH) * ((scene as any).enhanceScrollOffset / maxScroll);
       bar.fillStyle(0x445566, 0.5);
       bar.fillRoundedRect(trackX, listY + 2, 8, trackH, 4);
       bar.fillStyle(0x88aacc, 0.8);
@@ -270,8 +274,8 @@ export function toggleEnhancePanel(scene: GameScene): void {
     // Wheel handler
     const wheelHandler = (e: WheelEvent) => {
       if (!scene.enhancePanel) { window.removeEventListener('wheel', wheelHandler); return; }
-      scrollOffset = Phaser.Math.Clamp(scrollOffset + e.deltaY * 0.5, 0, maxScroll);
-      scrollCont.y = listY - scrollOffset;
+      (scene as any).enhanceScrollOffset = Phaser.Math.Clamp((scene as any).enhanceScrollOffset + e.deltaY * 0.5, 0, maxScroll);
+      scrollCont.y = listY - (scene as any).enhanceScrollOffset;
       drawBar();
     };
     window.addEventListener('wheel', wheelHandler);
