@@ -44,9 +44,15 @@ export function createEnemies(scene: any): void {
       }).setOrigin(0.5).setDepth(10);
       const en = { sprite, data: ed, label, id: e.id || (e.name + '_' + ex + '_' + ey), dead: false };
       scene.enemies.push(en);
-      const speed = isBoss ? 2000 + Math.random() * 2000 : 3000 + Math.random() * 3000;
-      const dx = Phaser.Math.Between(-20, 20), dy = Phaser.Math.Between(-15, 15);
-      scene.tweens.add({ targets: sprite, x: ex + dx, y: ey + dy, duration: speed, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+      if (isBoss) {
+        sprite.setTint(0xffcc44);
+        scene.tweens.add({ targets: sprite, alpha: 0.7, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      } else {
+        const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2;
+        const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30);
+        const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30);
+        scene.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      }
       label.setPosition(ex, ey - sprite.displayHeight / 2 - 10);
       scene.fitBody(sprite, isBoss ? 0.9 : 0.85, isBoss ? 0.95 : 0.85);
     };
