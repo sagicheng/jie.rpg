@@ -18,7 +18,6 @@ import { tickKidoStatus as _tickKidoStatus, tickEnemyStatusDuration as _tickEnem
 import { activateBankai as _activateBankai, activateHollow as _activateHollow, activateHell as _activateHell, showFormPortrait as _showFormPortrait, refreshPlayerFormSprite as _refreshPlayerFormSprite } from './systems/BattleScene.transforms';
 import { victory as _victory, defeat as _defeat } from './systems/BattleScene.ui';
 import { lungeAt as _lungeAt, getBuffMods as _getBuffMods, getCritBonus as _getCritBonus, getEffectivePlayerDef as _getEffectivePlayerDef, getEffectivePlayerMdef as _getEffectivePlayerMdef } from './systems/BattleScene.combat';
-import { victory as _victory, defeat as _defeat } from './systems/BattleScene.ui';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -52,7 +51,7 @@ interface StatusSlot {
 }
 /** 鬼道subtype → 图鉴抗性表key (中文状态名) */
 /** 我方站位（左半区）。冲锋演出始终以此为起点与归位点。 */
-const PLAYER_X = 350, PLAYER_Y = 280;
+export const PLAYER_X = 350, PLAYER_Y = 280;
 
 const SUBTYPE_TO_STATUS_NAME: Record<string, string> = {
   seal: '禁锢', slow: '减速', bind: '禁锢', freeze: '冻结',
