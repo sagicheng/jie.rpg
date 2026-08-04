@@ -31,6 +31,7 @@ import { CHAT_COLORS, CHAT_PREFIX, sendChat as _sendChat, sendGuildChat as _send
 import { applyWorldSync, setActiveRoom, setDisconnectNotifier, requestGather, requestBuy, requestEquip, requestUnequip, requestCraft, requestEnhance, requestRefine, requestDecompose, requestRefineReset, requestClaimQuest, requestUnlock, isOnline, dungeonProgress, dungeonWeekly, DUNGEON_WEEKLY_CAP } from '../api/WorldClient';
 import { petElementInfo, petQualityInfo } from '../managers/PetSystem';
 import { addPendingInvite as _addPendingInvite, removePendingInvite as _removePendingInvite, toggleTeamPanel as _toggleTeamPanel, closeTeamPanel as _closeTeamPanel, showInvitePrompt as _showInvitePrompt, showDungeonConfirm as _showDungeonConfirm, closeDungeonConfirm as _closeDungeonConfirm, renderTeamPanel as _renderTeamPanel, hideTeamPanel as _hideTeamPanel, launchTeamBattle as _launchTeamBattle, enterPvpBattle as _enterPvpBattle, routeTeamDungeonBattle as _routeTeamDungeonBattle, routeTeamBattleEnd as _routeTeamBattleEnd, routeTeamDungeonStage as _routeTeamDungeonStage, routeTeamExitDungeon as _routeTeamExitDungeon, stopTeamBattle as _stopTeamBattle, invitePlayer as _invitePlayer, makeRemotePlayersInteractable as _makeRemotePlayersInteractable, openTeamPanel as _openTeamPanel, teamPanelButton as _teamPanelButton } from './systems/GameScene.team';
+import { syncRemotePlayers as _syncRemotePlayers, clearRemotePlayers as _clearRemotePlayers, setBattling as _setBattling, sendMoveThrottled as _sendMoveThrottled } from './systems/GameScene.multiplayer';
 
 /** Phaser physics.add.overlap 回调参数的联合类型，与 ArcadePhysicsCallback 对齐。
  *  历史上写成 GameObject 会在 strictFunctionTypes 下因逆变不兼容报 TS2345
@@ -1582,61 +1583,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** 按服务端状态维护其他玩家（跳过自己）。名字+称号每帧刷新，位置由 update() 平滑插值。 */
-  private syncRemotePlayers(): void {
-    if (!this.gameRoom) return;
-    const state = this.gameRoom.state;
-    if (!state || !state.players) return;
-    const players = state.players as Map<string, any>;
-    players.forEach((p: any, sid: string) => {
-      if (sid === this.mySessionId) return;
-      let rp = this.remotePlayers.get(sid);
-      if (!rp) {
-        const sprite = this.add.sprite(p.x, p.y, 'walk_down_' + (p.gender || GameState.gender)).setDepth(8).setAlpha(0.9).setDisplaySize(40, 60);
-        sprite.setTint(Phaser.Display.Color.HexStringToColor(p.color || '#ffffff').color);
-        const tag = this.add.text(p.x, p.y - sprite.displayHeight / 2 - 10, '', {
-          fontSize: '13px', color: '#ffffff', fontStyle: 'bold',
-          stroke: '#000000', strokeThickness: 3,
-          backgroundColor: '#00000066', padding: { x: 5, y: 2 },
-          align: 'center',
-        }).setOrigin(0.5, 1).setDepth(50);
-        rp = { sprite, tag, tx: p.x, ty: p.y, name: '', title: '', gender: p.gender || GameState.gender };
-        this.remotePlayers.set(sid, rp);
-      }
-      rp.tx = p.x; rp.ty = p.y;                 // 目标坐标（避免每帧硬跳）
-      rp.name = p.name || '玩家';
-      rp.title = p.title || '';
-      const battling = p.battling ? '（战斗中）' : '';
-      // 称号 + 名字；双行显示，称号为空则只显示名字。战斗中追加「（战斗中）」标签，便于玩家间识别状态（组队前置）
-      const txt = rp.title ? `【${rp.title}】\n${rp.name}${battling}` : `${rp.name}${battling}`;
-      if (rp.tag.text !== txt) rp.tag.setText(txt);
-    });
-    for (const [sid, rp] of this.remotePlayers) {
-      if (!players.has(sid)) { rp.sprite.destroy(); rp.tag.destroy(); this.remotePlayers.delete(sid); }
-    }
-    this.makeRemotePlayersInteractable();
-  }
+  private syncRemotePlayers(): void { _syncRemotePlayers(this); }
 
-  private clearRemotePlayers(): void {
-    this.remotePlayers.forEach((rp) => { rp.sprite.destroy(); rp.tag.destroy(); });
-    this.remotePlayers.clear();
-  }
+  private clearRemotePlayers(): void { _clearRemotePlayers(this); }
 
   /** 联机：上报自己是否处于战斗中（供远端名牌显示「战斗中」标签）。 */
-  private setBattling(v: boolean): void {
-    if (this.gameRoom) this.gameRoom.send('setBattling', { v });
-  }
+  private setBattling(v: boolean): void { _setBattling(this, v); }
 
   /** 节流上报移动（~10Hz，仅在确实移动时发）。 */
-  private sendMoveThrottled(): void {
-    if (!this.gameRoom) return;
-    const now = this.time.now;
-    const dx = this.player.x - this.lastSent.x;
-    const dy = this.player.y - this.lastSent.y;
-    if (now - this.lastSent.t >= 100 && dx * dx + dy * dy > 4) {
-      this.gameRoom.send('move', { x: Math.round(this.player.x), y: Math.round(this.player.y) });
-      this.lastSent = { x: this.player.x, y: this.player.y, t: now };
-    }
-  }
+  private sendMoveThrottled(): void { _sendMoveThrottled(this); }
 
   /** 进入联机权威战斗（暂停当前地图，启动 MultiBattleScene）。 */
   private launchMultiBattle(): void {
