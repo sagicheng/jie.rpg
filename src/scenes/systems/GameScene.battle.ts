@@ -57,6 +57,7 @@ export function isMonsterAvailable(scene: any, id: string): boolean {
 }
 
 export function onBattleEnd(scene: any, result: string, er: any): void {
+  scene.input.keyboard!.resetKeys(); scene.physics.resume(); scene.menuPauseDepth = 0; scene.setGameUIVisible(true);
   scene.battleCooldown = 60;
   if (scene.gameRoom) scene.setBattling(false);
   if (result === 'victory') {
