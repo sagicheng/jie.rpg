@@ -35,6 +35,7 @@ import { syncRemotePlayers as _syncRemotePlayers, clearRemotePlayers as _clearRe
 import { onEnemyOverlap as _onEnemyOverlap, checkEnemyCollision as _checkEnemyCollision, enterBattle as _enterBattle, isMonsterAvailable as _isMonsterAvailable, onBattleEnd as _onBattleEnd, onMultiBattleEnd as _onMultiBattleEnd, flushBattleReport as _flushBattleReport, monsterRespawnMs as _monsterRespawnMs, removeMonster as _removeMonster, restoreMonster as _restoreMonster } from './systems/GameScene.battle';
 import { fitBody as _fitBody, createEnemies as _createEnemies, createMap as _createMap, createNPCs as _createNPCs, createGatheringPts as _createGatheringPts, updateMiniMap as _updateMiniMap } from './systems/GameScene.map';
 import { _create } from './systems/GameScene.create';
+import { checkNPCProximity as _checkNPCProximity, onInteractKey as _onInteractKey, tryGather as _tryGather, checkDungeonPortal as _checkDungeonPortal, startDialogue as _startDialogue, checkZoneExit as _checkZoneExit, transitionToZone as _transitionToZone } from './systems/GameScene.interact';
 
 /** Phaser physics.add.overlap 回调参数的联合类型，与 ArcadePhysicsCallback 对齐。
  *  历史上写成 GameObject 会在 strictFunctionTypes 下因逆变不兼容报 TS2345
@@ -338,133 +339,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ═══ NPC ═══
-  private checkNPCProximity(): void {
-    this.canInteract = false; this.currentNPC = null; let closestDist = Infinity;
-    for (const npc of this.npcList) { const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.sprite.x, npc.sprite.y); if (dist < 50 && dist < closestDist) { closestDist = dist; this.currentNPC = npc; this.canInteract = true; } }
-    if (this.canInteract && this.currentNPC) { this.promptText.setText(`按 F 与 ${this.currentNPC.name} 对话`); this.promptText.setPosition(this.currentNPC.sprite.x, this.currentNPC.sprite.y - 50); this.promptText.setVisible(true); }
-    else { this.promptText.setVisible(false); }
-  }
-  /** F 键统一处理（事件驱动，keydown 即触发，不受 keyup 时机影响）。按优先级：NPC > 副本传送阵 > 采集点 > 区域出口。 */
-  private onInteractKey(): void {
-    if (this.isInDialogue) return;
-    if (this.dungeonConfirmOpen) return; // 确认框已开，避免重复弹
-    // NPC 对话优先
-    if (this.canInteract && this.currentNPC) { this.startDialogue(this.currentNPC); return; }
-    // 副本传送阵：F 弹出确认界面（进入副本 / 暂不进入），不再直接进
-    if (this.nearbyDungeon && !this.inDungeon) { this.showDungeonConfirm(GameState.zone); return; }
-    // 采集点
-    for (let i = 0; i < this.gatherPoints.length; i++) {
-      const pt = this.gatherPoints[i];
-      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, pt.sprite.x, pt.sprite.y);
-      if (dist < 55) { this.tryGather(i); return; }
-    }
-    // 区域出口（站在副本传送阵上时 F 留给副本进入，上面已处理）
-    const cfg = ZONE_CONFIGS[GameState.zone];
-    if (cfg) {
-      if (this.dungeonPortalPos) {
-        const dpDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.dungeonPortalPos.x, this.dungeonPortalPos.y);
-        if (dpDist < 60) return;
-      }
-      for (const exit of cfg.exits) {
-        const ex = exit.x * GAME_WIDTH * 3, ey = exit.y * GAME_HEIGHT * 2;
-        if (Phaser.Math.Distance.Between(this.player.x, this.player.y, ex, ey) < 60) {
-          this.transitionToZone(exit.targetZone, exit.targetX * GAME_WIDTH * 3, exit.targetY * GAME_HEIGHT * 2);
-          return;
-        }
-      }
-    }
-  }
-
-  /** 采集动作（从 onInteractKey 调用，原 checkGatherProximity 的 F-触发逻辑提取）。 */
-  private tryGather(idx: number): void {
-    if (this.isInDialogue) return;
-    const pt = this.gatherPoints[idx];
-    // 客户端活动任务进度（UI 用，两种模式都更新）
-    GameState.updateQuestProgress('collect', pt.type, 1);
-    if (this.gameRoom) {
-      // 联机：采集走服务端权威，背包/节点隐藏由 worldSync 下发，反馈由 intentResult
-      if (!requestGather(GameState.zone, idx, Math.round(this.player.x), Math.round(this.player.y))) return;
-      this.isInDialogue = true;
-      this.time.delayedCall(300, () => { this.isInDialogue = false; });
-      return;
-    }
-    // 单机：本地采集
-    this.isInDialogue = true;
-    const matName = NODE_TO_MATERIAL[pt.type] || pt.type;
-    // 止血草等同时是消耗品的采集产物，按 consumable 入库（避免出现在材料类）
-    // 判定：若 CONSUMABLES 里有同名物品，则用 consumable 类型 + 原 consumable.id（保持库存合并）
-    const conEntry = CONSUMABLES_BY_NAME[matName];
-    Inventory.addItem({
-      id: conEntry ? conEntry.id : matId(matName),
-      name: matName,
-      type: conEntry ? 'consumable' : 'material',
-      desc: conEntry ? conEntry.desc : '野外采集获得',
-      quantity: 1,
-    });
-    pt.sprite.setVisible(false); pt.label.setVisible(false);
-    this.time.delayedCall(30000, () => { pt.sprite.setVisible(true); pt.label.setVisible(true); });
-    const notif = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, `获得：${matName}`, { fontSize: '18px', color: '#88ff88', fontStyle: 'bold', backgroundColor: '#112211cc', padding: { x: 16, y: 8 } }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
-    this.tweens.add({ targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 100, duration: 1500, onComplete: () => notif.destroy() });
-    this.time.delayedCall(300, () => { this.isInDialogue = false; });
-  }
-
-  /** 副本传送阵 proximity：站在传送阵附近时显示进入提示。 */
-  private checkDungeonPortal(): void {
-    if (!this.dungeonPortalPos) { this.nearbyDungeon = false; return; }
-    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.dungeonPortalPos.x, this.dungeonPortalPos.y);
-    if (dist < 60 && !this.inDungeon) {
-      this.nearbyDungeon = true;
-      const remaining = Math.max(0, DUNGEON_WEEKLY_CAP - dungeonWeekly.count);
-      const active = dungeonProgress && dungeonProgress.dungeonId === GameState.zone;
-      this.promptText.setText(active ? `按 F 继续副本${GameState.zone}（第 ${dungeonProgress!.stage} 阶）` : `按 F 进入副本${GameState.zone}（本周剩余 ${remaining} 次）`);
-      this.promptText.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60);
-      this.promptText.setVisible(true);
-    } else {
-      this.nearbyDungeon = false;
-    }
-  }
-  private startDialogue(npc: NPCData): void {
-    this.isInDialogue = true; this.player.setVelocity(0, 0); this.promptText.setVisible(false);
-    GameState.updateQuestProgress('talk', npc.id, 1);
-    // 不再拦截quest NPC，让对话自然流动，选项触发接取/完成
-    let lineIndex = 0;
-    const showNext = () => { if (lineIndex < npc.dialogue.length) { const line = npc.dialogue[lineIndex]; lineIndex++; this.dialogueBox.show(line, lineIndex < npc.dialogue.length ? showNext : () => { this.isInDialogue = false; }); } };
-    showNext();
-  }
-
-  // ═══ Zone ═══
-  private checkZoneExit(): void {
-    const cfg = ZONE_CONFIGS[GameState.zone]; if (!cfg) return;
-    // 站在副本传送阵上时把 F 让给副本进入逻辑，避免传送阵与区域出口位置重叠时互相抢键
-    if (this.dungeonPortalPos) {
-      const dpDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.dungeonPortalPos.x, this.dungeonPortalPos.y);
-      if (dpDist < 60) return;
-    }
-    for (const exit of cfg.exits) { const ex = exit.x * GAME_WIDTH * 3, ey = exit.y * GAME_HEIGHT * 2; const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, ex, ey); if (dist < 60) { this.promptText.setText(`按 F 前往 ${ZONE_NAMES[exit.targetZone]}`); this.promptText.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60); this.promptText.setVisible(true); return; } }
-    if (!this.canInteract) this.promptText.setVisible(false);
-  }
-  private transitionToZone(tz: number, tx: number, ty: number): void {
-    this.isInDialogue = true; GameState.zone = tz; GameState.x = tx; GameState.y = ty; this.battleCooldown = 60;
-    if (!GameState.discoveredZones.includes(tz)) GameState.discoveredZones.push(tz);
-    GameState.updateQuestProgress('reach', ZONE_NAMES[tz] || '', 1);
-    this.cameras.main.fadeOut(400, 0, 0, 0);
-    this.cameras.main.once('camerafadeoutcomplete', () => {
-      this.enemies.forEach(e => { e.sprite.destroy(); e.label.destroy(); }); this.enemies = [];
-      this.npcList.forEach(n => { n.sprite.destroy(); n.nameTag.destroy(); }); this.npcList = [];
-      this.gatherPoints.forEach(gp => { gp.sprite.destroy(); gp.label.destroy(); }); this.gatherPoints = [];
-      const stale = this.children.list.filter((c2: any) =>
-        (c2.type === 'Graphics' && [0,1,3,4].includes(c2.depth||-1)) ||
-        (c2.type === 'Text' && [4,6].includes(c2.depth||-1)) ||
-        (c2.type === 'TileSprite' && [0,1].includes(c2.depth||-1))
-      );
-      stale.forEach((c2: any) => c2.destroy());
-      this.createMap(); this.createNPCs(); this.createEnemies(); this.createGatheringPoints();
-      this.zoneText.setText(`${ZONE_NAMES[GameState.zone]}`);
-      this.player.setPosition(tx, ty); this.isInDialogue = false; this.cameras.main.fadeIn(400,0,0,0); SaveManager.save();
-      const b = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2-40, ZONE_NAMES[tz], {fontSize:'28px',color:'#ffe8b0',fontStyle:'bold',backgroundColor:'#000000aa',padding:{x:24,y:12}}).setOrigin(0.5).setScrollFactor(0).setDepth(250).setAlpha(0);
-      this.tweens.add({targets:b,alpha:1,duration:500,onComplete:()=>{this.tweens.add({targets:b,alpha:0,duration:1200,delay:1000,onComplete:()=>b.destroy()});}});
-    });
-  }
+  // ═══ 交互方法 — 委托到 GameScene.interact.ts ═══
+  private checkNPCProximity(): void { _checkNPCProximity(this); }
+  private onInteractKey(): void { _onInteractKey(this); }
+  private tryGather(idx: number): void { _tryGather(this, idx); }
+  private checkDungeonPortal(): void { _checkDungeonPortal(this); }
+  private startDialogue(npc: NPCData): void { _startDialogue(this, npc); }
+  private checkZoneExit(): void { _checkZoneExit(this); }
+  private transitionToZone(tz: number, tx: number, ty: number): void { _transitionToZone(this, tz, tx, ty); }
 
   // ═══ Enemies ═══
   /** 玩家与怪物物理体重叠时触发战斗（比中心点距离判定更稳，贴合"走上去就打"的直觉）。 */
