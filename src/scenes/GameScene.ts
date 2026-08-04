@@ -33,7 +33,7 @@ import { petElementInfo, petQualityInfo } from '../managers/PetSystem';
 import { addPendingInvite as _addPendingInvite, removePendingInvite as _removePendingInvite, toggleTeamPanel as _toggleTeamPanel, closeTeamPanel as _closeTeamPanel, showInvitePrompt as _showInvitePrompt, showDungeonConfirm as _showDungeonConfirm, closeDungeonConfirm as _closeDungeonConfirm, renderTeamPanel as _renderTeamPanel, hideTeamPanel as _hideTeamPanel, launchTeamBattle as _launchTeamBattle, enterPvpBattle as _enterPvpBattle, routeTeamDungeonBattle as _routeTeamDungeonBattle, routeTeamBattleEnd as _routeTeamBattleEnd, routeTeamDungeonStage as _routeTeamDungeonStage, routeTeamExitDungeon as _routeTeamExitDungeon, stopTeamBattle as _stopTeamBattle, invitePlayer as _invitePlayer, makeRemotePlayersInteractable as _makeRemotePlayersInteractable, openTeamPanel as _openTeamPanel, teamPanelButton as _teamPanelButton } from './systems/GameScene.team';
 import { syncRemotePlayers as _syncRemotePlayers, clearRemotePlayers as _clearRemotePlayers, setBattling as _setBattling, sendMoveThrottled as _sendMoveThrottled, connectGameRoom as _connectGameRoom } from './systems/GameScene.multiplayer';
 import { onEnemyOverlap as _onEnemyOverlap, checkEnemyCollision as _checkEnemyCollision, enterBattle as _enterBattle, isMonsterAvailable as _isMonsterAvailable, onBattleEnd as _onBattleEnd, onMultiBattleEnd as _onMultiBattleEnd, flushBattleReport as _flushBattleReport, monsterRespawnMs as _monsterRespawnMs, removeMonster as _removeMonster, restoreMonster as _restoreMonster } from './systems/GameScene.battle';
-import { fitBody as _fitBody, createEnemies as _createEnemies } from './systems/GameScene.map';
+import { fitBody as _fitBody, createEnemies as _createEnemies, createMap as _createMap, createNPCs as _createNPCs, createGatheringPts as _createGatheringPts, updateMiniMap as _updateMiniMap } from './systems/GameScene.map';
 import { _create } from './systems/GameScene.create';
 
 /** Phaser physics.add.overlap 回调参数的联合类型，与 ArcadePhysicsCallback 对齐。
@@ -510,204 +510,14 @@ export class GameScene extends Phaser.Scene {
    */
   private fitBody(sprite: Phaser.Physics.Arcade.Sprite, wFrac: number, hFrac: number, offXFrac?: number, offYFrac?: number): void { _fitBody(this, sprite, wFrac, hFrac, offXFrac, offYFrac); }
 
-  private createMap(): void {
-    const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
-    const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2;
-    const g = this.add.graphics().setDepth(0);
+  private createMap(): void { _createMap(this); }
 
-    // 1) 区域背景图（飘流幻境式：一张大地图/可拼接背景铺底）
-    if (cfg.backgroundImage && this.textures.exists(cfg.backgroundImage)) {
-      if (cfg.backgroundMode === 'cover') {
-        // 单张大图拉伸铺满整张地图（不重复）—— 适合你画好的一整张场景大图
-        this.add.image(mapW / 2, mapH / 2, cfg.backgroundImage)
-          .setOrigin(0.5).setDisplaySize(mapW, mapH).setDepth(0);
-      } else {
-        // 默认平铺重复（适合小尺寸可循环纹理）
-        this.add.tileSprite(mapW / 2, mapH / 2, mapW, mapH, cfg.backgroundImage).setDepth(0);
-      }
-    } else {
-      // 无背景图时：底色 + 中性噪点 tile
-      g.fillStyle(cfg.groundColor, 1);
-      g.fillRect(0, 0, mapW, mapH);
-      if (this.textures.exists('tile_ground')) {
-        const ground = this.add.tileSprite(mapW / 2, mapH / 2, mapW, mapH, 'tile_ground').setDepth(0);
-        ground.setTint(cfg.groundColor);
-        ground.setAlpha(0.35);
-      }
-    }
-
-    // 2)～4) 原代码占位美术已移除：灰色道路(tile_road/roadColor)、拼接装饰(cfg.props/deco_rock)、
-    //     建筑池塘(cfg.decorations/deco_house_a·b·deco_pond)、全局树木(deco_tree) 全部不再渲染。
-    //     场景现在只铺 backgroundImage（21 张真实区域地图），不叠加任何程序化占位。
-
-    // 5) Zone exit portals
-    for (const exit of cfg.exits) {
-      const ex = exit.x * mapW, ey = exit.y * mapH;
-      const arrowMap: Record<string, string> = { east: '\u2192', west: '\u2190', north: '\u2191', south: '\u2193', northwest: '\u2196', northeast: '\u2197', southwest: '\u2199', southeast: '\u2198' };
-      const portal = this.add.graphics();
-      portal.fillStyle(0x44aaff, 0.15); portal.fillCircle(ex, ey, 35);
-      portal.fillStyle(0x44aaff, 0.30); portal.fillCircle(ex, ey, 22);
-      portal.lineStyle(2, 0x88ddff, 0.8); portal.strokeCircle(ex, ey, 30);
-      portal.setDepth(3);
-      this.tweens.add({ targets: portal, alpha: 0.35, duration: 1200, yoyo: true, repeat: -1 });
-      const arrow = this.add.text(ex, ey, arrowMap[exit.edge] || '\u2192', { fontSize: '22px', color: '#88ddff', fontStyle: 'bold', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(4);
-      this.tweens.add({ targets: arrow, alpha: 0.4, duration: 1000, yoyo: true, repeat: -1 });
-    }
-
-    // 6) 副本传送阵（每区域一个入口，进入独立副本实例）
-    const dp = getDungeonPortal(GameState.zone);
-    const dx = dp.x * mapW, dy = dp.y * mapH;
-    this.dungeonPortalPos = { x: dx, y: dy };
-    if (this.textures.exists('dungeon_portal_1')) {
-      const portal = this.add.image(dx, dy, 'dungeon_portal_1').setDepth(3);
-      portal.setDisplaySize(96, 96);
-      this.tweens.add({ targets: portal, alpha: 0.65, duration: 1100, yoyo: true, repeat: -1 });
-    } else {
-      // 缺图时回退紫圈占位
-      const portal = this.add.graphics();
-      portal.fillStyle(0xaa66ff, 0.15); portal.fillCircle(dx, dy, 38);
-      portal.fillStyle(0xaa66ff, 0.32); portal.fillCircle(dx, dy, 24);
-      portal.lineStyle(2, 0xcc99ff, 0.9); portal.strokeCircle(dx, dy, 32);
-      portal.setDepth(3);
-      this.tweens.add({ targets: portal, alpha: 0.35, duration: 1100, yoyo: true, repeat: -1 });
-    }
-    const tag = this.add.text(dx, dy - 46, '\u25C6 副本' + GameState.zone, { fontSize: '12px', color: '#d9b3ff', fontStyle: 'bold', backgroundColor: '#221133cc', padding: { x: 5, y: 2 } }).setOrigin(0.5).setDepth(6);
-    this.tweens.add({ targets: tag, y: dy - 52, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-  }
-
-  private createNPCs(): void {
-    const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
-    for (const c of cfg.npcs) {
-      const nx = c.x * GAME_WIDTH * 3, ny = c.y * GAME_HEIGHT * 2;
-      const npcTexture = this.textures.exists(c.id) ? c.id : 'npc';
-      const npc = this.physics.add.sprite(nx, ny, npcTexture).setImmovable(true).setDepth(5).setDisplaySize(40, 60);
-      const tag = this.add.text(nx, ny - 30, npcDisplayName(c.id), {
-        fontSize: '11px',
-        color: c.role === 'merchant' ? '#ffdd88' : c.role === 'return_point' ? '#88ccff' : c.role === 'craft' ? '#aa88ff' : c.role === 'enhance' ? '#ff8844' : c.role === 'quest_board' ? '#ffcc66' : '#ffe8b0',
-        backgroundColor: '#00000088', padding: { x: 4, y: 2 },
-      }).setOrigin(0.5).setDepth(6);
-
-      const dialogueLines: DialogueLine[] = c.dialogue.map((d, i) => {
-        // speaker 一律取自中枢（zone 数据里的 d.speaker 已废弃）：
-        // NPC 自称在对话框标题、头顶名牌、交互提示三处保持同一真相，改名只动 entityNames.ts。
-        const line: DialogueLine = { speaker: npcDisplayName(c.id), text: d.text };
-        if (d.choices && i === 0) {
-          line.choices = d.choices.map(ch => ({
-            text: ch.text,
-            callback: () => {
-              if (ch.callback === 'openShop') this.openShopPanel(c.shop || []);
-              else if (ch.callback === 'acceptQuest') this.acceptQuestFromNPC(c);
-              else if (ch.callback === 'completeQuest') this.completeQuestFromNPC(c);
-              else if (ch.callback === 'closeDialogue') this.isInDialogue = false;
-              else if (ch.callback === 'openReturn') this.openReturn();
-              else if (ch.callback === 'openCraft') this.openCraft();
-              else if (ch.callback === 'openQuestBoard') { this.isInDialogue = false; renderQuestBoardPanel(this); }
-              else if (ch.callback === 'openEnhance') { this.isInDialogue = false; toggleEnhancePanel(this); }
-              else { this.isInDialogue = false; }
-            },
-          }));
-        }
-        return line;
-      });
-
-      // 动态添加任务选项
-      const questChoices: Array<{ text: string; callback: () => void }> = [];
-      // 检查是否有可接取的主线任务
-      for (const questId of MAIN_QUEST_ORDER) {
-        const quest = MAIN_QUESTS[questId];
-        if (!quest || quest.acceptFrom !== c.id) continue;
-        if (GameState.questCompleted.includes(questId)) continue;
-        if (GameState.isQuestActive(questId)) continue;
-        if (quest.prerequisite && !GameState.questCompleted.includes(quest.prerequisite)) continue;
-        questChoices.push({ text: `接受任务：${quest.name}`, callback: () => this.acceptQuestFromNPC(c) });
-        break;
-      }
-      // 检查是否有可完成的任务（本NPC completeAt 且已就绪）
-      const readyId = GameState.activeQuests.find(id => {
-        const q = GameState.getQuestDef(id);
-        return !!q && q.completeAt === c.id && GameState.isQuestReady(id);
-      });
-      if (readyId) {
-        const q = GameState.getQuestDef(readyId)!;
-        questChoices.push({ text: `完成任务：${q.name}`, callback: () => this.completeQuestFromNPC(c) });
-      } else {
-        // 任务进行中，在对话文本中显示进度
-        const activeId = GameState.activeQuests.find(id => {
-          const q = GameState.getQuestDef(id);
-          return !!q && q.completeAt === c.id;
-        });
-        if (activeId && dialogueLines.length > 0) {
-          dialogueLines[0].text += `\n\n任务进度：${GameState.getQuestTrackFor(activeId)}`;
-        }
-      }
-      // 检查支线任务
-      for (const sq of Object.values(SIDE_QUESTS)) {
-        if (sq.acceptFrom !== c.id) continue;
-        if (GameState.questCompleted.includes(sq.id)) continue;
-        if (GameState.isQuestActive(sq.id)) continue;
-        if (sq.prerequisite && !GameState.questCompleted.includes(sq.prerequisite)) continue;
-        questChoices.push({ text: `接受支线：${sq.name}`, callback: () => this.acceptQuestFromNPC(c) });
-        break;
-      }
-      // 如果有任务选项，添加到第一行对话
-      if (questChoices.length > 0 && dialogueLines.length > 0) {
-        if (!dialogueLines[0].choices) dialogueLines[0].choices = [];
-        dialogueLines[0].choices!.push(...questChoices);
-        dialogueLines[0].choices!.push({ text: '离开', callback: () => { this.isInDialogue = false; } });
-      }
-
-      this.npcList.push({ sprite: npc, id: c.id, name: npcDisplayName(c.id), role: c.role, dialogue: dialogueLines, nameTag: tag, x: nx, y: ny, shop: c.shop });
-    }
-  }
+  private createNPCs(): void { _createNPCs(this); }
 
   private createEnemies(): void { _createEnemies(this); }
-  private createGatheringPoints(): void {
-    this.gatherPoints = [];
-    const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
-    for (const pt of cfg.gathering) {
-      const gx = pt.x * GAME_WIDTH * 3, gy = pt.y * GAME_HEIGHT * 2;
-      const key = `gather_${pt.type}`;
-      if (!this.textures.exists(key)) { console.warn('[gather] missing texture ' + key + ', skipped'); continue; }
-      const sprite = this.physics.add.sprite(gx, gy, key).setDepth(2);
-      const label = this.add.text(gx, gy - 20, pt.type, { fontSize: '10px', color: '#aaddaa', backgroundColor: '#00000066', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(3);
-      this.tweens.add({ targets: sprite, alpha: 0.6, duration: 1500, yoyo: true, repeat: -1 });
-      this.gatherPoints.push({ sprite, type: pt.type, label });
-    }
-  }
+  private createGatheringPoints(): void { _createGatheringPts(this); }
 
-  private updateMiniMap(): void {
-    this.miniMap.clear();
-    const mmX = GAME_WIDTH - 180, mmY = 8, mmW = 170, mmH = 110;
-    this.miniMap.fillStyle(0x111122, 0.7);
-    this.miniMap.fillRoundedRect(mmX, mmY, mmW, mmH, 4);
-    this.miniMap.lineStyle(1, 0x444466, 1);
-    this.miniMap.strokeRoundedRect(mmX, mmY, mmW, mmH, 4);
-    const sx = mmW / (GAME_WIDTH * 3), sy = mmH / (GAME_HEIGHT * 2);
-    const cfg = ZONE_CONFIGS[GameState.zone];
-    if (cfg) {
-      for (const exit of cfg.exits) {
-        const dotX = mmX + exit.x * mmW, dotY = mmY + exit.y * mmH;
-        const flash = Math.sin(this.time.now / 300) * 0.3 + 0.7;
-        this.miniMap.fillStyle(0x44aaff, flash * 0.3); this.miniMap.fillCircle(dotX, dotY, 6);
-        this.miniMap.fillStyle(0x88ddff, flash); this.miniMap.fillCircle(dotX, dotY, 3);
-        this.miniMap.lineStyle(1, 0xffffff, 0.8); this.miniMap.strokeCircle(dotX, dotY, 4);
-      }
-      // 副本传送阵光标（紫色菱形，便于在右上角小地图定位）
-      const dp = getDungeonPortal(GameState.zone);
-      const ddx = mmX + dp.x * mmW, ddy = mmY + dp.y * mmH;
-      const dflash = Math.sin(this.time.now / 250) * 0.3 + 0.7;
-      this.miniMap.fillStyle(0xaa66ff, dflash * 0.4); this.miniMap.fillCircle(ddx, ddy, 7);
-      this.miniMap.fillStyle(0xcc99ff, dflash); this.miniMap.fillCircle(ddx, ddy, 3.5);
-      this.miniMap.lineStyle(1, 0xffffff, 0.8); this.miniMap.strokeCircle(ddx, ddy, 5);
-    }
-    this.miniMap.fillStyle(0x44aaff, 1);
-    this.miniMap.fillCircle(mmX + this.player.x * sx, mmY + this.player.y * sy, 3);
-    this.npcList.forEach(npc => {
-      const ndx = mmX + npc.x * sx, ndy = mmY + npc.y * sy;
-      const color = npc.role === 'merchant' ? 0xffdd44 : npc.role === 'return_point' ? 0x88ccff : npc.role === 'craft' ? 0xaa88ff : npc.role === 'enhance' ? 0xff8844 : npc.role === 'quest_board' ? 0xffcc44 : 0x44cc44;
-      this.miniMap.fillStyle(color, 0.8); this.miniMap.fillCircle(ndx, ndy, 2);
-    });
-  }
+  private updateMiniMap(): void { _updateMiniMap(this); }
   /** 通过NPC对话选项接取任务 */
   private acceptQuestFromNPC(npc: { id: string; name?: string; role: string }): void {
     for (const questId of MAIN_QUEST_ORDER) {
