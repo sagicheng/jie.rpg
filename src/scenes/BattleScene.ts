@@ -16,6 +16,7 @@ import { Kido, KidoNode } from '../managers/Kido';
 import { BattleFx } from '../managers/BattleFx';
 import { tickKidoStatus as _tickKidoStatus, tickEnemyStatusDuration as _tickEnemyStatusDuration } from './systems/BattleScene.status';
 import { activateBankai as _activateBankai, activateHollow as _activateHollow, activateHell as _activateHell, showFormPortrait as _showFormPortrait, refreshPlayerFormSprite as _refreshPlayerFormSprite } from './systems/BattleScene.transforms';
+import { victory as _victory, defeat as _defeat } from './systems/BattleScene.ui';
 import {
   EnemyStatus, PlayerStatus,
   createEnemyStatus, createPlayerStatus,
@@ -1463,130 +1464,9 @@ export class BattleScene extends Phaser.Scene {
   private tickKidoStatus(): void { _tickKidoStatus(this); }
   /** 敌人状态时长递减：在本轮敌人全部行动结束后结算 */
   private tickEnemyStatusDuration(): void { _tickEnemyStatusDuration(this); }
+  private victory(): void { _victory(this); }
+  private defeat(): void { _defeat(this); }
 
-  private victory(): void {
-    this.clearTurnTimer();
-    this.phase = 'victory';
-    this.clearCommands();
-    this.clearSubMenu();
-    // 汇总所有敌人的奖励
-    let totalExp = 0, totalGold = 0;
-    const allLoot: any[] = [];
-    this.enemies.forEach(e => {
-      totalExp += e.expReward;
-      totalGold += e.goldReward;
-      // 优先用具名敌人专属掉落，无则fallback到随机生成
-      const namedDef = NAMED_ENEMIES[e.name];
-      if (namedDef && namedDef.drops) {
-        allLoot.push(...generateNamedLoot(e.name, namedDef.drops));
-      } else {
-        const loot = generateLoot(e.type, e.zone);
-        allLoot.push(...loot);
-      }
-    });
-    // 记录图鉴击杀
-    this.enemies.forEach(e => GameState.recordKill(e.name));
-    const newTitles = GameState.drainTitleNotifications();
-    GameState.gold += totalGold;
-    const levelUp = GameState.gainExp(totalExp);
-    this.playerHp = GameState.hp;
-    this.playerMp = GameState.mp;
-    allLoot.forEach(item => {
-      Inventory.addItem({
-        id: item.id, name: item.name, type: item.type,
-        desc: item.desc, quantity: item.quantity,
-        slot: item.slot, stats: item.stats, quality: item.quality,
-        set: item.set,
-      });
-    });
-    const panelH = 280 + allLoot.length * 30 + (newTitles.length ? 28 + newTitles.length * 22 : 0);
-    const container = this.add.container(0, 0).setDepth(100);
-    const pnl = panel(this, GAME_WIDTH / 2 - 180, 220, 360, panelH, 100);
-    container.add(pnl);
-    container.add(this.add.text(GAME_WIDTH / 2, 248, '胜 利', {
-      fontSize: '24px', color: '#c9a96e', fontStyle: 'bold', padding: { y: 2 },
-    }).setOrigin(0.5));
-    container.add(this.add.text(GAME_WIDTH / 2, 285, `经验 +${totalExp}  |  金币 +${totalGold}`, {
-      fontSize: '15px', color: '#ddd', padding: { y: 2 },
-    }).setOrigin(0.5));
-    if (levelUp) {
-      container.add(this.add.text(GAME_WIDTH / 2, 310, `等级提升！Lv.${GameState.level}`, {
-        fontSize: '18px', color: '#44ff44', fontStyle: 'bold', padding: { y: 2 },
-      }).setOrigin(0.5));
-    }
-    if (allLoot.length > 0) {
-      const looTitleY = levelUp ? 340 : 315;
-      container.add(this.add.text(GAME_WIDTH / 2, looTitleY, '─ 战利品 ─', {
-        fontSize: '14px', color: '#c9a96e', padding: { y: 2 },
-      }).setOrigin(0.5));
-      allLoot.forEach((item, i) => {
-        const iy = (levelUp ? 365 : 340) + i * 30;
-        let color = '#88cc88', label = item.name;
-        if (item.quality) { color = QUALITY_COLOR[item.quality] || '#cccccc'; label = `[${QUALITY_CN[item.quality]}] ${item.name}`; }
-        else if (item.type === 'material') color = '#aaaacc';
-        container.add(this.add.text(GAME_WIDTH / 2, iy, label, { fontSize: '14px', color, padding: { y: 2 } }).setOrigin(0.5));
-      });
-    }
-    if (newTitles.length > 0) {
-      const lootEndY = allLoot.length > 0 ? (levelUp ? 365 : 340) + allLoot.length * 30 : (levelUp ? 340 : 315);
-      const ttY = lootEndY + 8;
-      container.add(this.add.text(GAME_WIDTH / 2, ttY, '─ 解锁称号 ─', { fontSize: '14px', color: '#ffcc44', padding: { y: 2 } }).setOrigin(0.5));
-      newTitles.forEach((nm, i) => {
-        container.add(this.add.text(GAME_WIDTH / 2, ttY + 22 + i * 22, `🏅 ${nm}`, { fontSize: '13px', color: '#ffdd66', fontStyle: 'bold', padding: { y: 2 } }).setOrigin(0.5));
-      });
-    }
-    const confirmY = 220 + panelH - 35;
-    const confirmText = this.add.text(GAME_WIDTH / 2, confirmY, '[ 点击继续 ]', {
-      fontSize: '14px', color: '#c9a96e', padding: { y: 2 },
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    confirmText.on('pointerdown', () => {
-      GameState.hp = this.playerHp;
-      GameState.mp = this.playerMp;
-      this.enemies.forEach(enemy => GameState.updateQuestProgress('kill', enemy.name, 1));
-      if (this.enemyRefs.length > 0) {
-        this.notifyGameScene('victory', 0);
-      }
-      this.scene.stop(); this.scene.resume('GameScene');
-      this.scene.get('UIScene').events.emit('updateStats');
-    });
-    container.add(confirmText);
-    container.setAlpha(0);
-    this.tweens.add({ targets: container, alpha: 1, duration: 400 });
-  }
-
-  private defeat(): void {
-    this.clearTurnTimer();
-    this.phase = 'defeat';
-    this.clearCommands();
-    this.logText.setText('战斗不能...');
-    if (this.playerSprite) BattleFx.playDie(this, this.playerSprite.x, this.playerSprite.y);
-    const container = this.add.container(0, 0).setDepth(100);
-    const pnl = panel(this, GAME_WIDTH / 2 - 140, 300, 280, 180, 100);
-    container.add(pnl);
-    container.add(this.add.text(GAME_WIDTH / 2, 340, '战斗不能', {
-      fontSize: '24px', color: '#cc4444', fontStyle: 'bold', padding: { y: 2 },
-    }).setOrigin(0.5));
-    const retryBtn = this.add.text(GAME_WIDTH / 2, 400, '[ 重新挑战 ]', {
-      fontSize: '16px', color: '#c9a96e', padding: { y: 2 },
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    retryBtn.on('pointerdown', () => {
-      this.enemies.forEach(e => { e.hp = e.maxHp; });
-      this.scene.restart({ template: this.templateEnemy, enemyRef: this.enemyRefs[0], zone: GameState.zone });
-    });
-    container.add(retryBtn);
-    const fleeBtn = this.add.text(GAME_WIDTH / 2, 440, '[ 返回据点 ]', {
-      fontSize: '14px', color: '#887766', padding: { y: 2 },
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    fleeBtn.on('pointerdown', () => {
-      GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
-      this.notifyGameScene('defeat', 0);
-      this.scene.stop(); this.scene.resume('GameScene');
-      this.scene.get('UIScene').events.emit('updateStats');
-    });
-    container.add(fleeBtn);
-    container.setAlpha(0);
-    this.tweens.add({ targets: container, alpha: 1, duration: 400 });
-  }
   // ════════════════════ 辅助 ════════════════════
 
   private flashEnemySprite(sprite: Phaser.GameObjects.Sprite): void {
