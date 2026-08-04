@@ -1,13 +1,12 @@
 /**
  * GameScene 战斗入口/结束回调子系统
  */
+import Phaser from 'phaser';
+import { GAME_WIDTH, GAME_HEIGHT } from '../../config/config';
 import { GameState } from '../../managers/GameState';
-import { EnemyData, createEnemyData, generateLoot } from '../../managers/BattleData';
+import { EnemyData, generateLoot } from '../../managers/BattleData';
 import { Inventory } from '../../managers/Inventory';
 import { NAMED_ENEMIES } from '../../managers/BestiaryData';
-import { expForLevel } from '../../managers/BattleData';
-import { isOnline } from '../../api/WorldClient';
-import { getEnemyData } from '../../managers/BestiaryData';
 
 export function onEnemyOverlap(scene: any, _player: any, enemySprite: any): void {
   const en = scene.enemies.find((e: any) => e.sprite === enemySprite);
@@ -28,24 +27,22 @@ export function checkEnemyCollision(scene: any): void {
 
 export function enterBattle(scene: any, en?: any): void {
   if (!en || en.dead) return;
-  if (scene.inDungeon) return;
-  if (scene.isInDialogue) return;
-  if (scene.battleCooldown > 0) return;
+  if (!en.sprite.visible) return;
+  if (scene.battleCooldown > 0 || scene.isInDialogue) return;
+  if (en.data?.hp <= 0) return;
   if (scene.gameRoom && !scene.isMonsterAvailable(en.id)) return;
-  scene.battleCooldown = 60;
-  scene.pauseForMenu();
-  if (scene.gameRoom) { scene.gameRoom.send('enterBattle', { id: en.id }); scene.setBattling(true); }
   try {
+    if (scene.gameRoom) { scene.gameRoom.send('enterBattle', { id: en.id }); scene.setBattling(true); }
+    scene.battleCooldown = 180;
+    scene.scene.pause();
     if (scene.gameRoom) {
       scene.scene.launch('MultiBattleScene', { mode: 'map', enemyData: en.data, enemyParty: scene.buildEncounterParty(en.data), monsterId: en.id, playerName: GameState.playerName || '\u52c7\u8005', loadout: scene.buildBattleLoadout(), ownerSessionId: scene.mySessionId });
     } else {
       scene.scene.launch('BattleScene', { template: en.data, enemyRef: en, zone: GameState.zone });
     }
-    scene.scene.pause();
   } catch (err: any) {
     console.error('[enterBattle] \u5f02\u5e38\uff08\u602a\u7269=' + (en.data?.name ?? '?') + '\uff09\uff1a', err);
-    scene.battleCooldown = 0;
-    scene.resumeFromMenu();
+    if (scene.scene.isPaused()) scene.scene.resume();
     if (scene.gameRoom) scene.setBattling(false);
   }
 }
@@ -58,49 +55,84 @@ export function isMonsterAvailable(scene: any, id: string): boolean {
 
 export function onBattleEnd(scene: any, result: string, er: any): void {
   scene.input.keyboard!.resetKeys(); scene.physics.resume(); scene.menuPauseDepth = 0; scene.setGameUIVisible(true);
-  scene.battleCooldown = 60;
-  if (scene.gameRoom) scene.setBattling(false);
+  if (result === 'defeat') {
+    scene.player.x = 400; scene.player.y = 500;
+    GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
+    if (scene.gameRoom) scene.gameRoom.send('unlockMonster', { id: er.id });
+    return;
+  }
+  const a = Phaser.Math.Angle.Between(er.sprite.x, er.sprite.y, scene.player.x, scene.player.y);
+  scene.player.x += Math.cos(a) * 80; scene.player.y += Math.sin(a) * 80;
   if (result === 'victory') {
-    const ed: EnemyData = er?.data || er;
-    const rewards = ed.expReward && ed.goldReward ? { exp: ed.expReward, gold: ed.goldReward, loot: generateLoot(ed.type, ed.zone).map((i: any) => i.name) } : null;
-    if (rewards) {
-      GameState.gold += rewards.gold;
-      const levelUp = GameState.gainExp(rewards.exp);
-      rewards.loot.forEach((name: string) => Inventory.addItem({ id: name, name, type: 'consumable', desc: '', quantity: 1 }));
-      if (levelUp) scene.scene.get('UIScene').events.emit('updateStats');
-    }
+    const ed: EnemyData = er.data;
+    const ib = ed.type === '\u5996\u5c06' || ed.type === '\u5996\u738b';
+    const expGain = ed.expReward || 0;
+    const goldGain = ed.goldReward || 0;
+    const leveled = GameState.gainExp(expGain);
+    GameState.gold += goldGain;
     GameState.recordKill(ed.name);
-    const titles = GameState.drainTitleNotifications();
-    titles.forEach((t: string, i: number) => scene.time.delayedCall(i * 500, () => scene.showWorldNotif('\u83b7\u5f97\u79f0\u53f7\u3010' + t + '\u3011\uff01', true)));
-    scene.removeMonster(er);
+    GameState.updateQuestProgress('kill', ed.name);
+    const loot = generateLoot(ed.type, GameState.zone);
+    const lootNames: string[] = [];
+    for (const drop of loot) { Inventory.addItem(drop as any); lootNames.push(drop.name); }
+    let msg = '\u7ecf\u9a8c+' + expGain + '  \u91d1\u5e01+' + goldGain;
+    if (lootNames.length > 0) msg += '\n\u6389\u843d: ' + lootNames.join(', ');
+    if (leveled) msg += '\n\u2605 \u5347\u7ea7\uff01Lv.' + GameState.level;
+    const notif = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, msg, {
+      fontSize: '16px', color: '#88ff88', fontStyle: 'bold',
+      backgroundColor: '#112211cc', padding: { x: 20, y: 10 },
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(300);
+    scene.tweens.add({ targets: notif, alpha: 0, y: GAME_HEIGHT / 2 - 120, duration: 2500, onComplete: () => notif.destroy() });
+    scene.scene.get('UIScene').events.emit('updateStats');
+    removeMonster(scene, er);
     if (scene.gameRoom) {
-      scene.gameRoom.send('killMonster', { id: er.id, respawnMs: monsterRespawnMs(scene, { data: ed }) });
+      scene.gameRoom.send('killMonster', { id: er.id, respawnMs: monsterRespawnMs(scene, er) });
     } else {
-      const d = monsterRespawnMs(scene, { data: ed });
-      er.dead = true;
+      if (er.respawnTimer) er.respawnTimer.destroy();
+      const d = ib ? 7200000 : ed.type === '\u6076\u5996' ? 300000 : 30000;
       er.respawnTimer = scene.time.delayedCall(d, () => restoreMonster(scene, er));
     }
   }
 }
 
-export function onMultiBattleEnd(scene: any, result: string, monsterId: string, enemyData: any, reward?: any): void {
-  if (result === 'victory' && reward) {
-    GameState.gold += reward.gold;
-    const lv = GameState.gainExp(reward.exp);
-    if (reward.loot) reward.loot.forEach((name: string) => Inventory.addItem({ id: name, name, type: 'consumable', desc: '', quantity: 1 }));
-    if (lv) scene.scene.get('UIScene').events.emit('updateStats');
-    if (enemyData?.name) GameState.recordKill(enemyData.name);
+export function onMultiBattleEnd(scene: any, result: string, monsterId: string, enemyData: any, reward?: { exp: number; gold: number; loot: string[]; leveled: boolean }): void {
+  if (result === 'defeat' || result === 'fled') {
+    scene.player.x = 400; scene.player.y = 500;
+    GameState.hp = GameState.maxHp; GameState.mp = GameState.maxMp;
+    if (scene.gameRoom) scene.gameRoom.send('unlockMonster', { id: monsterId });
+    scene.pendingBattleReport = { exp: 0, gold: 0, loot: [], leveled: false, defeat: result === 'defeat', fled: result === 'fled' };
+    return;
+  }
+  if (result === 'victory') {
     const en = scene.enemies.find((e: any) => e.id === monsterId);
-    if (en && scene.gameRoom) scene.gameRoom.send('killMonster', { id: monsterId, respawnMs: monsterRespawnMs(scene, { data: enemyData }) });
-  } else if (result === 'defeat') {
-    const en = scene.enemies.find((e: any) => e.id === monsterId);
-    if (en && scene.gameRoom) scene.gameRoom.send('unlockMonster', { id: monsterId });
+    if (enemyData && enemyData.name) {
+      const ib = enemyData.type === '\u5996\u5c06' || enemyData.type === '\u5996\u738b';
+      if (!reward) {
+        const expGain = enemyData.expReward || 0;
+        const goldGain = enemyData.goldReward || 0;
+        const leveled = GameState.gainExp(expGain);
+        GameState.gold += goldGain;
+        GameState.recordKill(enemyData.name);
+        GameState.updateQuestProgress('kill', enemyData.name);
+        const loot = generateLoot(enemyData.type, GameState.zone);
+        const lootNames: string[] = [];
+        for (const drop of loot) { Inventory.addItem(drop as any); lootNames.push(drop.name); }
+        let msg = '\u7ecf\u9a8c+' + expGain + '  \u91d1\u5e01+' + goldGain;
+        if (lootNames.length > 0) msg += '\n\u6389\u843d: ' + lootNames.join(', ');
+        if (leveled) msg += '\n\u2605 \u5347\u7ea7\uff01Lv.' + GameState.level;
+        reward = { exp: expGain, gold: goldGain, loot: lootNames, leveled };
+      }
+      scene.pendingBattleReport = { exp: reward.exp, gold: reward.gold, loot: reward.loot, leveled: reward.leveled, defeat: false, fled: false };
+      if (en && scene.gameRoom) {
+        scene.gameRoom.send('killMonster', { id: monsterId, respawnMs: monsterRespawnMs(scene, { data: enemyData }) });
+      }
+    }
   }
   scene.battleCooldown = 60;
   if (scene.gameRoom) scene.setBattling(false);
 }
 
-export function monsterRespawnMs(scene: any, er: { data: EnemyData }): number {
+export function monsterRespawnMs(scene: any, er: any): number {
   const name = (er.data as any)?.name || '';
   const isBoss = name.includes('\u5927\u865a') || name.includes('\u4e9a\u4e18\u5361\u65af');
   if (isBoss) return 2 * 60 * 60 * 1000;
