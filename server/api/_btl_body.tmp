@@ -1,0 +1,144 @@
+  private executeEnemyAction(eid: string): void {
+    const e = scene.state.enemies.get(eid);
+    if (!e || !e.alive) { scene.scheduleExecuteNext(); return; }
+
+    // 控制状态：被冻结/眩晕/禁锢/封印 → 跳过行动
+    if (scene.isBlocked(e)) {
+      scene.logMsg(e.name, `${e.name} 被控制，无法行动`);
+      scene.scheduleExecuteNext();
+      return;
+    }
+    // 恐惧：30% 概率错失行动
+    if (e.status.fear > 0 && Math.random() < 0.30) {
+      scene.logMsg(e.name, `${e.name} 陷入恐惧，错失行动`);
+      scene.scheduleExecuteNext();
+      return;
+    }
+
+    const alivePlayers = [...scene.state.players.values()].filter((p) => p.alive);
+    if (alivePlayers.length === 0) { scene.checkDefeat(); return; }
+    const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+
+    const skills = scene.enemySkills.get(eid) || [];
+    const sk = skills.length ? (Math.random() < 0.4 ? skills[Math.floor(Math.random() * skills.length)] : skills[0]) : null;
+    const power = sk?.power ?? 1.0;
+    const magical = sk?.damageType === 'magical';
+    const r = magical ? calcMagicDamage(scene.effMatk(e), scene.effMdef(target), power) : calcDamage(scene.effAtk(e), scene.effDef(target), power);
+    let dmg = r.damage;
+    const isDefending = scene.defending.has(target.sessionId);
+    if (isDefending) dmg = Math.round(dmg * 0.2);
+    target.hp = Math.max(0, target.hp - dmg);
+    const skName = sk?.name ? `【${sk.name}】` : '';
+    scene.logMsg(e.name, `${e.name}${skName} → ${target.name} -${dmg}${r.crit ? '（暴击！）' : ''}${isDefending ? '（防御）' : ''}`);
+
+    if (target.hp <= 0) { target.alive = false; scene.logMsg('system', `${target.name} 倒下了！`); }
+    // 敌人攻击附带异常状态（按 rate 概率）
+    if (sk?.statusEffect && target.hp > 0) scene.rollApplyStatusToPlayer(target, sk.statusEffect);
+    // 驱动客户端攻击演出：怪物冲砍滑移 + 目标（玩家）受击后仰。
+    // 此前漏掉此广播，导致怪物攻击无任何演出（客户端 playAttackFx 收不到事件）。
+    scene.broadcastFx(eid, target.sessionId, magical ? 'cast' : 'melee');
+    scene.scheduleExecuteNext();
+  }
+
+  // ══════════════════════════════════════════════════
+  //  胜负判定
+  // ══════════════════════════════════════════════════
+
+  private checkVictory(): boolean {
+    if ([...scene.state.enemies.values()].some((e) => e.alive)) return false;
+    scene.state.phase = 'victory'; scene.state.winner = 'players';
+    scene.clearCommandTimer(); scene.clearExecTimer();
+
+    if (scene.dungeonStage > 0) {
+      const baseExp = Math.round((scene.enemyDef.expReward || 10) * 0.5);
+      const baseGold = Math.round((scene.enemyDef.goldReward || 5) * 0.5);
+      scene.clients.forEach((c: Client) => {
+        const pw = world.get(scene.ownerSids.get(c.sessionId) || c.sessionId);
+        const lvBefore = pw.level;
+        world.gainExp(pw, baseExp);
+        const leveled = pw.level > lvBefore;
+        world.addGold(pw, baseGold);
+        c.send('battleReward', { exp: baseExp, gold: baseGold, loot: [], leveled });
+      });
+      return true;
+    }
+
+    const loot = generateLoot(scene.enemyDef.type, scene.enemyDef.zone);
+    scene.logMsg('system', `胜利！战利品：${loot.map((i) => i.name).join('、') || '无'}`);
+    const playerCount = scene.clients.length || 1;
+    const exp = Math.max(1, Math.ceil((scene.enemyDef.expReward || 0) / playerCount));
+    const gold = Math.max(1, Math.ceil((scene.enemyDef.goldReward || 0) / playerCount));
+    // 物品随机分配给一名玩家
+    const luckyIdx = Math.floor(Math.random() * scene.clients.length);
+    scene.clients.forEach((c: Client, idx: number) => {
+      const pw = world.get(scene.ownerSids.get(c.sessionId) || c.sessionId);
+      if (idx === luckyIdx) world.grantLoot(pw, loot);
+      const leveled = world.gainExp(pw, exp) > 0;
+      world.addGold(pw, gold);
+      world.recordKill(pw, scene.enemyDef.name);
+      const playerLoot = idx === luckyIdx ? loot.map((i) => i.name) : [];
+      c.send('battleReward', { exp, gold, loot: playerLoot, leveled });
+    });
+    return true;
+  }
+
+  private checkDefeat(): boolean {
+    if ([...scene.state.players.values()].some((p) => p.alive)) return false;
+    scene.state.phase = 'defeat'; scene.state.winner = 'enemy';
+    scene.clearCommandTimer(); scene.clearExecTimer();
+    scene.logMsg('system', '全员阵亡……战斗失败。');
+    return true;
+  }
+
+  // ══════════════════════════════════════════════════
+  //  工具
+  // ══════════════════════════════════════════════════
+
+  private isAlive(id: string): boolean {
+    if (scene.state.players.has(id)) return scene.state.players.get(id)!.alive;
+    const e = scene.state.enemies.get(id);
+    return !!e && e.alive;
+  }
+  private spdOf(id: string): number {
+    if (scene.state.players.has(id)) return scene.state.players.get(id)!.spd;
+    return scene.state.enemies.get(id)?.spd ?? 0;
+  }
+  /** SPD 确定性比较：高速优先，相同时用 ID 字典序做 tie-breaker（梦幻西游式 Internal_ID）。 */
+  private spdCmp(a: string, b: string): number {
+    const diff = scene.spdOf(b) - scene.spdOf(a);
+    return diff !== 0 ? diff : a.localeCompare(b);
+  }
+  /** 从 state.players + state.enemies 完整重建 turnOrder（SPD 降序）。替代不稳定的 splice 动态插入。 */
+  private rebuildTurnOrder(who: string): void {
+    const order: string[] = [];
+    scene.state.players.forEach((pl) => order.push(pl.sessionId));
+    scene.state.enemies.forEach((e) => order.push(e.id));
+    order.sort((a, b) => scene.spdCmp(a, b));
+    scene.state.turnOrder.splice(0, scene.state.turnOrder.length, ...order);
+    scene.logMsg('system', `${who} 加入，战斗队列已重建（${order.length} 人）`);
+  }
+  private firstAliveEnemy(): string | undefined {
+    for (const e of scene.state.enemies.values()) if (e.alive) return e.id;
+    return undefined;
+  }
+  private resolveTarget(targetId?: string): string | undefined {
+    if (targetId && scene.state.enemies.has(targetId) && scene.state.enemies.get(targetId)!.alive) return targetId;
+    return scene.firstAliveEnemy();
+  }
+  private lowestHpAlly(selfId: string): CombatPlayer {
+    let best: CombatPlayer | null = null;
+    for (const pl of scene.state.players.values()) {
+      if (!pl.alive) continue;
+      if (!best || pl.hp / pl.maxHp < best.hp / best.maxHp) best = pl;
+    }
+    return best || scene.state.players.get(selfId)!;
+  }
+  /** 广播一次攻击演出事件，客户端据此播放纯 tween 滑移（melee=冲上去砍 / cast=原地咏唱）。 */
+  private broadcastFx(actorSid: string, targetId?: string, kind: 'melee' | 'cast' = 'cast'): void {
+    scene.broadcast('actionFx', { actorSid, targetId, kind });
+  }
+  private logMsg(who: string, text: string) {
+    const m = new ChatMessage(); m.name = who; m.text = text; m.t = Date.now();
+    scene.state.log.push(m);
+    if (scene.state.log.length > 100) scene.state.log.shift();
+  }
