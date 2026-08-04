@@ -33,6 +33,7 @@ import { petElementInfo, petQualityInfo } from '../managers/PetSystem';
 import { addPendingInvite as _addPendingInvite, removePendingInvite as _removePendingInvite, toggleTeamPanel as _toggleTeamPanel, closeTeamPanel as _closeTeamPanel, showInvitePrompt as _showInvitePrompt, showDungeonConfirm as _showDungeonConfirm, closeDungeonConfirm as _closeDungeonConfirm, renderTeamPanel as _renderTeamPanel, hideTeamPanel as _hideTeamPanel, launchTeamBattle as _launchTeamBattle, enterPvpBattle as _enterPvpBattle, routeTeamDungeonBattle as _routeTeamDungeonBattle, routeTeamBattleEnd as _routeTeamBattleEnd, routeTeamDungeonStage as _routeTeamDungeonStage, routeTeamExitDungeon as _routeTeamExitDungeon, stopTeamBattle as _stopTeamBattle, invitePlayer as _invitePlayer, makeRemotePlayersInteractable as _makeRemotePlayersInteractable, openTeamPanel as _openTeamPanel, teamPanelButton as _teamPanelButton } from './systems/GameScene.team';
 import { syncRemotePlayers as _syncRemotePlayers, clearRemotePlayers as _clearRemotePlayers, setBattling as _setBattling, sendMoveThrottled as _sendMoveThrottled } from './systems/GameScene.multiplayer';
 import { onEnemyOverlap as _onEnemyOverlap, checkEnemyCollision as _checkEnemyCollision, enterBattle as _enterBattle, isMonsterAvailable as _isMonsterAvailable, onBattleEnd as _onBattleEnd, onMultiBattleEnd as _onMultiBattleEnd, flushBattleReport as _flushBattleReport, monsterRespawnMs as _monsterRespawnMs, removeMonster as _removeMonster, restoreMonster as _restoreMonster } from './systems/GameScene.battle';
+import { fitBody as _fitBody, createEnemies as _createEnemies } from './systems/GameScene.map';
 
 /** Phaser physics.add.overlap 回调参数的联合类型，与 ArcadePhysicsCallback 对齐。
  *  历史上写成 GameObject 会在 strictFunctionTypes 下因逆变不兼容报 TS2345
@@ -756,12 +757,7 @@ export class GameScene extends Phaser.Scene {
    * 让物理碰撞体按"显示尺寸"的比例自适应，不依赖纹理原始分辨率。
    * 换不同尺寸的透明底 PNG 时，碰撞体始终贴合视觉，不会错位或缩成一点。
    */
-  private fitBody(sprite: Phaser.Physics.Arcade.Sprite, wFrac: number, hFrac: number, offXFrac = (1 - wFrac) / 2, offYFrac = (1 - hFrac) / 2): void {
-    const dw = sprite.displayWidth, dh = sprite.displayHeight;
-    const sx = sprite.width / dw, sy = sprite.height / dh; // 显示 px → 源 px 比例
-    sprite.body!.setSize(dw * wFrac * sx, dh * hFrac * sy);
-    sprite.body!.setOffset(offXFrac * sprite.width, offYFrac * sprite.height);
-  }
+  private fitBody(sprite: Phaser.Physics.Arcade.Sprite, wFrac: number, hFrac: number, offXFrac?: number, offYFrac?: number): void { _fitBody(this, sprite, wFrac, hFrac, offXFrac, offYFrac); }
 
   private createMap(): void {
     const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
@@ -913,52 +909,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private createEnemies(): void {
-    const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
-    const occupied: { x: number; y: number }[] = this.npcList.map(n => ({ x: n.x, y: n.y }));
-    cfg.enemies.forEach((e, idx) => {
-      const normX = Math.min(0.95, Math.max(0.05, e.x > 1.0 ? e.x / 3.0 : e.x));
-      const normY = Math.min(0.95, Math.max(0.05, e.y > 1.0 ? e.y / 2.0 : e.y));
-      let ex = normX * GAME_WIDTH * 3, ey = normY * GAME_HEIGHT * 2;
-      for (const o of occupied) { const dx = ex - o.x, dy = ey - o.y; if (Math.sqrt(dx * dx + dy * dy) < 80) { ex += Phaser.Math.Between(60, 120) * (Math.random() > 0.5 ? 1 : -1); ey += Phaser.Math.Between(60, 100) * (Math.random() > 0.5 ? 1 : -1); break; } }
-      occupied.push({ x: ex, y: ey });
-      const data = getEnemyData(e.name, e.type, e.element, GameState.zone);
-      const isBoss = e.isBoss === true || e.type === '\u5996\u5c06' || e.type === '\u5996\u738b';
-      // 普通怪走 assets/monsters/<name>.png；Boss 立绘单独放 assets/monsters/boss/<name>.png
-      const pkey = isBoss ? bossPortraitKey(e.name) : monsterPortraitKey(e.name);
-      // 只显示有真实立绘的怪：无图则完全不显示、不参与碰撞（取消 enemy 通用占位）
-      // 占位纹理用程序化 enemy_boss（BootScene 生成，且 setVisible(false) 永不显示），真立绘就绪后由 applyPortrait 替换；无图则始终不可见、不参与碰撞
-      const sprite = this.physics.add.sprite(ex, ey, 'enemy_boss').setDepth(5).setVisible(false);
-      this.enemyGroup!.add(sprite);
-      const label = this.add.text(ex, ey, isBoss ? '【BOSS】' + enemyDisplayName(e.name) : enemyDisplayName(e.name), { fontSize: '11px', color: isBoss ? '#ffcc44' : e.type === '恶妖' ? '#ff8866' : '#aaaabb', fontStyle: isBoss ? 'bold' : 'normal', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(6).setVisible(false);
-      const applyPortrait = () => {
-        if (!sprite.active) return; // 怪物已销毁（切场景/刷新）则跳过，避免操作已销毁对象
-        sprite.setTexture(pkey);
-        if (isBoss) sprite.setDisplaySize(60, 90); else this.fitMonsterSprite(sprite, 40);
-        sprite.setVisible(true);
-        label.setVisible(true);
-        label.setPosition(ex, ey - sprite.displayHeight / 2 - 10);
-        this.fitBody(sprite, isBoss ? 0.9 : 0.85, isBoss ? 0.95 : 0.85);
-      };
-      if (this.textures.exists(pkey)) {
-        applyPortrait();
-      } else if (isBoss) {
-        ensureBossPortrait(this, e.name, applyPortrait);
-      } else {
-        ensureMonsterPortrait(this, e.name, applyPortrait);
-      }
-      if (isBoss) {
-        sprite.setTint(0xffcc44);
-        // 呼吸动画改为 alpha 脉动，避免覆盖 setDisplaySize 设定的尺寸（导致跳变）
-        this.tweens.add({ targets: sprite, alpha: 0.7, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      } else {
-        const mapW = GAME_WIDTH * 3, mapH = GAME_HEIGHT * 2; const px2 = Phaser.Math.Clamp(ex + Phaser.Math.Between(-60, 60), 30, mapW - 30); const py2 = Phaser.Math.Clamp(ey + Phaser.Math.Between(-50, 50), 30, mapH - 30);         this.tweens.add({ targets: sprite, x: px2, y: py2, duration: Phaser.Math.Between(2000, 4000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      }
-      const id = `${GameState.zone}:${idx}`;
-      this.enemies.push({ sprite, data, label, id });
-    });
-  }
-
+  private createEnemies(): void { _createEnemies(this); }
   private createGatheringPoints(): void {
     this.gatherPoints = [];
     const cfg = ZONE_CONFIGS[GameState.zone] || ZONE_CONFIGS[1];
