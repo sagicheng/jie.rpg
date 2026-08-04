@@ -28,13 +28,35 @@ const DISPLAY: Record<FxKind, FxDisplay> = {
   impact: { scale: 1.25, depth: 42, blend: Phaser.BlendModes.ADD },
   buff: { scale: 1.0, depth: 40, blend: Phaser.BlendModes.ADD },
   crit: { scale: 2.2, depth: 60, blend: Phaser.BlendModes.ADD },
-  die: { scale: 1.2, depth: 45, blend: Phaser.BlendModes.NORMAL },
+  die: { scale: 1.6, depth: 45, blend: Phaser.BlendModes.NORMAL },
 };
 
-/** 各类型帧率（来自需求文档；帧数仍按美术资源） */
-const FPS: Record<FxKind, number> = {
-  cast: 30, projectile: 30, impact: 30, buff: 24, crit: 30, die: 30,
+/**
+ * 全局演出速度倍率。>1 更慢更清晰，<1 更快。调演出节奏改这一处即可。
+ */
+const FX_SPEED = 1.0;
+
+/**
+ * 各类型目标播放时长（ms，循环类为单圈时长）。
+ *
+ * 采用「时长驱动」而非固定帧率：帧率 = 帧数 / 时长，
+ * 这样 6 帧和 12 帧的爆炸演出时间一致，美术改帧数无需回来调参。
+ */
+const DURATION: Record<FxKind, number> = {
+  cast: 850, projectile: 400, impact: 550, buff: 1000, crit: 600, die: 900,
 };
+
+/** 帧率合理区间：过低发卡顿，过高看不清。 */
+const FPS_MIN = 10;
+const FPS_MAX = 20;
+
+/** 播完后停在末帧淡出的时长（ms），0 表示立即销毁。给爆炸/暴击/死亡留残留。 */
+const TAIL: Record<FxKind, number> = {
+  cast: 0, projectile: 0, impact: 220, buff: 0, crit: 260, die: 500,
+};
+
+/** 飞弹从起点到落点的飞行时长（ms）。 */
+const PROJECTILE_FLIGHT = 460;
 
 /** 各类型是否循环 */
 const LOOP: Record<FxKind, boolean> = {
@@ -101,6 +123,13 @@ export class BattleFx {
     }
   }
 
+  /** 按目标时长反推帧率，并夹到合理区间，避免过卡或一闪而过。 */
+  private static frameRateOf(kind: FxKind, frameCount: number): number {
+    const seconds = (DURATION[kind] * FX_SPEED) / 1000;
+    const fps = frameCount / seconds;
+    return Phaser.Math.Clamp(Math.round(fps), FPS_MIN, FPS_MAX);
+  }
+
   /** create 阶段创建全部 battlefx 动画（帧数取自清单）。幂等。 */
   static createAnims(scene: Phaser.Scene): void {
     for (const e of BATTLE_FX_MANIFEST) {
@@ -110,7 +139,7 @@ export class BattleFx {
       scene.anims.create({
         key: e.key,
         frames: scene.anims.generateFrameNumbers(e.key, { start: 0, end: e.frameCount - 1 }),
-        frameRate: FPS[kind],
+        frameRate: BattleFx.frameRateOf(kind, e.frameCount),
         repeat: LOOP[kind] ? -1 : 0,
       });
     }
@@ -135,25 +164,48 @@ export class BattleFx {
     scene: Phaser.Scene, key: string, x: number, y: number, kind: FxKind,
   ): Phaser.GameObjects.Sprite {
     const d = DISPLAY[kind];
-    return scene.add
+    const s = scene.add
       .sprite(x, y, key)
       .setOrigin(0.5)
       .setDepth(d.depth)
       .setBlendMode(d.blend)
       .setScale(d.scale);
+    BattleFx.bindShutdown(scene, s);
+    return s;
   }
 
-  /** 播放一次性 clip（cast/impact/crit/die）。播完自动销毁。 */
+  /** 场景关闭时清掉残留特效，并在特效自然销毁时摘掉监听，避免监听器堆积。 */
+  private static bindShutdown(scene: Phaser.Scene, s: Phaser.GameObjects.Sprite): void {
+    const kill = () => s.destroy();
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, kill);
+    s.once(Phaser.GameObjects.Events.DESTROY, () => {
+      // 场景销毁流程中 events 可能已被拆除，取消监听前先判空
+      scene.events?.off(Phaser.Scenes.Events.SHUTDOWN, kill);
+    });
+  }
+
+  /**
+   * 播放一次性 clip（cast/impact/crit/die）。
+   * 播完后按 TAIL 停留在末帧淡出再销毁，让爆炸/死亡有残留、看得清。
+   * onDone 在动画本体播完时立即触发（不等淡出），便于串联后续演出。
+   */
   static play(scene: Phaser.Scene, key: string, x: number, y: number, onDone?: () => void): void {
     const kind = kindOf(key);
     if (!kind || !BattleFx.ready(scene, key)) return;
     const s = BattleFx.makeSprite(scene, key, x, y, kind);
     s.play(key);
     s.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      s.destroy();
+      const tail = TAIL[kind] * FX_SPEED;
+      if (tail > 0) {
+        scene.tweens.add({
+          targets: s, alpha: 0, duration: tail, ease: 'Quad.Out',
+          onComplete: () => s.destroy(),
+        });
+      } else {
+        s.destroy();
+      }
       onDone?.();
     });
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => s.destroy());
   }
 
   // ── 语义化封装 ──
@@ -173,8 +225,12 @@ export class BattleFx {
     BattleFx.play(scene, key, x, y, onDone);
   }
 
-  static playDie(scene: Phaser.Scene, x: number, y: number): void {
-    BattleFx.play(scene, 'fx_die', x, y);
+  /**
+   * 死亡特效。delay 用于对齐弹道落点——否则目标会在飞弹还没飞到时就先炸开。
+   */
+  static playDie(scene: Phaser.Scene, x: number, y: number, delay = 0): void {
+    if (delay > 0) scene.time.delayedCall(delay, () => BattleFx.play(scene, 'fx_die', x, y));
+    else BattleFx.play(scene, 'fx_die', x, y);
   }
 
   static playCrit(scene: Phaser.Scene, x: number, y: number): void {
@@ -190,7 +246,6 @@ export class BattleFx {
     const s = BattleFx.makeSprite(scene, key, x, y, 'buff');
     s.play(key);
     scene.time.delayedCall(duration, () => s.destroy());
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => s.destroy());
   }
 
   /**
@@ -212,27 +267,53 @@ export class BattleFx {
       targets: s,
       x: tx,
       y: ty,
-      duration: 220,
-      ease: 'Quad.In',
+      duration: PROJECTILE_FLIGHT * FX_SPEED,
+      ease: 'Sine.InOut',
       onComplete: () => {
         s.destroy();
         BattleFx.playImpact(scene, group, tx, ty, onArrive);
       },
     });
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => s.destroy());
   }
 
   /**
    * 技能命中完整序列：飞弹 + 落点爆炸（+暴击叠 fx_crit）。
-   * cast 蓄力由调用方在技能开始处单独 playCast。
+   * cast 蓄力由调用方在技能开始处单独 playCast；
+   * opts.delay 用于让起手咏唱先演完再出弹道，避免三段特效挤在同一帧。
    */
   static playSkillHit(
     scene: Phaser.Scene, group: string,
     fx: number, fy: number, tx: number, ty: number,
-    opts?: { crit?: boolean },
+    opts?: { crit?: boolean; delay?: number },
   ): void {
-    BattleFx.playProjectile(scene, group, fx, fy, tx, ty, () => {
+    const fire = () => BattleFx.playProjectile(scene, group, fx, fy, tx, ty, () => {
       if (opts?.crit) BattleFx.playCrit(scene, tx, ty);
     });
+    const delay = (opts?.delay ?? 0) * FX_SPEED;
+    if (delay > 0) scene.time.delayedCall(delay, fire);
+    else fire();
+  }
+
+  /** 起手咏唱到弹道发射的间隔（ms），供场景排演出节奏时引用。 */
+  static get castLead(): number {
+    return Math.round(DURATION.cast * 0.45 * FX_SPEED);
+  }
+
+  /** 弹道飞行时长（ms）。已完成咏唱的场景（如鬼道）用它对齐落点时刻。 */
+  static get projectileFlight(): number {
+    return Math.round(PROJECTILE_FLIGHT * FX_SPEED);
+  }
+
+  /** 从技能起手到弹道落点的时刻（ms），死亡/受击演出对齐用。 */
+  static get skillImpactAt(): number {
+    return BattleFx.castLead + BattleFx.projectileFlight;
+  }
+
+  /**
+   * 一次技能演出（咏唱→弹道→爆炸主体）的时长（ms），供回合节奏对齐。
+   * 不含末帧残留淡出——残留允许与下一段演出重叠，不必为它拖慢回合。
+   */
+  static get skillHitDuration(): number {
+    return Math.round(BattleFx.castLead + (PROJECTILE_FLIGHT + DURATION.impact) * FX_SPEED);
   }
 }
