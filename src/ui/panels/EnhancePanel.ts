@@ -86,16 +86,8 @@ export function toggleEnhancePanel(scene: GameScene): void {
   const scrollAreaH = oh - (listY - oy) - FOOTER_H;
   const scrollW = ow - 30;
 
-  // Mask (invisible - only used for GeometryMask clipping)
-  const maskG = scene.add.graphics();
-  maskG.fillStyle(0xffffff); maskG.fillRect(ox, listY, ow, scrollAreaH);
-  maskG.setAlpha(0);
-  const mask = new Phaser.Display.Masks.GeometryMask(scene, maskG);
-  p.add(maskG);
-
-  // Scroll container
+  // Scroll container — content beyond visible area hidden naturally by panel bg + footer
   const scrollCont = scene.add.container(ox + 15, listY);
-  scrollCont.setMask(mask);
   p.add(scrollCont);
 
   const eq = Inventory.equipment;
@@ -250,6 +242,12 @@ export function toggleEnhancePanel(scene: GameScene): void {
   }
 
   // ======== Scroll wheel ========
+  // Clip overlay: hides content that overflows below the scroll area
+  const clipBg = scene.add.graphics().setDepth(299);
+  clipBg.fillStyle(0x121222, 0.98);
+  clipBg.fillRect(ox, listY + scrollAreaH, ow, oh - scrollAreaH - (listY - oy));
+  p.add(clipBg);
+
   const maxScroll = Math.max(0, curY - scrollAreaH);
   if (maxScroll > 0) {
     // Scrollbar track
