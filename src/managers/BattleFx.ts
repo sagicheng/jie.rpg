@@ -21,15 +21,29 @@ interface FxDisplay {
   blend: Phaser.BlendModes;
 }
 
-/** 各类型演出参数：缩放 / 层级 / 混合模式。能量类用 ADD 发光，死亡用普通混合。 */
+/**
+ * 各类型演出参数：缩放 / 层级 / 混合模式。能量类用 ADD 发光，死亡用普通混合。
+ *
+ * 缩放基准：战场为 1920x1080，角色立绘约 120x180，
+ * 单帧原始尺寸多为 120~160px，1.0 倍在全屏下过小，故整体放大。
+ */
 const DISPLAY: Record<FxKind, FxDisplay> = {
-  cast: { scale: 1.0, depth: 40, blend: Phaser.BlendModes.ADD },
-  projectile: { scale: 1.0, depth: 41, blend: Phaser.BlendModes.ADD },
-  impact: { scale: 1.25, depth: 42, blend: Phaser.BlendModes.ADD },
-  buff: { scale: 1.0, depth: 40, blend: Phaser.BlendModes.ADD },
+  cast: { scale: 1.7, depth: 40, blend: Phaser.BlendModes.ADD },
+  projectile: { scale: 1.8, depth: 41, blend: Phaser.BlendModes.ADD },
+  impact: { scale: 1.5, depth: 42, blend: Phaser.BlendModes.ADD },
+  buff: { scale: 1.4, depth: 40, blend: Phaser.BlendModes.ADD },
   crit: { scale: 2.2, depth: 60, blend: Phaser.BlendModes.ADD },
   die: { scale: 1.6, depth: 45, blend: Phaser.BlendModes.NORMAL },
 };
+
+/** 咏唱特效相对施法者的前向偏移（px），避免整个盖在角色立绘上看不出来。 */
+const CAST_OFFSET_X = 70;
+
+/** 物理冲锋：出击时长 / 归位时长 / 停在目标身前的距离 / 最大冲锋距离（ms、px）。 */
+const LUNGE_OUT = 260;
+const LUNGE_BACK = 320;
+const LUNGE_GAP = 130;
+const LUNGE_MAX_REACH = 900;
 
 /**
  * 全局演出速度倍率。>1 更慢更清晰，<1 更快。调演出节奏改这一处即可。
@@ -55,8 +69,15 @@ const TAIL: Record<FxKind, number> = {
   cast: 0, projectile: 0, impact: 220, buff: 0, crit: 260, die: 500,
 };
 
-/** 飞弹从起点到落点的飞行时长（ms）。 */
-const PROJECTILE_FLIGHT = 460;
+/**
+ * 飞弹飞行速度（px/ms）与时长上下限。
+ *
+ * 单机战场玩家在 x≈350、敌人在 x≈1100~1900，跨度可达 1100px+，
+ * 用固定时长会导致远距离一闪而过，故按实际距离换算并夹在上下限内。
+ */
+const PROJECTILE_SPEED = 1.1;
+const PROJECTILE_MIN_MS = 420;
+const PROJECTILE_MAX_MS = 900;
 
 /** 各类型是否循环 */
 const LOOP: Record<FxKind, boolean> = {
@@ -210,9 +231,13 @@ export class BattleFx {
 
   // ── 语义化封装 ──
 
-  static playCast(scene: Phaser.Scene, group: string, x: number, y: number): void {
+  /**
+   * 起手咏唱。dir 为施法者朝向（+1 向右 / -1 向左），
+   * 特效沿该方向前移，避免与角色立绘完全重叠而看不出来。
+   */
+  static playCast(scene: Phaser.Scene, group: string, x: number, y: number, dir = 1): void {
     const key = BattleFx.resolveKey(scene, group, 'cast');
-    if (key) BattleFx.play(scene, key, x, y);
+    if (key) BattleFx.play(scene, key, x + CAST_OFFSET_X * Math.sign(dir || 1), y);
   }
 
   /** 落点爆炸。无对应美术时不放特效，但仍回调 onDone，避免后续演出被吞。 */
@@ -263,17 +288,71 @@ export class BattleFx {
     }
     const s = BattleFx.makeSprite(scene, pKey, fx, fy, 'projectile');
     s.setRotation(Phaser.Math.Angle.Between(fx, fy, tx, ty));
+    s.play(pKey); // 弹道为循环动画，飞行途中持续播放
     scene.tweens.add({
       targets: s,
       x: tx,
       y: ty,
-      duration: PROJECTILE_FLIGHT * FX_SPEED,
+      duration: BattleFx.flightTime(fx, fy, tx, ty),
       ease: 'Sine.InOut',
       onComplete: () => {
         s.destroy();
         BattleFx.playImpact(scene, group, tx, ty, onArrive);
       },
     });
+  }
+
+  /**
+   * 物理近战命中：只在目标点炸开（+暴击），不放咏唱与飞弹。
+   * 冲锋位移见 lunge()，本方法只管命中瞬间的特效。
+   */
+  static playMeleeHit(
+    scene: Phaser.Scene, group: string, tx: number, ty: number, crit?: boolean,
+  ): void {
+    BattleFx.playImpact(scene, group, tx, ty, () => {
+      if (crit) BattleFx.playCrit(scene, tx, ty);
+    });
+  }
+
+  /**
+   * 物理冲锋位移：sprite 从 (homeX,homeY) 冲向目标身前，命中后归位。
+   *
+   * 不改变任何战斗数值，只提供近战打击感——远程弹道演出对刀剑类技能并不合适。
+   * 传固定站位而非当前坐标：上一次冲锋若被打断，避免归位点被污染导致角色越跑越偏。
+   * onHit 在冲到位的瞬间回调，用于对齐命中特效。
+   */
+  static lunge(
+    scene: Phaser.Scene, sprite: Phaser.GameObjects.Sprite,
+    homeX: number, homeY: number, tx: number, ty: number, onHit: () => void,
+  ): void {
+    scene.tweens.killTweensOf(sprite);
+    sprite.setPosition(homeX, homeY);
+    const dist = Phaser.Math.Distance.Between(homeX, homeY, tx, ty);
+    const reach = Phaser.Math.Clamp(dist - LUNGE_GAP, 0, LUNGE_MAX_REACH);
+    const ang = Phaser.Math.Angle.Between(homeX, homeY, tx, ty);
+    scene.tweens.add({
+      targets: sprite,
+      x: homeX + Math.cos(ang) * reach,
+      y: homeY + Math.sin(ang) * reach,
+      duration: LUNGE_OUT * FX_SPEED,
+      ease: 'Quad.In',
+      onComplete: () => {
+        onHit();
+        scene.tweens.add({
+          targets: sprite, x: homeX, y: homeY, duration: LUNGE_BACK * FX_SPEED, ease: 'Quad.Out',
+        });
+      },
+    });
+  }
+
+  /** 冲锋从出击到命中的时刻（ms）。 */
+  static get lungeHitAt(): number {
+    return Math.round(LUNGE_OUT * FX_SPEED);
+  }
+
+  /** 一次完整冲锋（出击 + 归位）的时长（ms）。 */
+  static get lungeDuration(): number {
+    return Math.round((LUNGE_OUT + LUNGE_BACK) * FX_SPEED);
   }
 
   /**
@@ -299,21 +378,20 @@ export class BattleFx {
     return Math.round(DURATION.cast * 0.45 * FX_SPEED);
   }
 
-  /** 弹道飞行时长（ms）。已完成咏唱的场景（如鬼道）用它对齐落点时刻。 */
-  static get projectileFlight(): number {
-    return Math.round(PROJECTILE_FLIGHT * FX_SPEED);
+  /** 落点爆炸主体时长（ms）。 */
+  static get impactDuration(): number {
+    return Math.round(DURATION.impact * FX_SPEED);
   }
 
-  /** 从技能起手到弹道落点的时刻（ms），死亡/受击演出对齐用。 */
-  static get skillImpactAt(): number {
-    return BattleFx.castLead + BattleFx.projectileFlight;
+  /** 弹道飞行时长（ms），按起落点实际距离换算。 */
+  static flightTime(fx: number, fy: number, tx: number, ty: number): number {
+    const dist = Phaser.Math.Distance.Between(fx, fy, tx, ty);
+    const ms = Phaser.Math.Clamp(dist / PROJECTILE_SPEED, PROJECTILE_MIN_MS, PROJECTILE_MAX_MS);
+    return Math.round(ms * FX_SPEED);
   }
 
-  /**
-   * 一次技能演出（咏唱→弹道→爆炸主体）的时长（ms），供回合节奏对齐。
-   * 不含末帧残留淡出——残留允许与下一段演出重叠，不必为它拖慢回合。
-   */
-  static get skillHitDuration(): number {
-    return Math.round(BattleFx.castLead + (PROJECTILE_FLIGHT + DURATION.impact) * FX_SPEED);
+  /** 魔法技能从起手到弹道落点的时刻（ms），死亡/受击演出对齐用。 */
+  static magicImpactAt(fx: number, fy: number, tx: number, ty: number): number {
+    return BattleFx.castLead + BattleFx.flightTime(fx, fy, tx, ty);
   }
 }

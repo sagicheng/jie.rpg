@@ -46,6 +46,9 @@ interface StatusSlot {
   txt: Phaser.GameObjects.Text;
 }
 /** 鬼道subtype → 图鉴抗性表key (中文状态名) */
+/** 我方站位（左半区）。冲锋演出始终以此为起点与归位点。 */
+const PLAYER_X = 350, PLAYER_Y = 280;
+
 const SUBTYPE_TO_STATUS_NAME: Record<string, string> = {
   seal: '禁锢', slow: '减速', bind: '禁锢', freeze: '冻结',
   stun: '眩晕', poison: '中毒', burn: '灼烧', parasite: '寄生',
@@ -254,7 +257,7 @@ export class BattleScene extends Phaser.Scene {
     this.playerStatusSlots = this.makeStatusSlotRow();
     // ══ 我方站位（左半区）══
     // 布局：[玩家HP/MP条] [玩家立绘] [宠物立绘(预留)] [宠物HP/MP条(预留)]
-    const PX = 350, PY = 280;
+    const PX = PLAYER_X, PY = PLAYER_Y;
     // 玩家立绘：基础形态用 female/male（BootScene 预载）；释放形态时切换到对应立绘
     this.playerSprite = this.add.sprite(PX, PY, GameState.gender).setFlipX(true).setDepth(10);
     fitPortrait(this.playerSprite, 120, 180);
@@ -800,8 +803,9 @@ export class BattleScene extends Phaser.Scene {
           const titleMult = GameState.getTitleDamageMult(enemy.type);
           const dmg = (this.hellActive ? damage * 2 : damage) * titleMult;
           // 咏唱已在 execDelay 内演完，此处只需按弹道飞行时间对齐死亡特效
-          this.hurtEnemy(this.selectedEnemyIndex, dmg, BattleFx.projectileFlight);
           const esp = this.enemySprites[this.selectedEnemyIndex];
+          const flight = esp ? BattleFx.flightTime(kfx.x, kfx.y, esp.x, esp.y) : 0;
+          this.hurtEnemy(this.selectedEnemyIndex, dmg, flight);
           if (esp) BattleFx.playSkillHit(this, skill.school, kfx.x, kfx.y, esp.x, esp.y, { crit });
           msg = `${skill.name}！${crit ? '暴击！' : ''}造成 ${dmg} 伤害！`;
           if (this.hellActive) msg += ' (狱解×2)';
@@ -890,6 +894,12 @@ export class BattleScene extends Phaser.Scene {
   }
   // ════════════════════ 玩家行动 ════════════════════
 
+  /** 物理演出：玩家从固定站位冲向目标，冲到位时回调，随后自动归位。 */
+  private lungeAt(tx: number, ty: number, onHit: () => void): void {
+    if (!this.playerSprite) { onHit(); return; }
+    BattleFx.lunge(this, this.playerSprite, PLAYER_X, PLAYER_Y, tx, ty, onHit);
+  }
+
   private playerAttack(): void {
     this.clearTurnTimer();
     this.phase = 'executing';
@@ -910,12 +920,21 @@ export class BattleScene extends Phaser.Scene {
     if (titleMult > 1.0) logMsg += ' [称号]';
     if (this.hellActive) logMsg += ' (狱解×2)';
     this.logText.setText(logMsg);
-    this.flashEnemySprite(this.enemySprites[this.selectedEnemyIndex]);
-    this.hurtEnemy(this.selectedEnemyIndex, dmg);
     const eSp = this.enemySprites[this.selectedEnemyIndex];
-    if (crit && eSp) BattleFx.playCrit(this, eSp.x, eSp.y);
-    if (this.allEnemiesDead()) { this.time.delayedCall(800, () => this.victory()); }
-    else { this.time.delayedCall(1000, () => this.startEnemyPhase()); }
+    const fxGroup = BattleFx.groupFromElement(GameState.element);
+    // 冲锋到位再结算演出：闪白、爆炸、暴击、死亡特效统一对齐命中瞬间
+    this.hurtEnemy(this.selectedEnemyIndex, dmg, BattleFx.lungeHitAt);
+    if (eSp) {
+      this.lungeAt(eSp.x, eSp.y, () => {
+        this.flashEnemySprite(eSp);
+        BattleFx.playMeleeHit(this, fxGroup, eSp.x, eSp.y, crit);
+      });
+    } else {
+      this.flashEnemySprite(this.enemySprites[this.selectedEnemyIndex]);
+    }
+    const wait = BattleFx.lungeHitAt + BattleFx.impactDuration;
+    if (this.allEnemiesDead()) { this.time.delayedCall(Math.max(800, wait), () => this.victory()); }
+    else { this.time.delayedCall(Math.max(1000, wait), () => this.startEnemyPhase()); }
   }
   /** 获取临时buff对属性的修正倍率（含防御/魔防/暴击） */
 
@@ -968,7 +987,9 @@ export class BattleScene extends Phaser.Scene {
     this.playerMp -= sk.mp;
     const fxGroup = BattleFx.groupFromElement(GameState.element);
     const fxFrom = this.playerSprite ? { x: this.playerSprite.x, y: this.playerSprite.y } : { x: 350, y: 280 };
-    if (this.playerSprite) BattleFx.playCast(this, fxGroup, fxFrom.x, fxFrom.y);
+    // 物理技能走近战冲锋，不放咏唱与弹道；魔法技能才有起手咏唱
+    const isPhysical = sk.damageType === 'physical';
+    if (this.playerSprite && !isPhysical) BattleFx.playCast(this, fxGroup, fxFrom.x, fxFrom.y);
     const tt = getSkillTargetType(sk);
     const mechanics = getSkillMechanics(sk.name);
     // HP消耗 (如斩月·黑牙)
@@ -1032,21 +1053,36 @@ export class BattleScene extends Phaser.Scene {
     let lifeHp = 0, lifeMp = 0;
     const debuffAgg: string[] = [];
     let markMsg = '';
+    const meleeHits: { x: number; y: number; crit: boolean }[] = [];
     for (const idx of targetIndices) {
       if (this.enemies[idx].hp <= 0) continue;
-      const r = this.skillHitEnemy(sk, mechanics, idx, hitCount, hpCostMult, buffMods, critBonus);
+      const sp = this.enemySprites[idx];
+      // 死亡特效需对齐命中瞬间：物理为冲到位时刻，魔法为弹道落点时刻
+      const hitAt = isPhysical || !sp
+        ? BattleFx.lungeHitAt
+        : BattleFx.magicImpactAt(fxFrom.x, fxFrom.y, sp.x, sp.y);
+      const r = this.skillHitEnemy(sk, mechanics, idx, hitCount, hpCostMult, buffMods, critBonus, hitAt);
       totalDamage += r.dmg;
       if (r.crit) anyCrit = true;
       lifeHp += r.life; lifeMp += r.mp;
       if (r.debuffs.length) debuffAgg.push(...r.debuffs);
       if (r.mark) markMsg = r.mark;
-      const sp = this.enemySprites[idx];
-      // delay：等起手咏唱演到一半再出弹道，否则三段特效挤在同一帧看不清
-      if (sp && sp.visible) {
+      if (!sp || !sp.visible) continue;
+      if (isPhysical) {
+        meleeHits.push({ x: sp.x, y: sp.y, crit: r.crit });
+      } else {
+        // delay：等起手咏唱演到一半再出弹道，否则三段特效挤在同一帧看不清
         BattleFx.playSkillHit(this, fxGroup, fxFrom.x, fxFrom.y, sp.x, sp.y, {
           crit: r.crit, delay: BattleFx.castLead,
         });
       }
+    }
+    // 物理群体技能只冲锋一次，冲到位时所有目标同时炸开
+    if (meleeHits.length) {
+      const lead = meleeHits[0];
+      this.lungeAt(lead.x, lead.y, () => {
+        for (const h of meleeHits) BattleFx.playMeleeHit(this, fxGroup, h.x, h.y, h.crit);
+      });
     }
     if (this.hellActive) totalDamage = Math.round(totalDamage * 2);
     if (lifeHp > 0) this.playerHp = Math.min(this.playerHp + lifeHp, this.playerMaxHp);
@@ -1062,8 +1098,13 @@ export class BattleScene extends Phaser.Scene {
     this.logText.setText(msg);
     const flashIdx = targetIndices.find(i => this.enemies[i] && this.enemies[i].hp >= 0) ?? this.selectedEnemyIndex;
     if (this.enemySprites[flashIdx]) this.flashEnemySprite(this.enemySprites[flashIdx]);
-    // 等技能特效（咏唱→弹道→爆炸）演完再推进回合，避免演出被下一段打断
-    const wait = Math.max(1000, BattleFx.skillHitDuration);
+    // 等技能特效演完再推进回合，避免演出被下一段打断
+    const lastSp = this.enemySprites[targetIndices[targetIndices.length - 1]];
+    const fxWait = isPhysical
+      ? BattleFx.lungeDuration + BattleFx.impactDuration
+      : (lastSp ? BattleFx.magicImpactAt(fxFrom.x, fxFrom.y, lastSp.x, lastSp.y) : BattleFx.castLead)
+        + BattleFx.impactDuration;
+    const wait = Math.max(1000, fxWait);
     if (this.allEnemiesDead()) { this.time.delayedCall(wait, () => this.victory()); }
     else { this.time.delayedCall(wait, () => this.startEnemyPhase()); }
   }
@@ -1073,6 +1114,8 @@ export class BattleScene extends Phaser.Scene {
     hitCount: number, hpCostMult: number,
     buffMods: { atk: number; def: number; matk: number; mdef: number; spd: number },
     critBonus: number,
+    /** 命中特效发生的时刻（ms），死亡特效据此延后，避免演出还没到就先炸开 */
+    fxDelay: number,
   ): { dmg: number; crit: boolean; life: number; mp: number; debuffs: string[]; mark: string } {
     const enemy = this.enemies[idx];
     const ks = this.enemyStatuses[idx];
@@ -1103,8 +1146,8 @@ export class BattleScene extends Phaser.Scene {
       hitDmg *= 0.9 + Math.random() * 0.2;
       total += Math.round(hitDmg);
     }
-    // 死亡特效延后到弹道落点，避免飞弹还没飞到目标就先炸开
-    this.hurtEnemy(idx, total, BattleFx.skillImpactAt);
+    // 死亡特效延后到命中时刻，避免演出还没到目标就先炸开
+    this.hurtEnemy(idx, total, fxDelay);
     // 吸血
     let life = 0;
     const lifestealPct = getLifestealPct(mechanics);
