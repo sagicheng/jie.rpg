@@ -48,6 +48,9 @@ interface MenuEntry {
 export class PvpBattleScene extends Phaser.Scene {
   private room: any = null;
   private mySessionId = '';
+  /** 攻击特效串行队列：上一条播完再播下一条，避免服务器连发导致演出重叠。 */
+  private fxQueue: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }[] = [];
+  private fxPlaying = false;
   private playerName = '勇者';
   private myTeam = 'A';
   private mode: '1v1' | '4v4' = '1v1';
@@ -191,9 +194,9 @@ export class PvpBattleScene extends Phaser.Scene {
           this.showResult('连接断开');
         });
         room.onMessage('system', () => {});
-        // 服务端在执行阶段广播的攻击演出事件：驱动搓招+弹道+命中特效
+        // 服务端在执行阶段广播的攻击演出事件：入队后串行播放，杜绝连发时演出重叠
         room.onMessage('actionFx', (data: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }) => {
-          this.playAttackFx(data.actorSid, data.targetId, data.kind);
+          this.enqueueFx(data);
         });
         // 服务端权威结算：胜负 + 积分变动 + 段位
         room.onMessage('arenaResult', (r: any) => this.onArenaResult(r));
@@ -493,29 +496,58 @@ export class PvpBattleScene extends Phaser.Scene {
   }
 
   /**
-   * 攻击演出（服务端 actionFx 驱动）：搓招→弹道→落点爆炸 / 近战命中特效。
+   * 攻击演出（服务端 actionFx 驱动，经 enqueueFx/pumpFx 串行播放）：
+   * 搓招→弹道→落点爆炸 / 近战命中特效。
    * 服务端 actionFx 仅区分 melee/cast，拿不到元素，统一用破道默认色。
    * 只放特效精灵、不移动卡牌容器，避免与 syncCards 抢位置。
+   * onDone 在该条演出整体播完后回调，供队列驱动下一条。
    */
-  private playAttackFx(actorSid: string, targetId: string | undefined, kind: 'melee' | 'cast'): void {
+  private playAttackFx(
+    actorSid: string, targetId: string | undefined, kind: 'melee' | 'cast',
+    onDone?: () => void,
+  ): void {
     const actorCard = this.allyCards.get(actorSid) ?? this.enemyCards.get(actorSid);
-    if (!actorCard) return;
+    if (!actorCard) { onDone?.(); return; }
     const actor = actorCard.root;
     const targetCard = targetId
       ? (this.enemyCards.get(targetId) ?? this.allyCards.get(targetId))
       : undefined;
     const target = targetCard?.root;
-    const group = 'hado';
+    const group = 'hado'; // PvP 服务端不下发元素，统一破道默认色
+    const finish = (ms: number) => this.time.delayedCall(Math.round(ms), () => onDone?.());
 
     if (kind === 'melee' && target) {
       BattleFx.playMeleeHit(this, group, target.x, target.y);
+      finish(820); // 命中爆炸(550+尾220)≈770，留余量
     } else if (kind === 'cast' && target) {
       const dir = Math.sign(target.x - actor.x) || 1;
       BattleFx.playCast(this, group, actor.x, actor.y, dir);
       BattleFx.playSkillHit(this, group, actor.x, actor.y, target.x, target.y, { delay: BattleFx.castLead });
+      const total = BattleFx.castLead + BattleFx.flightTime(actor.x, actor.y, target.x, target.y)
+        + BattleFx.impactDuration + 260;
+      finish(total);
     } else if (kind === 'cast') {
       BattleFx.playCast(this, group, actor.x, actor.y, 1);
+      finish(900);
+    } else {
+      finish(120);
     }
+  }
+
+  /** 把一条 actionFx 入队并（若空闲）启动串行播放。 */
+  private enqueueFx(d: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }): void {
+    this.fxQueue.push(d);
+    if (!this.fxPlaying) this.pumpFx();
+  }
+
+  /** 串行消费特效队列：上一条播完(含 onDone)再放下一声，杜绝连发时演出重叠。 */
+  private pumpFx(): void {
+    const d = this.fxQueue.shift();
+    if (!d) { this.fxPlaying = false; return; }
+    this.fxPlaying = true;
+    this.playAttackFx(d.actorSid, d.targetId, d.kind, () => {
+      this.time.delayedCall(90, () => this.pumpFx());
+    });
   }
 
   private makeCard(x: number, y: number, isAlly: boolean): Card {

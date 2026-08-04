@@ -19,7 +19,7 @@ import { getClient } from '../core/Net';
 import { GameState } from '../managers/GameState';
 import { ensureFormPortrait, battlePortraitKey, ensureBattlePortrait, ensureMonsterPortrait, monsterPortraitKey, fitPortrait, BattleForm, petPortraitKey, ensurePetPortrait, bossPortraitKey, ensureBossPortrait } from '../core/portraitLoader';
 import { SKILL_BY_NAME, getSkillTargetType, SkillData } from '../managers/Skills';
-import { Kido, KidoNode } from '../managers/Kido';
+import { Kido, KidoNode, KIDO_NODES } from '../managers/Kido';
 import { Inventory } from '../managers/Inventory';
 import type { Item } from '../managers/Inventory';
 import type { EnemyData } from '../managers/BattleData';
@@ -66,9 +66,13 @@ interface MenuEntry {
 export class MultiBattleScene extends Phaser.Scene {
   private room: any = null;
   private mySessionId = '';
-  /** 本地玩家最近一次派发的动作是否为鬼道。服务端 actionFx 不含流派，
-   *  用此标志在回显时为「鬼道」选择破道通用分组，斩魄刀才按角色元素分组。 */
-  private lastLocalCastIsKido = false;
+  /** 本地玩家最近一次派发动作对应的鬼道流派（hado/bakudo/kaido）；
+   *  服务端 actionFx 不含流派，用此在回显时为鬼道选对应分组，斩魄刀才按元素。
+   *  null = 非鬼道（斩魄刀技能/普攻）。 */
+  private lastLocalKidoSchool: string | null = null;
+  /** 攻击特效串行队列：上一条播完再播下一条，避免服务器连发导致演出重叠。 */
+  private fxQueue: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }[] = [];
+  private fxPlaying = false;
   private playerName = '勇者';
 
   private playerCards: Map<string, Card> = new Map();
@@ -382,9 +386,9 @@ export class MultiBattleScene extends Phaser.Scene {
             if (btn) btn.setEnable(false);
           }
         });
-        // 服务端在执行阶段广播的攻击演出事件：驱动纯 tween 滑移（melee=冲砍 / cast=原地咏唱）
+        // 服务端在执行阶段广播的攻击演出事件：入队后串行播放，杜绝多怪连攻时演出重叠
         room.onMessage('actionFx', (data: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }) => {
-          this.playAttackFx(data.actorSid, data.targetId, data.kind);
+          this.enqueueFx(data);
         });
         this.renderState();
         // 组队战斗：只有触发者(撞怪的人)负责发 startbattle，被拉进来的队员静默等待
@@ -424,10 +428,14 @@ export class MultiBattleScene extends Phaser.Scene {
     if (action.type === 'skill' || action.type === 'kido' || action.type === 'petSkill') {
       console.log(`[Skill.dispatch] type=${action.type} id=${action.id || ''} targetId=${action.targetId || ''}`);
     }
-    // 记下本地玩家(本人)本次动作是否为鬼道：服务端 actionFx 不含流派，
-    // 回显时据此把鬼道导向破道通用灵力特效，斩魄刀才按角色元素。
-    // 仅本人(mySessionId)的动作影响该标志；宠物的派发不覆盖（宠物回显走 hado）。
-    if (aid === this.mySessionId) this.lastLocalCastIsKido = action.type === 'kido';
+    // 记下本地玩家(本人)本次鬼道流派：服务端 actionFx 不含流派，
+    // 回显时据此把鬼道导向其自身分组（破/缚/回各有独立美术），斩魄刀才按角色元素。
+    // 仅本人(mySessionId)动作影响该标志；宠物派发不覆盖（宠物回显走 hado）。
+    if (aid === this.mySessionId) {
+      this.lastLocalKidoSchool = action.type === 'kido'
+        ? (KIDO_NODES[action.id || '']?.school || 'hado')
+        : null;
+    }
     this.room.send('action', { ...action, actorSid: aid });
     // 立即刷新 UI：显示"已选择，等待执行…"（Colyseus 消息不触发 onStateChange）
     this.renderState();
@@ -759,29 +767,37 @@ export class MultiBattleScene extends Phaser.Scene {
   }
 
   /**
-   * 纯 tween 滑移攻击演出（服务端 actionFx 驱动）：
-   *   melee → 角色滑过去 → 目标位攻击抖动 → 滑回来，含残影 + 速度线粒子
-   *   cast  → 原地小前倾起手 → 命中时目标抖动（+速度线）
+   * 攻击演出（服务端 actionFx 驱动，经 enqueueFx/pumpFx 串行播放）：
+   *   melee → 角色滑过去 → 目标位攻击抖动 → 滑回来，含残影 + 速度线 + 命中特效
+   *   cast  → 起手咏唱(搓招) → 弹道飞向目标、落点炸开（完整距离）→ 落点抖动/速度线
    * actorSid 兼容人物(ownerSid)与灵宠(ownerSid:pet)；targetId 为敌人 id。
+   * onDone 在该条演出整体播完后回调，供队列驱动下一条。
    */
-  private playAttackFx(actorSid: string, targetId: string | undefined, kind: 'melee' | 'cast'): void {
+  private playAttackFx(
+    actorSid: string, targetId: string | undefined, kind: 'melee' | 'cast',
+    onDone?: () => void,
+  ): void {
     // 攻击者可能在 playerCards（人物/宠物）也可能在 enemyCards（怪物）——两侧都要查，
     // 否则怪物攻击会整体 early-return：既无冲砍滑移，目标也无受击后仰。
     const actorCard = this.playerCards.get(actorSid) ?? this.enemyCards.get(actorSid);
-    if (!actorCard) return;
+    if (!actorCard) { onDone?.(); return; }
     const actor = actorCard.root;
     const targetCard = targetId
       ? (this.enemyCards.get(targetId) ?? this.playerCards.get(targetId))
       : undefined;
     const target = targetCard?.root;
     const homeX = actor.x, homeY = actor.y;
-    // 分组：本地玩家按动作流派分流——鬼道（破/缚/回）统一破道通用灵力特效(hado)，
+
+    // 分组：本地玩家按动作流派分流——鬼道(hado/bakudo/kaido)用各自独立美术分组，
     // 斩魄刀才按角色元素色；敌方/他人服务端不分元素一律 hado（actionFx 仅区分 melee/cast）。
-    const group = actorSid === this.mySessionId
-      ? (this.lastLocalCastIsKido ? 'hado' : BattleFx.groupFromElement(GameState.element))
+    const isLocal = actorSid === this.mySessionId;
+    const group = isLocal
+      ? (this.lastLocalKidoSchool ?? BattleFx.groupFromElement(GameState.element))
       : 'hado';
-    // 消费标志，避免下一次本地回显误用
-    if (actorSid === this.mySessionId) this.lastLocalCastIsKido = false;
+    if (isLocal) this.lastLocalKidoSchool = null; // 消费标志，防误用
+
+    // 演出整体时长估算（ms），用于 onDone 收尾与队列衔接
+    const finish = (ms: number) => this.time.delayedCall(Math.round(ms), () => onDone?.());
 
     if (kind === 'melee' && target) {
       const dx = target.x - homeX, dy = target.y - homeY;
@@ -802,6 +818,7 @@ export class MultiBattleScene extends Phaser.Scene {
           });
         },
       });
+      finish(980); // 滑出165 + 命中爆炸(550+尾220)≈935，留余量
     } else if (kind === 'cast' && target) {
       const dir = Math.sign(target.x - homeX) || 1;
       this.spawnAfterimage(actorCard, homeX, homeY);
@@ -809,21 +826,41 @@ export class MultiBattleScene extends Phaser.Scene {
       BattleFx.playCast(this, group, actor.x, actor.y, dir);
       // 咏唱演到一半再出弹道，飞向目标、落点炸开（完整距离释放，不再只是原地小前倾）
       BattleFx.playSkillHit(this, group, actor.x, actor.y, target.x, target.y, { delay: BattleFx.castLead });
-      const impactAt = Math.round(BattleFx.castLead + BattleFx.flightTime(actor.x, actor.y, target.x, target.y));
-      this.time.delayedCall(impactAt, () => {
+      const total = BattleFx.castLead + BattleFx.flightTime(actor.x, actor.y, target.x, target.y)
+        + BattleFx.impactDuration + 260; // + 落点爆炸尾帧
+      this.time.delayedCall(Math.round(total), () => {
         if (!target.active) return;
         this.shakeCard(target);
         this.spawnSpeedLines(target, target.x - homeX, target.y - homeY);
       });
+      finish(total);
     } else if (kind === 'cast') {
       // 无目标咏唱（群体/自身）：原地起手即可
       const dir = 1;
       this.spawnAfterimage(actorCard, homeX, homeY);
       BattleFx.playCast(this, group, actor.x, actor.y, dir);
+      finish(900); // 起手咏唱 850 + 余量
     } else {
       // 无目标普攻 / 兜底：原地小幅挥砍
       this.tweens.add({ targets: actor, angle: 5, duration: 90, yoyo: true, ease: 'Sine.InOut' });
+      finish(220);
     }
+  }
+
+  /** 把一条 actionFx 入队并（若空闲）启动串行播放。 */
+  private enqueueFx(d: { actorSid: string; targetId?: string; kind: 'melee' | 'cast' }): void {
+    this.fxQueue.push(d);
+    if (!this.fxPlaying) this.pumpFx();
+  }
+
+  /** 串行消费特效队列：上一条播完(含 onDone)再放下一声，杜绝多怪连攻时演出重叠。 */
+  private pumpFx(): void {
+    const d = this.fxQueue.shift();
+    if (!d) { this.fxPlaying = false; return; }
+    this.fxPlaying = true;
+    this.playAttackFx(d.actorSid, d.targetId, d.kind, () => {
+      this.time.delayedCall(90, () => this.pumpFx()); // 首尾留极小间隔，避免硬切
+    });
   }
 
   /** 滑移起点克隆一张半透明残影，随演出淡出销毁。 */
