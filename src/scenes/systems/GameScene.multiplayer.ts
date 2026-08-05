@@ -1,7 +1,6 @@
 /**
  * GameScene 联机子系统
  */
-import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../../config/config';
 import { GameState } from '../../managers/GameState';
 import { setDisconnectNotifier, setActiveRoom, applyWorldSync } from '../../api/WorldClient';
@@ -64,7 +63,6 @@ export function syncRemotePlayers(scene: any): void {
     let rp = scene.remotePlayers.get(sid);
     if (!rp) {
       const sprite = scene.add.sprite(p.x, p.y, 'walk_down_' + (p.gender || GameState.gender)).setDepth(8).setAlpha(0.9).setDisplaySize(40, 60);
-      sprite.setTint(Phaser.Display.Color.HexStringToColor(p.color || '#ffffff').color);
       const tag = scene.add.text(p.x, p.y - sprite.displayHeight / 2 - 10, '', {
         fontSize: '13px', color: '#ffffff', fontStyle: 'bold',
         stroke: '#000000', strokeThickness: 3,
@@ -205,6 +203,13 @@ export function connectGameRoom(scene: any): void {
 
         // ═════ 组队消息 ————
 
+        // 副本内队伍 HUD（DungeonMapScene.this.teamHud）与主场景 teamPanel 是两套独立容器，
+        // 解散 / 被踢 / 队伍清空时必须一并清掉，否则副本场景的左上角信息框会残留。
+        const clearDungeonTeamHud = (s: any): void => {
+          const dms = s.scene.get('DungeonMapScene') as any;
+          if (dms && typeof dms.clearTeamHud === 'function') dms.clearTeamHud();
+        };
+
         // 收到邀请：入列（支持多人同时邀请逐条处理），并自动打开组队面板处理
         room.onMessage('inviteReceived', (data: { fromName: string; fromSid: string; teamId: string }) => {
           scene.addPendingInvite(data);
@@ -213,6 +218,18 @@ export function connectGameRoom(scene: any): void {
 
         // 队伍状态更新
         room.onMessage('teamUpdate', (data: { id: string; leaderSid: string; members: Array<{ sid: string; name: string }> }) => {
+          if (!data.members || data.members.length === 0) {
+            // 队伍已空（队长解散 / 最后一人离开过程中可能收到缩编消息）：彻底清理，防止左上角 HUD 残留
+            scene.teamId = '';
+            scene.teamMembers = [];
+            scene.teamLeaderSid = '';
+            scene.hideTeamPanel();
+            scene.closeTeamPanel();
+            clearDungeonTeamHud(scene);
+            // 延迟兜底
+            scene.time?.delayedCall(200, () => { scene.hideTeamPanel(); scene.closeTeamPanel(); clearDungeonTeamHud(scene); });
+            return;
+          }
           scene.teamId = data.id;
           scene.teamLeaderSid = data.leaderSid;
           scene.teamMembers = data.members;
@@ -255,7 +272,10 @@ export function connectGameRoom(scene: any): void {
           scene.pendingInvites = [];
           scene.hideTeamPanel();
           scene.closeTeamPanel();
+          clearDungeonTeamHud(scene);
           scene.showWorldNotif('你被移出了队伍', false);
+          // 延迟兜底：覆盖「teamUpdate 重建 → kicked 清理」竞态窗口
+          scene.time?.delayedCall(200, () => { scene.hideTeamPanel(); scene.closeTeamPanel(); clearDungeonTeamHud(scene); });
         });
 
         // 队伍解散
@@ -266,7 +286,10 @@ export function connectGameRoom(scene: any): void {
           scene.pendingInvites = [];
           scene.hideTeamPanel();
           scene.closeTeamPanel();
+          clearDungeonTeamHud(scene);
           scene.showWorldNotif('队伍已解散', false);
+          // 延迟兜底：覆盖 disband 循环中 teamUpdate 重建 HUD 的竞态窗口
+          scene.time?.delayedCall(200, () => { scene.hideTeamPanel(); scene.closeTeamPanel(); clearDungeonTeamHud(scene); });
         });
 
         // 队伍错误提示

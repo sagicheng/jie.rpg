@@ -117,6 +117,7 @@ export class GameScene extends Phaser.Scene {
   // HUD
   private zoneText!: Phaser.GameObjects.Text;
   private coordText!: Phaser.GameObjects.Text;
+  private teamInfoText!: Phaser.GameObjects.Text;
   private promptText!: Phaser.GameObjects.Text;
   private miniMap!: Phaser.GameObjects.Graphics;
 
@@ -274,20 +275,33 @@ export class GameScene extends Phaser.Scene {
     GameState.x = this.player.x; GameState.y = this.player.y;
     if (this.battleCooldown > 0) this.battleCooldown--;
     this.coordText.setText(`X:${Math.round(this.player.x)}  Y:${Math.round(this.player.y)}`);
+    // 队伍信息 HUD（持久 Text + setVisible，参照称号 titleTag 模式）
+    if (this.teamId && this.teamMembers.length > 0) {
+      const leader = this.teamMembers.find((m: any) => m.sid === this.teamLeaderSid);
+      const info = `\u961f\u4f0d (${this.teamMembers.length}/4)  ${leader ? '\u2605 ' + leader.name : ''}`;
+      this.teamInfoText.setText(info).setVisible(true);
+    } else {
+      this.teamInfoText.setVisible(false);
+    }
     this.syncPlayerTags();
     this.sendMoveThrottled();
     // 联机：每帧拉取服务端状态并平滑插值远程玩家（含名字）
     this.syncRemotePlayers();
     this.remotePlayers.forEach(rp => {
       const dx = rp.tx - rp.sprite.x, dy = rp.ty - rp.sprite.y;
-      rp.sprite.x = Phaser.Math.Linear(rp.sprite.x, rp.tx, 0.2);
-      rp.sprite.y = Phaser.Math.Linear(rp.sprite.y, rp.ty, 0.2);
+      rp.sprite.x = Phaser.Math.Linear(rp.sprite.x, rp.tx, 0.25);
+      rp.sprite.y = Phaser.Math.Linear(rp.sprite.y, rp.ty, 0.25);
+      // 接近目标时吸附到整数像素，消除亚像素抖动（名字标签用 Math.round 时的跳动）
+      if (Math.abs(rp.tx - rp.sprite.x) < 0.5 && Math.abs(rp.ty - rp.sprite.y) < 0.5) {
+        rp.sprite.x = rp.tx; rp.sprite.y = rp.ty;
+      }
       // 远程玩家行走动画：按「目标-当前」向量选朝向与翻转（与本地玩家同逻辑）
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
         const facing = Math.abs(dx) > Math.abs(dy) ? 'side' : (dy > 0 ? 'down' : 'up');
         rp.sprite.anims.play('walk_' + facing + '_' + rp.gender, true);
         rp.sprite.setFlipX(Math.abs(dx) > Math.abs(dy) && dx > 0);
-      } else {
+      } else if (rp.sprite.anims.isPlaying) {
+        // 仅在「移动→静止」瞬间复位一次，避免每帧重复 setTexture 造成抽搐
         rp.sprite.anims.stop();
         rp.sprite.setTexture('walk_down_' + rp.gender).setFrame(0);
       }

@@ -27,7 +27,9 @@ export function toggleTeamPanel(scene: any): void {
 }
 
 export function closeTeamPanel(scene: any): void {
-  if (scene.teamPanelFull) { scene.teamPanelFull.destroy(true); scene.teamPanelFull = null; }
+  try {
+    if (scene.teamPanelFull) { scene.teamPanelFull.destroy(true); scene.teamPanelFull = null; }
+  } catch { scene.teamPanelFull = null; }
 }
 
 export function showInvitePrompt(scene: any, data: { fromName: string; fromSid: string; teamId: string }): void {
@@ -53,7 +55,11 @@ export function showDungeonConfirm(scene: any, zone: number): void {
   if (scene.dungeonConfirmOpen) return;
   scene.dungeonConfirmOpen = true;
   const w = GAME_WIDTH, h = GAME_HEIGHT;
-  const c = scene.add.container(0, 0).setDepth(500).setScrollFactor(0);
+  const cam = scene.cameras.main;
+  const c = scene.add.container(cam.scrollX, cam.scrollY).setDepth(500);
+  const followCam = (): void => c.setPosition(cam.scrollX, cam.scrollY);
+  cam.on('update', followCam);
+  c.once(Phaser.GameObjects.Events.DESTROY, () => cam.off('update', followCam));
   scene.dungeonConfirmPanel = c;
   const dim = scene.add.graphics();
   dim.fillStyle(0x000000, 0.55); dim.fillRect(0, 0, w, h);
@@ -98,66 +104,29 @@ export function closeDungeonConfirm(scene: any): void {
 }
 
 // ===== 队伍 HUD =====
+// 左上角队伍信息已改为 GameScene.teamInfoText（持久 Text + setVisible 模式，参照称号 titleTag），
+// 在 GameScene.update() 每帧根据 teamId 刷新显隐，不再使用 Container create/destroy，彻底避免残留。
+// renderTeamPanel 现在仅负责：如有邀请则提示 + 如面板开着则刷新 teamPanelFull。
 
 export function renderTeamPanel(scene: any): void {
+  // 安全清理旧 Container（如果有遗留）
   hideTeamPanel(scene);
-  const hasTeam = scene.teamMembers.length > 0;
+  if (!scene.teamId) return;
   const hasInvites = scene.pendingInvites.length > 0;
-  if (!hasTeam && !hasInvites) return;
-
-  const padX = 16, padY = 12, itemH = 28, w = 210;
-  const rows = hasTeam ? scene.teamMembers.length : 0;
-  const extra = hasInvites ? 24 : 0;
-  const h = padY * 2 + (hasTeam ? rows * itemH + 30 : 24) + extra;
-  const panel = scene.add.container(12, 12).setDepth(300).setScrollFactor(0);
-
-  const bg = scene.add.graphics();
-  bg.fillStyle(0x1a1a2e, 0.85);
-  bg.fillRoundedRect(0, 0, w, h, 10);
-  bg.lineStyle(1, 0xc9a96e, 0.5);
-  bg.strokeRoundedRect(0, 0, w, h, 10);
-
-  let y = padY + 6;
-  if (hasTeam) {
-    const title = scene.add.text(w / 2, y, `\u961f\u4f0d (${scene.teamMembers.length}/4)  [G]`, {
-      fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
-    }).setOrigin(0.5);
-    panel.add(title);
-    y += 24;
-    scene.teamMembers.forEach((m: any, i: number) => {
-      const isLeader = m.sid === scene.teamLeaderSid;
-      const isMe = m.sid === scene.mySessionId;
-      const yy = y + i * itemH;
-      const txt = scene.add.text(padX + 4, yy + 4, isLeader ? `\u2605 ${m.name}` : isMe ? `\u25b6 ${m.name}` : `  ${m.name}`, {
-        fontSize: '13px', color: isMe ? '#88ff88' : '#ffffff',
-      }).setScrollFactor(0);
-      panel.add(txt);
-    });
-    y += rows * itemH + 6;
-  } else {
-    const title = scene.add.text(w / 2, y, '\u961f\u4f0d\u9762\u677f  [G]', {
-      fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
-    }).setOrigin(0.5);
-    panel.add(title);
-    y += 24;
+  // 有邀请时自动打开完整面板处理（原有逻辑保留）
+  if (hasInvites && !scene.teamPanelFull) {
+    openTeamPanel(scene);
   }
-
-  if (hasInvites) {
-    const inv = scene.add.text(padX + 4, y + 4, `\u25cf ${scene.pendingInvites.length} \u6761\u7ec4\u961f\u9080\u8bf7`, {
-      fontSize: '13px', color: '#ffd9a0', fontStyle: 'bold',
-    }).setScrollFactor(0);
-    panel.add(inv);
+  // 面板开着则实时刷新成员列表
+  if (scene.teamPanelFull) {
+    openTeamPanel(scene); // openTeamPanel 内部会先 destroy 旧的再重建
   }
-
-  const hit = scene.add.zone(w / 2, h / 2, w, h).setInteractive({ useHandCursor: true });
-  hit.on('pointerdown', () => toggleTeamPanel(scene));
-  panel.add(hit);
-
-  scene.teamPanel = panel;
 }
 
 export function hideTeamPanel(scene: any): void {
-  if (scene.teamPanel) { scene.teamPanel.destroy(); scene.teamPanel = null; }
+  try {
+    if (scene.teamPanel) { scene.teamPanel.destroy(true); scene.teamPanel = null; }
+  } catch { scene.teamPanel = null; }
 }
 
 // ===== 战斗路由 =====
@@ -257,7 +226,19 @@ export function makeRemotePlayersInteractable(scene: any): void {
 export function openTeamPanel(scene: any): void {
   closeTeamPanel(scene);
   const w = GAME_WIDTH, h = GAME_HEIGHT;
-  const c = scene.add.container(0, 0).setDepth(500).setScrollFactor(0);
+  const cam = scene.cameras.main;
+  const c = scene.add.container(cam.scrollX, cam.scrollY).setDepth(500);
+  const followCam = (): void => c.setPosition(cam.scrollX, cam.scrollY);
+  cam.on('update', followCam);
+  c.once(Phaser.GameObjects.Events.DESTROY, () => cam.off('update', followCam));
+
+  // 退出/解散后本地立即清理：服务端仅向留队成员广播 teamUpdate/teamDisbanded，退出者收不到消息，
+  // 不清理会导致左上角 HUD 残留、全屏面板不关闭。
+  const cleanupAfterLeave = (msg: string): void => {
+    scene.teamId = ''; scene.teamMembers = []; scene.teamLeaderSid = '';
+    scene.hideTeamPanel(); scene.closeTeamPanel();
+    scene.showWorldNotif(msg, true);
+  };
 
   const ov = scene.add.graphics();
   ov.fillStyle(0, 0.55); ov.fillRect(0, 0, w, h);
@@ -351,15 +332,16 @@ export function openTeamPanel(scene: any): void {
       } else if (isMe && !amLeader) {
         TBTN(listX + listW - 78, y + (rowH - 8) / 2, '\u9000\u51fa', '#ffcc88', '#ffffff', () => {
           scene.gameRoom?.send('leaveTeam', {});
+          cleanupAfterLeave('\u4f60\u5df2\u9000\u51fa\u961f\u4f0d');
         });
       }
       y += rowH;
     }
     y += 6;
     if (amLeader) {
-      TBTN(listX, y + 16, '\u89e3\u6563\u961f\u4f0d', '#ff8888', '#ffffff', () => { scene.gameRoom?.send('disbandTeam', {}); });
+      TBTN(listX, y + 16, '\u89e3\u6563\u961f\u4f0d', '#ff8888', '#ffffff', () => { scene.gameRoom?.send('disbandTeam', {}); cleanupAfterLeave('\u961f\u4f0d\u5df2\u89e3\u6563'); });
     } else {
-      TBTN(listX, y + 16, '\u9000\u51fa\u961f\u4f0d', '#ffcc88', '#ffffff', () => { scene.gameRoom?.send('leaveTeam', {}); });
+      TBTN(listX, y + 16, '\u9000\u51fa\u961f\u4f0d', '#ffcc88', '#ffffff', () => { scene.gameRoom?.send('leaveTeam', {}); cleanupAfterLeave('\u4f60\u5df2\u9000\u51fa\u961f\u4f0d'); });
     }
     y += 44;
   }

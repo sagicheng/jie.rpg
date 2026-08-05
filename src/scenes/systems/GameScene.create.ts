@@ -221,6 +221,14 @@ export function _create(scene: any): void {
       fontSize: '11px', color: '#88aacc',
       backgroundColor: '#1a1a2ecc', padding: { x: 8, y: 2 },
     }).setScrollFactor(0).setDepth(100);
+    // 队伍信息（持久 Text + setVisible 控制显隐，参照称号 titleTag 模式，避免 Container destroy 竞态残留）
+    scene.teamInfoText = scene.add.text(16, 54, '', {
+      fontSize: '12px', color: '#ffffff',
+      backgroundColor: '#1a1a2ecc', padding: { x: 8, y: 2 },
+    }).setScrollFactor(0).setDepth(100).setVisible(false).setInteractive({ useHandCursor: true });
+    scene.teamInfoText.on('pointerdown', () => {
+      if (scene.teamId) { const _toggle = (scene as any).openTeamPanel || (scene as any).toggleTeamPanel; if (_toggle) _toggle(scene); }
+    });
     scene.promptText = scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 60, '', {
       fontSize: '14px', color: '#ffe8b0', fontStyle: 'bold',
       backgroundColor: '#1a1a2ecc', padding: { x: 8, y: 2 },

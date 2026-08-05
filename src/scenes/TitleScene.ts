@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/config';
 import { AuthClient } from '../api/AuthClient';
+import { setServerUrl } from '../core/Net';
 
 /**
  * 标题/认证界面——注册 / 登录 / 角色选择。
@@ -85,6 +86,19 @@ export class TitleScene extends Phaser.Scene {
     // 主按钮（胶囊形，与官网 btn-pill 同款）
     this.drawButton(GAME_WIDTH / 2, GAME_HEIGHT * 0.50, '注  册', true, () => this.showRegisterForm());
     this.drawButton(GAME_WIDTH / 2, GAME_HEIGHT * 0.60, '登  录', false, () => this.showLoginForm());
+
+    // 服务器地址（联机部署时在此填写，失焦自动保存；也可改 server.json）
+    const fServer = this.createField(GAME_WIDTH / 2, GAME_HEIGHT * 0.72, 360, 44, '服务器地址', 'ws://IP:2567', 'text');
+    fServer.el.maxLength = 64;
+    const savedUrl =
+      (typeof window !== 'undefined' && (window as unknown as Record<string, string>).__SERVER_URL__) ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('jie_server_url') : null) ||
+      'ws://localhost:2567';
+    fServer.el.value = savedUrl ?? 'ws://localhost:2567';
+    fServer.el.addEventListener('blur', () => {
+      const v = fServer.getValue();
+      if (v) setServerUrl(v);
+    });
 
     // 版本
     this.add.text(GAME_WIDTH - 24, GAME_HEIGHT - 24, 'v0.4.0  ·  Stage D', {

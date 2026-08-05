@@ -448,6 +448,13 @@ export class DungeonMapScene extends Phaser.Scene {
     this.teamHud = c;
   }
 
+  /** 主动销毁副本内队伍 HUD（解散/被踢/队伍清空时由主场景 GameScene 跨场景调用，
+   *  避免依赖 update 轮询 gs.teamMembers 的时机而残留左上角信息框）。 */
+  clearTeamHud(): void {
+    if (this.teamHud) { this.teamHud.destroy(true); this.teamHud = null; }
+    this.teamHudSig = '';
+  }
+
   /** 副本内找队长坐标（用于跟随者自动尾随）：优先匹配 teamLeaderSid 对应的 DungeonPlayer，
    *  兜底跟随任意其他在场玩家；无其他人则返回 null（跟随者保持静止）。 */
   private findDungeonLeader(): { x: number; y: number } | null {

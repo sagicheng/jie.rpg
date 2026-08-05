@@ -15,7 +15,6 @@ import { enqueueArena, dequeueArena, queueSize } from '../modules/feature/arenaS
 import { isArenaOpen, ARENA_WEEKLY_CAP } from '../modules/feature/arena';
 import { zoneName } from '../core/zoneNames';
 
-const COLORS = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#ff9f43', '#54a0ff'];
 const TEAM_MAX = 4;
 
 // ——— 队伍数据结构（模块级，同一 GameRoom 内共享）———
@@ -810,7 +809,7 @@ export class GameRoom extends Room<GameRoomState> {
     p.sessionId = client.sessionId;
     p.name = ch.name;
     p.title = String(options?.title ?? '').slice(0, 16);
-    p.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    p.color = '#ffffff';
     p.x = 400 + Math.random() * 200;
     p.y = 300 + Math.random() * 100;
     this.state.players.set(client.sessionId, p);

@@ -6,11 +6,37 @@
 import { Client, Room } from 'colyseus.js';
 
 const SERVER_PORT = 2567;
+const STORAGE_KEY = 'jie_server_url';
 
-/** 浏览器内连接端点：跟随当前页面 host，端口固定 2567（与 dev:server 一致）。 */
+/** 读取玩家在上次游玩时保存的服务器地址（localStorage）。 */
+function loadSavedUrl(): string | null {
+  try {
+    const v = localStorage.getItem(STORAGE_KEY);
+    return v && v.trim() ? v.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 连接端点解析（优先级从高到低）：
+ *   1. 玩家在游戏内保存的地址（localStorage）
+ *   2. Electron 主进程通过 preload 注入的 window.__SERVER_URL__
+ *   3. 开发回退：Vite dev 页面在 3000，服务端在 2567
+ * 自定义地址应自带 ws:// 或 wss:// 前缀，故直接返回、不拼协议。
+ */
 function serverEndpoint(): string {
-  const host = (typeof window !== 'undefined' && window.location?.hostname) || 'localhost';
-  return `ws://${host}:${SERVER_PORT}`;
+  if (typeof window === 'undefined') return `ws://localhost:${SERVER_PORT}`;
+
+  const saved = loadSavedUrl();
+  const injected = (window as unknown as Record<string, unknown>).__SERVER_URL__ as string | undefined;
+  const custom = saved ?? injected;
+  if (custom) return custom;
+
+  const { protocol, port } = window.location;
+  if (port === '3000') return `ws://localhost:${SERVER_PORT}`;
+  const proto = protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}`;
 }
 
 // colyseus.js 浏览器运行时偶尔引用 global，这里无副作用补一下，避免崩。
@@ -28,6 +54,16 @@ export function getClient(): Client {
 
 /** 重新指向端点（一般无需调用，保留以便部署/测试切换地址）。 */
 export function resetClient(): void {
+  _client = null;
+}
+
+/** 玩家在游戏内设置服务器地址：持久化到 localStorage 并重建连接。 */
+export function setServerUrl(url: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, url.trim());
+  } catch {
+    /* 隐私模式等场景忽略写入失败 */
+  }
   _client = null;
 }
 
